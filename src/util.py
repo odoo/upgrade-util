@@ -101,7 +101,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
             where += ['%s IS NULL' % (k,)]
             data += ()
 
-    query = "SELECT id FROM %s WHERE " + ' AND '.join(where)
+    query = ("SELECT id FROM %s WHERE " % table) + ' AND '.join(where)
     cr.execute(query, data)
     record = cr.fetchone()
     if not record:
