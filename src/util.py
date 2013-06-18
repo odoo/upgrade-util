@@ -53,6 +53,73 @@ def remove_record(cr, name):
     cr.execute('DELETE FROM %s WHERE id=%%s' % table, (res_id,))
     # TODO delete attachments & workflow instances
 
+def ref(cr, xmlid):
+    if '.' not in xmlid:
+        raise ValueError('Please use fully qualified name <module>.<name>')
+
+    module, _, name = xmlid.partition('.')
+    cr.execute("""SELECT res_id
+                    FROM ir_model_data
+                   WHERE module = %s
+                     AND name = %s
+                """, (module, name))
+    data = cr.fetchone()
+    if data:
+        return data[0]
+    return None
+
+def ensure_xmlid_match_record(cr, xmlid, model, values):
+    if '.' not in xmlid:
+        raise ValueError('Please use fully qualified name <module>.<name>')
+
+    module, _, name = xmlid.partition('.')
+    cr.execute("""SELECT id, res_id
+                    FROM ir_model_data
+                   WHERE module = %s
+                     AND name = %s
+                """, (module, name))
+
+    table = table_of_model(cr, model)
+    data = cr.fetchone()
+    if data:
+        data_id, res_id = data
+        # check that record still exists
+        cr.execute("SELECT id FROM %s WHERE id=%%s" % table, (res_id,))
+        if cr.fetchone():
+            return
+    else:
+        data_id = None
+
+    # search for existing record marching values
+    where = []
+    data = ()
+    for k, v in values.items():
+        if v:
+            where += ['%s = %%s' % (k,)]
+            data += (v,)
+        else:
+            where += ['%s IS NULL' % (k,)]
+            data += ()
+
+    query = "SELECT id FROM %s WHERE " + ' AND '.join(where)
+    cr.execute(query, data)
+    record = cr.fetchone()
+    if not record:
+        return
+
+    res_id = record[0]
+
+    if data_id:
+        cr.execute("""UPDATE ir_model_data
+                         SET res_id=%s
+                       WHERE id=%s
+                   """, (res_id, data_id))
+    else:
+        cr.execute("""INSERT INTO ir_model_data
+                                  (module, name, model, res_id)
+                           VALUES (%s, %s, %s, %s)
+                   """, (module, name, model, res_id))
+
 
 def column_exists(cr, table, column):
     # TODO
