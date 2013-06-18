@@ -107,7 +107,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
         # check that record still exists
         cr.execute("SELECT id FROM %s WHERE id=%%s" % table, (res_id,))
         if cr.fetchone():
-            return
+            return res_id
     else:
         data_id = None
 
@@ -126,7 +126,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     cr.execute(query, data)
     record = cr.fetchone()
     if not record:
-        return
+        return None
 
     res_id = record[0]
 
@@ -137,7 +137,8 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
                    """, (res_id, data_id))
     else:
         cr.execute("""INSERT INTO ir_model_data
-                                  (module, name, model, res_id)
+                                  (module, name, model, res_id, noupdate)
                            VALUES (%s, %s, %s, %s)
-                   """, (module, name, model, res_id))
+                   """, (module, name, model, res_id, True))
 
+    return res_id
