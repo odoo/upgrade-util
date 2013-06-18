@@ -1,6 +1,19 @@
 # Utility functions for migration scripts
 
+from contextlib import contextmanager
+import time
 #import psycopg2
+
+@contextmanager
+def savepoint(cr):
+    name = hex(int(time.time() * 1000))[1:]
+    cr.execute("SAVEPOINT %s" % (name,))
+    try:
+        yield
+        cr.execute('RELEASE SAVEPOINT %s' % (name,))
+    except Exception:
+        cr.execute('ROLLBACK TO SAVEPOINT %s' % (name,))
+        raise
 
 
 def table_of_model(cr, model):
@@ -27,7 +40,7 @@ def table_of_model(cr, model):
     }.get(model, model.replace('.', '_'))
 
 
-def remove_record(cr, name):
+def remove_record(cr, name, deactivate=False, active_field='active'):
     if isinstance(name, str):
         if '.' not in name:
             raise ValueError('Please use fully qualified name <module>.<name>')
@@ -50,8 +63,16 @@ def remove_record(cr, name):
                          '<module>.<name> or a 2-tuple (<model>, <res_id>)')
 
     table = table_of_model(cr, model)
-    cr.execute('DELETE FROM %s WHERE id=%%s' % table, (res_id,))
-    # TODO delete attachments & workflow instances
+    try:
+        with savepoint(cr):
+            cr.execute('DELETE FROM "%s" WHERE id=%%s' % table, (res_id,))
+    except Exception:
+        if not deactivate or not active_field:
+            raise
+        cr.execute('UPDATE "%s" SET "%s"=%%s WHERE id=%%s' % (table, active_field), (False, res_id))
+    else:
+        # TODO delete attachments & workflow instances
+        pass
 
 def ref(cr, xmlid):
     if '.' not in xmlid:
@@ -120,7 +141,3 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
                            VALUES (%s, %s, %s, %s)
                    """, (module, name, model, res_id))
 
-
-def column_exists(cr, table, column):
-    # TODO
-    pass
