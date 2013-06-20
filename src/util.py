@@ -138,7 +138,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     else:
         cr.execute("""INSERT INTO ir_model_data
                                   (module, name, model, res_id, noupdate)
-                           VALUES (%s, %s, %s, %s)
+                           VALUES (%s, %s, %s, %s, %s)
                    """, (module, name, model, res_id, True))
 
     return res_id
