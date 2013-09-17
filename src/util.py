@@ -142,3 +142,42 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
                    """, (module, name, model, res_id, True))
 
     return res_id
+
+
+def remove_module(cr, module):
+    """Remove all references to a given module.
+       Ensure to reassign records before calling this method
+    """
+
+    # delete constraints and relations...
+    for table in ['constraint', 'relation']:
+        cr.execute("""DELETE FROM ir_model_%s
+                            WHERE module = (SELECT id
+                                              FROM ir_module_module
+                                             WHERE name=%%s)
+                   """ % table, (module,))
+
+    # remove module
+    cr.execute("""
+        DELETE FROM ir_module_module
+              WHERE name=%s
+          RETURNING state
+    """, (module,))
+
+    state = cr.fetchone()
+    if not state or state[0] not in ('installed', 'to upgrade', 'to remove'):
+        return
+
+    # remove views
+    cr.execute("""
+        SELECT res_id
+          FROM ir_model_data
+         WHERE module=%s
+           AND model=%s
+    """, (module, 'ir.ui.view'))
+
+    view_ids = tuple(x[0] for x in cr.fetchall())
+    cr.execute('DELETE FROM ir_ui_view WHERE id IN %s', (view_ids,))
+
+    # remove all ir.model.data
+    cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
