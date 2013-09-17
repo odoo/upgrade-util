@@ -181,3 +181,18 @@ def remove_module(cr, module):
 
     # remove all ir.model.data
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
+
+
+def new_module_dep(cr, module, new_dep):
+    # One new dep at a time
+    states = ('installed', 'to install', 'to upgrade', 'to remove')
+    cr.execute("""UPDATE ir_module_module
+                     SET state=%s
+                   WHERE name=%s
+                     AND state NOT IN %s
+                     AND EXISTS(SELECT id
+                                  FROM ir_module_module
+                                 WHERE name=%s
+                                   AND state IN %s
+                                )
+               """, ('to install', new_dep, states, module, states))
