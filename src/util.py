@@ -217,3 +217,24 @@ def new_module_dep(cr, module, new_dep):
                                           WHERE module_id = m.id
                                             AND name=%s)
                 """, (new_dep, module, new_dep))
+
+def column_exists(cr, table, column):
+    return column_type(cr, table, column) is not None
+
+def column_type(cr, table, column):
+    cr.execute("""SELECT udt_name
+                    FROM information_schema.columns
+                   WHERE table_name = %s
+                     AND column_name = %s
+               """, (table, column))
+
+    r = cr.fetchone()
+    return r[0] if r else None
+
+def create_column(cr, table, column, definition):
+    curtype = column_type(cr, table, column)
+    if curtype:
+        # TODO compare with definition
+        pass
+    else:
+        cr.execute("""ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition))
