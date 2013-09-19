@@ -185,14 +185,35 @@ def remove_module(cr, module):
 
 def new_module_dep(cr, module, new_dep):
     # One new dep at a time
-    states = ('installed', 'to install', 'to upgrade', 'to remove')
+    # Update new_dep state depending of module state
+
+    states_mod = ('installed', 'to install', 'to upgrade')
+
     cr.execute("""UPDATE ir_module_module
-                     SET state=%s
+                     SET state=CASE
+                                 WHEN state = %s
+                                   THEN %s
+                                 WHEN state = %s
+                                   THEN %s
+                                 ELSE state
+                               END
+
                    WHERE name=%s
-                     AND state NOT IN %s
                      AND EXISTS(SELECT id
                                   FROM ir_module_module
                                  WHERE name=%s
                                    AND state IN %s
                                 )
-               """, ('to install', new_dep, states, module, states))
+               """, ('to remove', 'to upgrade',
+                     'uninstalled', 'to install',
+                     new_dep, module, states_mod))
+
+    cr.execute("""INSERT INTO ir_module_module_dependency(name, module_id)
+                       SELECT %s, id
+                         FROM ir_module_module m
+                        WHERE name=%s
+                          AND NOT EXISTS(SELECT 1
+                                           FROM ir_module_module_dependency
+                                          WHERE module_id = m.id
+                                            AND name=%s)
+                """, (new_dep, module, new_dep))
