@@ -177,7 +177,8 @@ def remove_module(cr, module):
     """, (module, 'ir.ui.view'))
 
     view_ids = tuple(x[0] for x in cr.fetchall())
-    cr.execute('DELETE FROM ir_ui_view WHERE id IN %s', (view_ids,))
+    if view_ids:
+        cr.execute('DELETE FROM ir_ui_view WHERE id IN %s', (view_ids,))
 
     # remove all ir.model.data
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
