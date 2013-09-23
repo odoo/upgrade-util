@@ -239,3 +239,11 @@ def create_column(cr, table, column, definition):
         pass
     else:
         cr.execute("""ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition))
+
+def table_exists(cr, table):
+    cr.execute("""SELECT 1
+                    FROM information_schema.tables
+                   WHERE table_name = %s
+                     AND table_type = 'BASE TABLE'
+               """, (table,))
+    return cr.fetchone() is not None
