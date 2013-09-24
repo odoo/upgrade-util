@@ -1,6 +1,7 @@
 # Utility functions for migration scripts
 
 from contextlib import contextmanager
+from operator import itemgetter
 import time
 #import psycopg2
 
@@ -247,3 +248,12 @@ def table_exists(cr, table):
                      AND table_type = 'BASE TABLE'
                """, (table,))
     return cr.fetchone() is not None
+
+def remove_field(cr, model, fieldname):
+    cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
+    fids = tuple(map(itemgetter(0), cr.fetchall()))
+    if fids:
+        cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ('ir.model.fields', fids))
+    table = table_of_model(model)
+    if column_exists(cr, table, fieldname):
+        cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"'.format(table, fieldname))
