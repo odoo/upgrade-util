@@ -254,6 +254,6 @@ def remove_field(cr, model, fieldname):
     fids = tuple(map(itemgetter(0), cr.fetchall()))
     if fids:
         cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ('ir.model.fields', fids))
-    table = table_of_model(model)
+    table = table_of_model(cr, model)
     if column_exists(cr, table, fieldname):
         cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"'.format(table, fieldname))
