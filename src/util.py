@@ -146,43 +146,66 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
 
 def remove_module(cr, module):
-    """Remove all references to a given module.
+    """ Uninstall the module and delete references to it
        Ensure to reassign records before calling this method
     """
+    # NOTE: we cannot use the uninstall of module because the given
+    # module need to be currenctly installed and running as deletions
+    # are made using orm.
 
-    # delete constraints and relations...
-    for table in ['constraint', 'relation']:
-        cr.execute("""DELETE FROM ir_model_%s
-                            WHERE module = (SELECT id
-                                              FROM ir_module_module
-                                             WHERE name=%%s)
-                   """ % table, (module,))
-
-    # remove module
-    cr.execute("""
-        DELETE FROM ir_module_module
-              WHERE name=%s
-          RETURNING state
-    """, (module,))
-
-    state = cr.fetchone()
-    if not state or state[0] not in ('installed', 'to upgrade', 'to remove'):
+    cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (module,))
+    mod_id, = cr.fetchone() or [None]
+    if not mod_id:
         return
 
-    # remove views
-    cr.execute("""
-        SELECT res_id
-          FROM ir_model_data
-         WHERE module=%s
-           AND model=%s
-    """, (module, 'ir.ui.view'))
+    # delete constraints only owned by this module
+    cr.execute("""SELECT name
+                    FROM ir_model_constraint
+                GROUP BY name
+                  HAVING array_agg(module) = %s""", ([mod_id],))
 
-    view_ids = tuple(x[0] for x in cr.fetchall())
-    if view_ids:
-        cr.execute('DELETE FROM ir_ui_view WHERE id IN %s', (view_ids,))
+    constraints = tuple(map(itemgetter(0), cr.fetchall()))
+    if constraints:
+        cr.execute("""SELECT table_name, constraint_name
+                        FROM information_schema.table_constraints
+                       WHERE constraint_name IN %s""", (constraints,))
+        for table, constraint in cr.fetchall():
+            cr.execute('ALTER TABLE "%s" DROP CONSTRAINT "%s"' % (table, constraint))
 
-    # remove all ir.model.data
+    cr.execute("""DELETE FROM ir_model_constraint
+                        WHERE module=%s
+               """, (mod_id,))
+
+    # delete data
+    model_ids = tuple()
+    cr.execute("""SELECT model, array_agg(res_id)
+                    FROM ir_model_data
+                GROUP BY model
+                  HAVING array_agg(module) = ARRAY[%s::varchar]
+               """, (module,))
+    for model, res_ids in cr.fetchall():
+        if model == 'ir.model':
+            model_ids = tuple(res_ids)
+        else:
+            cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table_of_model(model), (tuple(res_ids),))
+
+    # remove relations
+    cr.execute("""SELECT name
+                    FROM ir_model_relation
+                GROUP BY name
+                  HAVING array_agg(module) = %s""", ([mod_id],))
+    relations = tuple(map(itemgetter(0), cr.fetchall()))
+    cr.execute("DELETE FROM ir_model_relation WHERE module=%s", (mod_id,))
+    if relations:
+        cr.execute("SELECT table_name FROM information_schema.tables WHERE table_name IN %s", (relations,))
+        for rel, in cr.fetchall():
+            cr.execute('DROP TABLE "%s" CASCADE' % (rel,))
+
+    if model_ids:
+        cr.execute("DELETE FROM ir_model WHERE id IN %s", (model_ids,))
+
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
+    cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
 
 
 def new_module_dep(cr, module, new_dep):
