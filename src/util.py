@@ -208,6 +208,24 @@ def remove_module(cr, module):
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
 
 
+def force_install_module(cr, module):
+    cr.execute("""UPDATE ir_module_module
+                     SET state=CASE
+                                 WHEN state = %s
+                                   THEN %s
+                                 WHEN state = %s
+                                   THEN %s
+                                 ELSE state
+                               END
+                   WHERE name=%s
+               RETURNING state
+               """, ('to remove', 'to upgrade',
+                     'uninstalled', 'to install',
+                     module))
+
+    state, = cr.fetchone() or [None]
+    return state
+
 def new_module_dep(cr, module, new_dep):
     # One new dep at a time
     # Update new_dep state depending of module state
@@ -222,7 +240,6 @@ def new_module_dep(cr, module, new_dep):
                                    THEN %s
                                  ELSE state
                                END
-
                    WHERE name=%s
                      AND EXISTS(SELECT id
                                   FROM ir_module_module
