@@ -1,9 +1,20 @@
 # Utility functions for migration scripts
 
 from contextlib import contextmanager
+import logging
 from operator import itemgetter
+from textwrap import dedent
 import time
+
+from docutils.core import publish_string
 #import psycopg2
+
+from openerp import release, SUPERUSER_ID
+from openerp.addons.base.module.module import MyWriter
+from openerp.modules.registry import RegistryManager
+from openerp.tools.mail import html_sanitize
+
+_logger = logging.getLogger(__name__)
 
 @contextmanager
 def savepoint(cr):
@@ -297,3 +308,41 @@ def remove_field(cr, model, fieldname):
     table = table_of_model(cr, model)
     if column_exists(cr, table, fieldname):
         cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"'.format(table, fieldname))
+
+
+def rst2html(rst):
+    overrides = dict(embed_stylesheet=False, doctitle_xform=False, output_encoding='unicode', xml_declaration=False)
+    html = publish_string(source=dedent(rst), settings_overrides=overrides, writer=MyWriter())
+    return html_sanitize(html, silent=False)
+
+
+_DEFAULT_HEADER = """
+<p>OpenERP has been upgraded to version {version}.</p>
+<h2>What's new in this upgrade?</h2>
+""".format(version=release.version)
+
+_DEFAULT_FOOTER = "<p>Enjoy the new OpenERP Online!</p>"
+
+def announce(cr, msg, format='rst', header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
+    registry = RegistryManager.get(cr.dbname)
+    IMD = registry['ir.model.data']
+    user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID)
+    try:
+        poster = IMD.get_object(cr, SUPERUSER_ID, 'mail', 'group_all_employees')
+    except ValueError:
+        # Cannot found group, post the message on the wall of the admin
+        poster = user
+
+    if not poster.exists():
+        return
+
+    if format == 'rst':
+        msg = rst2html(msg)
+
+    message = (header or "") + msg + (footer or "")
+    _logger.debug(message)
+
+    try:
+        poster.message_post(message, partner_ids=[user.partner_id.id], type='notification', subtype='mail.mt_comment')
+    except Exception:
+        _logger.warning('Cannot annouce new version', exc_info=True)
