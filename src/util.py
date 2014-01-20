@@ -218,8 +218,20 @@ def remove_module(cr, module):
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
 
+def rename_module(cr, old, new):
+    cr.execute("UPDATE ir_module_module SET name=%s WHERE name=%s", (new, old))
+    cr.execute("UPDATE ir_module_module_dependency SET name=%s WHERE name=%s", (new, old))
+    cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s", (new, old))
 
-def force_install_module(cr, module):
+def force_install_module(cr, module, if_installed=None):
+    subquery = ""
+    subparams = ()
+    if if_installed:
+        subquery = """AND EXISTS(SELECT 1 FROM ir_module_module
+                                  WHERE name IN %s
+                                    AND state IN %s)"""
+        subparams = (tuple(if_installed), ('to install', 'to upgrade'))
+
     cr.execute("""UPDATE ir_module_module
                      SET state=CASE
                                  WHEN state = %s
@@ -229,10 +241,11 @@ def force_install_module(cr, module):
                                  ELSE state
                                END
                    WHERE name=%s
+               """ + subquery + """
                RETURNING state
                """, ('to remove', 'to upgrade',
                      'uninstalled', 'to install',
-                     module))
+                     module) + subparams)
 
     state, = cr.fetchone() or [None]
     return state
