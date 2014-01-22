@@ -323,6 +323,105 @@ def remove_field(cr, model, fieldname):
         cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"'.format(table, fieldname))
 
 
+def res_model_res_id(cr, filtered=True):
+    each = [
+        ('ir.attachment', 'res_model', 'res_id'),
+        ('ir.cron', 'model', None),
+        ('ir.actions.report.xml', 'model', None),
+        ('ir.actions.act_window', 'res_model', 'res_id'),
+        ('ir.actions.act_window', 'src_model', None),
+        ('ir.actions.server', 'wkf_model_name', None),   # stored related, also need to be updated
+        ('ir.actions.server', 'crud_model_name', None),  # idem
+        ('ir.actions.client', 'res_model', None),
+        ('ir.model', 'model', None),
+        ('ir.model.fields', 'model', None),
+        ('ir.model.data', 'model', 'res_id'),
+        ('ir.filters', 'model_id', None),     # YUCK!, not an id
+        ('ir.ui.view', 'model', None),
+        ('ir.values', 'model', 'res_id'),
+        ('workflow.transition', 'trigger_model', None),
+        ('workflow_triggers', 'model', None),
+
+        ('ir.model.fields.anonymization', 'model_name', None),
+        ('ir.model.fields.anonymization.migration.fix', 'model_name', None),
+        ('base_import.import', 'res_model', None),
+        ('email.template', 'model', None),      # stored related
+#        ('mail.alias', 'alias_model_id.model', 'alias_force_thread_id'),
+#        ('mail.alias', 'alias_parent_model_id.model', 'alias_parent_thread_id'),
+        ('mail.followers', 'res_model', 'res_id'),
+        ('mail.message.subtype', 'res_model', None),
+        ('mail.message', 'model', 'res_id'),
+        ('mail.wizard.invite', 'res_model', 'res_id'),
+        ('mail.mail.statistics', 'model', 'res_id'),
+        ('project.project', 'alias_model', None),
+    ]
+
+    for model, res_model, res_id in each:
+        if filtered:
+            table = table_of_model(cr, model)
+            if not column_exists(cr, table, res_model):
+                continue
+            if res_id and not column_exists(cr, table, res_id):
+                continue
+
+        yield model, res_model, res_id
+
+def delete_model(cr, model, drop_table=True):
+    cr.execute("DELETE FROM ir_model WHERE model=%s", (model,))
+
+    if drop_table:
+        cr.execute('DROP TABLE "{0}" CASCADE'.format(table_of_model(cr, model)))
+
+def rename_model(cr, old, new, rename_table=True):
+    # NOTE keep record ids.
+    if rename_table:
+        cr.execute('ALTER TABLE "{0}" RENAME TO "{1}"'.format(table_of_model(cr, old), table_of_model(cr, new)))
+
+    updates = [('wkf', 'osv')] + [r[:2] for r in res_model_res_id(cr)]
+
+    for model, column in updates:
+        table = table_of_model(cr, model)
+        query = 'UPDATE {t} SET {c}=%s WHERE {c}=%s'.format(t=table, c=column)
+        cr.execute(query, (new, old))
+
+    cr.execute("SELECT model, name FROM ir_model_field WHERE ttype=%s", ('reference',))
+    for model, column in cr.fetchall():
+        table = table_of_model(cr, model)
+        if column_exists(cr, table, column):
+            cr.execute("""UPDATE "{table}"
+                             SET {column}='{new}' || substring({column} FROM '%#",%#"' FOR '#')
+                           WHERE {column} LIKE '{old},%'
+                       """.format(table=table, column=column, new=new, old=old))
+
+
+def replace_record_references(cr, old, new):
+    """replace all indirect references of a record to another"""
+    # TODO update workflow instances?
+    assert isinstance(old, tuple) and len(old) == 2
+    assert isinstance(new, tuple) and len(new) == 2
+
+    for model, res_model, res_id in res_model_res_id(cr):
+        if not res_id:
+            continue
+        table = table_of_model(cr, model)
+        cr.execute("""UPDATE {table}
+                         SET {res_model}=%s, {res_id}=%s
+                       WHERE {res_model}=%s
+                         AND {res_id}=%s
+                   """.format(table=table, res_model=res_model, res_id=res_id),
+                   new + old)
+
+    cr.execute("SELECT model, name FROM ir_model_field WHERE ttype=%s", ('reference',))
+    for model, column in cr.fetchall():
+        table = table_of_model(cr, model)
+        if column_exists(cr, table, column):
+            cr.execute("""UPDATE "{table}"
+                             SET {column}=%s
+                           WHERE {column}=%s'
+                       """.format(table=table, column=column),
+                       (','.join(new), ','.join(old)))
+
+
 def rst2html(rst):
     overrides = dict(embed_stylesheet=False, doctitle_xform=False, output_encoding='unicode', xml_declaration=False)
     html = publish_string(source=dedent(rst), settings_overrides=overrides, writer=MyWriter())
