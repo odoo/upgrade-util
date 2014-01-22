@@ -367,7 +367,18 @@ def res_model_res_id(cr, filtered=True):
         yield model, res_model, res_id
 
 def delete_model(cr, model, drop_table=True):
+    model_underscore = model.replace('.', '_')
+    cr.execute("SELECT id FROM ir_model WHERE model=%s", (model,))
+    [mod_id] = cr.fetchone() or [None]
+    if mod_id:
+        cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
+        cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
     cr.execute("DELETE FROM ir_model WHERE model=%s", (model,))
+    cr.execute("DELETE FROM ir_model_data WHERE model=%s", (model,))
+    cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name=%s",
+               ('ir.model', 'model_%s' % model_underscore))
+    cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name like %s",
+               ('ir.model.fields', 'field_%s_' % model_underscore))
 
     if drop_table:
         cr.execute('DROP TABLE "{0}" CASCADE'.format(table_of_model(cr, model)))
@@ -384,7 +395,7 @@ def rename_model(cr, old, new, rename_table=True):
         query = 'UPDATE {t} SET {c}=%s WHERE {c}=%s'.format(t=table, c=column)
         cr.execute(query, (new, old))
 
-    cr.execute("SELECT model, name FROM ir_model_field WHERE ttype=%s", ('reference',))
+    cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_exists(cr, table, column):
@@ -411,7 +422,7 @@ def replace_record_references(cr, old, new):
                    """.format(table=table, res_model=res_model, res_id=res_id),
                    new + old)
 
-    cr.execute("SELECT model, name FROM ir_model_field WHERE ttype=%s", ('reference',))
+    cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_exists(cr, table, column):
