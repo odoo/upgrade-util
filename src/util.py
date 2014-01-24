@@ -410,7 +410,7 @@ def delete_model(cr, model, drop_table=True):
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name=%s",
                ('ir.model', 'model_%s' % model_underscore))
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name like %s",
-               ('ir.model.fields', 'field_%s_' % model_underscore))
+               ('ir.model.fields', 'field_%s_%%' % model_underscore))
 
     if drop_table:
         cr.execute('DROP TABLE "{0}" CASCADE'.format(table_of_model(cr, model)))
