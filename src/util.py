@@ -284,6 +284,15 @@ def new_module_dep(cr, module, new_dep):
                                             AND name=%s)
                 """, (new_dep, module, new_dep))
 
+def remove_module_deps(cr, module, old_deps):
+    assert isinstance(old_deps, tuple)
+    cr.execute("""DELETE FROM ir_module_module_dependency
+                        WHERE module_id = (SELECT id
+                                             FROM ir_module_module
+                                            WHERE name=%s)
+                          AND name IN %s
+               """, (module, old_deps))
+
 def new_module(cr, module, auto_install_deps=None):
     if auto_install_deps:
         cr.execute("""SELECT count(1)
