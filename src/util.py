@@ -284,6 +284,19 @@ def new_module_dep(cr, module, new_dep):
                                             AND name=%s)
                 """, (new_dep, module, new_dep))
 
+def new_module(cr, module, auto_install_deps=None):
+    if auto_install_deps:
+        cr.execute("""SELECT count(1)
+                        FROM ir_module_module
+                       WHERE name IN %s
+                         AND state IN %s
+                   """, (auto_install_deps, ('to install', 'to upgrade')))
+
+        state = 'to install' if cr.fetchone()[0] == len(auto_install_deps) else 'uninstalled'
+    else:
+        state = 'uninstalled'
+    cr.execute("INSERT INTO ir_module_module(name, state) VALUES (%s, %s)", (module, state))
+
 def column_exists(cr, table, column):
     return column_type(cr, table, column) is not None
 
