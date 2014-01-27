@@ -415,7 +415,7 @@ def delete_model(cr, model, drop_table=True):
     if drop_table:
         cr.execute('DROP TABLE "{0}" CASCADE'.format(table_of_model(cr, model)))
 
-def rename_model(cr, old, new, rename_table=True):
+def rename_model(cr, old, new, rename_table=True, module=None):
     # NOTE keep record ids.
     if rename_table:
         cr.execute('ALTER TABLE "{0}" RENAME TO "{1}"'.format(table_of_model(cr, old), table_of_model(cr, new)))
@@ -436,6 +436,25 @@ def rename_model(cr, old, new, rename_table=True):
                            WHERE {column} LIKE '{old},%'
                        """.format(table=table, column=column, new=new, old=old))
 
+    old_u = old.replace('.', '_')
+    new_u = new.replace('.', '_')
+
+    mod_reassign_query = ""
+    mod_reassign_data = ()
+    if module:
+        mod_reassign_query = ", module=%s "
+        mod_reassign_data = (module,)
+
+    cr.execute("UPDATE ir_model_data SET name=%s" + mod_reassign_query + " WHERE model=%s AND name=%s",
+               ('model_%s' % new_u,) + mod_reassign_data + ('ir.model', 'model_%s' % old_u))
+
+    cr.execute("""UPDATE ir_model_data
+                     SET name=%%s || substring(name from %%s)
+                         %s
+                   WHERE model=%%s
+                     AND name LIKE %%s
+               """ % mod_reassign_query,
+               ('field_%s_' % new_u, len(old_u) + 7) + mod_reassign_data + ('ir.model.fields', 'field_%s_%%' % old_u))
 
 def replace_record_references(cr, old, new):
     """replace all indirect references of a record to another"""
