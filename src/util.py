@@ -217,6 +217,7 @@ def remove_module(cr, module):
 
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
+    cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
 
 def rename_module(cr, old, new):
     cr.execute("UPDATE ir_module_module SET name=%s WHERE name=%s", (new, old))
