@@ -495,8 +495,8 @@ def replace_record_references(cr, old, new):
         table = table_of_model(cr, model)
         if column_exists(cr, table, column):
             cr.execute("""UPDATE "{table}"
-                             SET {column}=%s
-                           WHERE {column}=%s'
+                             SET "{column}"=%s
+                           WHERE "{column}"=%s
                        """.format(table=table, column=column),
                        (comma_new, comma_old))
 
