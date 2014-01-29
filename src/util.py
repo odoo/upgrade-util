@@ -488,6 +488,8 @@ def replace_record_references(cr, old, new):
                    """.format(table=table, res_model=res_model, res_id=res_id),
                    new + old)
 
+    comma_new = '%s,%d' % new
+    comma_old = '%s,%d' % old
     cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
@@ -496,7 +498,7 @@ def replace_record_references(cr, old, new):
                              SET {column}=%s
                            WHERE {column}=%s'
                        """.format(table=table, column=column),
-                       (','.join(new), ','.join(old)))
+                       (comma_new, comma_old))
 
 
 def rst2html(rst):
