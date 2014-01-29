@@ -429,6 +429,7 @@ def rename_model(cr, old, new, rename_table=True, module=None):
                         FROM information_schema.table_constraints
                        WHERE table_name=%s
                          AND constraint_type!=%s
+                         AND constraint_name !~ '^[0-9_]+_not_null$'
                    """, (new_table, 'PRIMARY KEY'))
         for const, in cr.fetchall():
             cr.execute("DELETE FROM ir_model_constraint WHERE name=%s", (const,))
