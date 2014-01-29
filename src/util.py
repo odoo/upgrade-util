@@ -417,9 +417,23 @@ def delete_model(cr, model, drop_table=True):
         cr.execute('DROP TABLE "{0}" CASCADE'.format(table_of_model(cr, model)))
 
 def rename_model(cr, old, new, rename_table=True, module=None):
-    # NOTE keep record ids.
     if rename_table:
-        cr.execute('ALTER TABLE "{0}" RENAME TO "{1}"'.format(table_of_model(cr, old), table_of_model(cr, new)))
+        old_table = table_of_model(cr, old)
+        new_table = table_of_model(cr, new)
+        cr.execute('ALTER TABLE "{0}" RENAME TO "{1}"'.format(old_table, new_table))
+        cr.execute('ALTER SEQUENCE "{0}_id_seq" RENAME TO "{1}_id_seq"'.format(old_table, new_table))
+        cr.execute('ALTER TABLE "{0}" DROP CONSTRAINT "{1}_pkey"'.format(new_table, old_table))
+        cr.execute('ALTER TABLE "{0}" ADD PRIMARY KEY(id)'.format(new_table))
+
+        # DELETE all constraints and indexes (ignore the PK), ORM will recreate them.
+        cr.execute("""SELECT constraint_name
+                        FROM information_schema.table_constraints
+                       WHERE table_name=%s
+                         AND constraint_type!=%s
+                   """, (new_table, 'PRIMARY KEY'))
+        for const, in cr.fetchall():
+            cr.execute("DELETE FROM ir_model_constraint WHERE name=%s", (const,))
+            cr.execute('ALTER TABLE "{0}" DROP CONSTRAINT "{1}"'.format(new_table, const))
 
     updates = [('wkf', 'osv')] + [r[:2] for r in res_model_res_id(cr)]
 
