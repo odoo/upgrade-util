@@ -353,7 +353,7 @@ def rename_field(cr, model, old, new):
         cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (name, 'ir.model.fields', fid))
     table = table_of_model(cr, model)
     if column_exists(cr, table, old):
-        cr.execute('ALTER TABLE "{0}" ALTER COLUMN "{1}" RENAME TO "{2}"'.format(table, old, new))
+        cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
 
 def res_model_res_id(cr, filtered=True):
