@@ -204,7 +204,7 @@ def remove_module(cr, module):
         if model == 'ir.model':
             model_ids = tuple(res_ids)
         else:
-            cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table_of_model(model), (tuple(res_ids),))
+            cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table_of_model(cr, model), (tuple(res_ids),))
 
     # remove relations
     cr.execute("""SELECT name
