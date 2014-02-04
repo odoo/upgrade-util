@@ -190,9 +190,15 @@ def remove_module(cr, module):
     # delete data
     model_ids = tuple()
     cr.execute("""SELECT model, array_agg(res_id)
-                    FROM ir_model_data
+                    FROM ir_model_data d
+                   WHERE NOT EXISTS (SELECT 1
+                                       FROM ir_model_data
+                                      WHERE id != d.id
+                                        AND res_id = d.res_id
+                                        AND model = d.model
+                                        AND module != d.module)
+                     AND module=%s
                 GROUP BY model
-                  HAVING array_agg(module) = ARRAY[%s::varchar]
                """, (module,))
     for model, res_ids in cr.fetchall():
         if model == 'ir.model':
