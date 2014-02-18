@@ -16,6 +16,9 @@ from openerp.tools.mail import html_sanitize
 
 _logger = logging.getLogger(__name__)
 
+_INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
+
+
 @contextmanager
 def savepoint(cr):
     name = hex(int(time.time() * 1000))[1:]
@@ -237,7 +240,7 @@ def force_install_module(cr, module, if_installed=None):
         subquery = """AND EXISTS(SELECT 1 FROM ir_module_module
                                   WHERE name IN %s
                                     AND state IN %s)"""
-        subparams = (tuple(if_installed), ('to install', 'to upgrade'))
+        subparams = (tuple(if_installed), _INSTALLED_MODULE_STATES)
 
     cr.execute("""UPDATE ir_module_module
                      SET state=CASE
@@ -261,8 +264,6 @@ def new_module_dep(cr, module, new_dep):
     # One new dep at a time
     # Update new_dep state depending of module state
 
-    states_mod = ('installed', 'to install', 'to upgrade')
-
     cr.execute("""UPDATE ir_module_module
                      SET state=CASE
                                  WHEN state = %s
@@ -279,7 +280,7 @@ def new_module_dep(cr, module, new_dep):
                                 )
                """, ('to remove', 'to upgrade',
                      'uninstalled', 'to install',
-                     new_dep, module, states_mod))
+                     new_dep, module, _INSTALLED_MODULE_STATES))
 
     cr.execute("""INSERT INTO ir_module_module_dependency(name, module_id)
                        SELECT %s, id
@@ -306,7 +307,7 @@ def new_module(cr, module, auto_install_deps=None):
                         FROM ir_module_module
                        WHERE name IN %s
                          AND state IN %s
-                   """, (auto_install_deps, ('to install', 'to upgrade')))
+                   """, (auto_install_deps, _INSTALLED_MODULE_STATES))
 
         state = 'to install' if cr.fetchone()[0] == len(auto_install_deps) else 'uninstalled'
     else:
