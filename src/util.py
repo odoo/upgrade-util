@@ -517,11 +517,11 @@ def rst2html(rst):
 _DEFAULT_HEADER = """
 <p>OpenERP has been upgraded to version {version}.</p>
 <h2>What's new in this upgrade?</h2>
-""".format(version=release.version)
+"""
 
 _DEFAULT_FOOTER = "<p>Enjoy the new OpenERP Online!</p>"
 
-def announce(cr, msg, format='rst', header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
+def announce(cr, version, msg, format='rst', header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
     registry = RegistryManager.get(cr.dbname)
     IMD = registry['ir.model.data']
     user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID)
@@ -537,7 +537,7 @@ def announce(cr, msg, format='rst', header=_DEFAULT_HEADER, footer=_DEFAULT_FOOT
     if format == 'rst':
         msg = rst2html(msg)
 
-    message = (header or "") + msg + (footer or "")
+    message = ((header or "") + msg + (footer or "")).format(version=version)
     _logger.debug(message)
 
     try:
