@@ -158,6 +158,20 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
     return res_id
 
+def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
+    """
+        Fix broken m2o relations.
+        If any `column` not present in `dst_table`, remove column from `src_table` in
+        order to force recomputation of the function field
+
+        WARN: only call this method on m2o function/related fields!!
+    """
+    cr.execute("""SELECT count(1)
+                    FROM "{src_table}"
+                   WHERE "{column}" NOT IN (SELECT id FROM "{dst_table}")
+               """.format(src_table=src_table, column=column, dst_table=dst_table))
+    if cr.fetchone()[0]:
+        remove_column(cr, src_table, column)
 
 def remove_module(cr, module):
     """ Uninstall the module and delete references to it
