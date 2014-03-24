@@ -335,6 +335,10 @@ def create_column(cr, table, column, definition):
     else:
         cr.execute("""ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition))
 
+def remove_column(cr, table, column):
+    if column_exists(cr, table, column):
+        cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"'.format(table, column))
+
 def table_exists(cr, table):
     cr.execute("""SELECT 1
                     FROM information_schema.tables
@@ -349,8 +353,7 @@ def remove_field(cr, model, fieldname):
     if fids:
         cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ('ir.model.fields', fids))
     table = table_of_model(cr, model)
-    if column_exists(cr, table, fieldname):
-        cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"'.format(table, fieldname))
+    remove_column(cr, table, fieldname)
 
 def rename_field(cr, model, old, new):
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (model, new, old))
