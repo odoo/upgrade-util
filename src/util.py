@@ -166,6 +166,8 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
 
         WARN: only call this method on m2o function/related fields!!
     """
+    if not column_exists(cr, src_table, column):
+        return
     cr.execute("""SELECT count(1)
                     FROM "{src_table}"
                    WHERE "{column}" NOT IN (SELECT id FROM "{dst_table}")
