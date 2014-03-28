@@ -173,7 +173,7 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
                    WHERE "{column}" NOT IN (SELECT id FROM "{dst_table}")
                """.format(src_table=src_table, column=column, dst_table=dst_table))
     if cr.fetchone()[0]:
-        remove_column(cr, src_table, column)
+        remove_column(cr, src_table, column, cascade=True)
 
 def remove_module(cr, module):
     """ Uninstall the module and delete references to it
@@ -351,9 +351,10 @@ def create_column(cr, table, column, definition):
     else:
         cr.execute("""ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition))
 
-def remove_column(cr, table, column):
+def remove_column(cr, table, column, cascade=False):
     if column_exists(cr, table, column):
-        cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"'.format(table, column))
+        drop_cascade = " CASCADE" if cascade else ""
+        cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"{2}'.format(table, column, drop_cascade))
 
 def table_exists(cr, table):
     cr.execute("""SELECT 1
