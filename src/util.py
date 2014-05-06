@@ -7,9 +7,8 @@ from textwrap import dedent
 import time
 
 from docutils.core import publish_string
-#import psycopg2
 
-from openerp import release, SUPERUSER_ID
+from openerp import SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
 from openerp.modules.registry import RegistryManager
 from openerp.tools.mail import html_sanitize
@@ -425,8 +424,8 @@ def res_model_res_id(cr, filtered=True):
         ('ir.model.fields.anonymization.migration.fix', 'model_name', None),
         ('base_import.import', 'res_model', None),
         ('email.template', 'model', None),      # stored related
-#        ('mail.alias', 'alias_model_id.model', 'alias_force_thread_id'),
-#        ('mail.alias', 'alias_parent_model_id.model', 'alias_parent_thread_id'),
+        # ('mail.alias', 'alias_model_id.model', 'alias_force_thread_id'),
+        # ('mail.alias', 'alias_parent_model_id.model', 'alias_parent_thread_id'),
         ('mail.followers', 'res_model', 'res_id'),
         ('mail.message.subtype', 'res_model', None),
         ('mail.message', 'model', 'res_id'),
