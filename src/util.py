@@ -364,6 +364,25 @@ def table_exists(cr, table):
                """, (table,))
     return cr.fetchone() is not None
 
+def get_fk(cr, table):
+    q = """SELECT quote_ident(cl1.relname) as table,
+                  quote_ident(att1.attname) as column
+             FROM pg_constraint as con, pg_class as cl1, pg_class as cl2,
+                  pg_attribute as att1, pg_attribute as att2
+            WHERE con.conrelid = cl1.oid
+              AND con.confrelid = cl2.oid
+              AND array_lower(con.conkey, 1) = 1
+              AND con.conkey[1] = att1.attnum
+              AND att1.attrelid = cl1.oid
+              AND cl2.relname = %s
+              AND att2.attname = 'id'
+              AND array_lower(con.confkey, 1) = 1
+              AND con.confkey[1] = att2.attnum
+              AND att2.attrelid = cl2.oid
+              AND con.contype = 'f'
+    """
+    return cr.execute(q, (table,))
+
 def remove_field(cr, model, fieldname):
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
     fids = tuple(map(itemgetter(0), cr.fetchall()))
@@ -499,10 +518,16 @@ def rename_model(cr, old, new, rename_table=True, module=None):
                ('field_%s_' % new_u, len(old_u) + 7) + mod_reassign_data + ('ir.model.fields', 'field_%s_%%' % old_u))
 
 def replace_record_references(cr, old, new):
-    """replace all indirect references of a record to another"""
+    """replace all (in)direct references of a record by another"""
     # TODO update workflow instances?
     assert isinstance(old, tuple) and len(old) == 2
     assert isinstance(new, tuple) and len(new) == 2
+
+    if old[0] == new[0]:
+        # same model, also change direct references (fk)
+        for table, fk in get_fk(cr, table_of_model(cr, old[0])):
+            cr.execute('UPDATE {table} SET {fk}=%s WHERE {fk}=%s'.format(table=table, fk=fk),
+                       (new[1], old[1]))
 
     for model, res_model, res_id in res_model_res_id(cr):
         if not res_id:
