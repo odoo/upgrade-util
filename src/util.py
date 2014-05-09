@@ -380,7 +380,8 @@ def get_fk(cr, table):
               AND att2.attrelid = cl2.oid
               AND con.contype = 'f'
     """
-    return cr.execute(q, (table,))
+    cr.execute(q, (table,))
+    return cr.fetchall()
 
 def remove_field(cr, model, fieldname):
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
