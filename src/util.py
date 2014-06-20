@@ -383,6 +383,8 @@ def get_fk(cr, table):
     cr.execute(q, (table,))
     return cr.fetchall()
 
+
+
 def remove_field(cr, model, fieldname):
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
     fids = tuple(map(itemgetter(0), cr.fetchall()))
@@ -390,6 +392,12 @@ def remove_field(cr, model, fieldname):
         cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ('ir.model.fields', fids))
     table = table_of_model(cr, model)
     remove_column(cr, table, fieldname)
+
+def move_field_to_other_module(cr, model, fieldname, new_module):
+    cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, fieldname))
+    fids = tuple(map(itemgetter(0), cr.fetchall()))
+    if fids:
+        cr.execute("UPDATE ir_model_data SET module=%s WHERE model=%s and res_id IN %s", (new_module, model, fids))
 
 def rename_field(cr, model, old, new):
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (model, new, old))
