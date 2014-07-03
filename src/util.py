@@ -17,6 +17,8 @@ _logger = logging.getLogger(__name__)
 
 _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 
+class MigrationError(Exception):
+    pass
 
 @contextmanager
 def savepoint(cr):
