@@ -472,7 +472,28 @@ def delete_model(cr, model, drop_table=True):
     if drop_table:
         cr.execute('DROP TABLE "{0}" CASCADE'.format(table_of_model(cr, model)))
 
-def rename_model(cr, old, new, rename_table=True, module=None):
+
+def move_model(cr, model, from_module, to_module, move_data=False):
+    model_u = model.replace('.', '_')
+    cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s AND model=%s AND name=%s",
+               (to_module, from_module, 'ir.model', 'model_%s' % model_u))
+
+    cr.execute("""UPDATE ir_model_data
+                     SET module=%s
+                   WHERE module=%s
+                     AND model=%s
+                     AND name LIKE %s
+               """, (to_module, from_module, 'ir.model.fields', 'field_%s_%%' % model_u))
+
+    if move_data:
+        cr.execute("""UPDATE ir_model_data
+                         SET module=%s
+                       WHERE module=%s
+                         AND model=%s
+                   """, (to_module, from_module, model))
+
+
+def rename_model(cr, old, new, rename_table=True):
     if rename_table:
         old_table = table_of_model(cr, old)
         new_table = table_of_model(cr, new)
@@ -510,22 +531,15 @@ def rename_model(cr, old, new, rename_table=True, module=None):
     old_u = old.replace('.', '_')
     new_u = new.replace('.', '_')
 
-    mod_reassign_query = ""
-    mod_reassign_data = ()
-    if module:
-        mod_reassign_query = ", module=%s "
-        mod_reassign_data = (module,)
-
-    cr.execute("UPDATE ir_model_data SET name=%s" + mod_reassign_query + " WHERE model=%s AND name=%s",
-               ('model_%s' % new_u,) + mod_reassign_data + ('ir.model', 'model_%s' % old_u))
+    cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND name=%s",
+               ('model_%s' % new_u, 'ir.model', 'model_%s' % old_u))
 
     cr.execute("""UPDATE ir_model_data
-                     SET name=%%s || substring(name from %%s)
-                         %s
-                   WHERE model=%%s
-                     AND name LIKE %%s
-               """ % mod_reassign_query,
-               ('field_%s_' % new_u, len(old_u) + 7) + mod_reassign_data + ('ir.model.fields', 'field_%s_%%' % old_u))
+                     SET name=%s || substring(name from %s)
+                   WHERE model=%s
+                     AND name LIKE %s
+               """, ('field_%s_' % new_u, len(old_u) + 7, 'ir.model.fields', 'field_%s_%%' % old_u))
+
 
 def replace_record_references(cr, old, new):
     """replace all (in)direct references of a record by another"""
