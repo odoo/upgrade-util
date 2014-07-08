@@ -90,6 +90,17 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
         # TODO delete attachments & workflow instances
         pass
 
+def rename_xmlid(cr, old, new):
+    if '.' not in old or '.' not in new:
+        raise ValueError('Please use fully qualified name <module>.<name>')
+
+    old_module, _, old_name = old.partition('.')
+    new_module, _, new_name = new.partition('.')
+    cr.execute("""UPDATE ir_model_data
+                     SET module=%s, name=%s
+                   WHERE module=%s AND name=%s
+               """, (new_module, new_name, old_module, old_name))
+
 def ref(cr, xmlid):
     if '.' not in xmlid:
         raise ValueError('Please use fully qualified name <module>.<name>')
