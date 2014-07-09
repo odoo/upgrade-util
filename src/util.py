@@ -266,7 +266,8 @@ def force_install_module(cr, module, if_installed=None):
                                  WHEN state = %s
                                    THEN %s
                                  ELSE state
-                               END
+                               END,
+                        demo=(select demo from ir_module_module where name='base')
                    WHERE name=%s
                """ + subquery + """
                RETURNING state
@@ -288,7 +289,8 @@ def new_module_dep(cr, module, new_dep):
                                  WHEN state = %s
                                    THEN %s
                                  ELSE state
-                               END
+                               END,
+                    demo=(select demo from ir_module_module where name='base')
                    WHERE name=%s
                      AND EXISTS(SELECT id
                                   FROM ir_module_module
@@ -329,7 +331,7 @@ def new_module(cr, module, auto_install_deps=None):
         state = 'to install' if cr.fetchone()[0] == len(auto_install_deps) else 'uninstalled'
     else:
         state = 'uninstalled'
-    cr.execute("INSERT INTO ir_module_module(name, state) VALUES (%s, %s)", (module, state))
+    cr.execute("INSERT INTO ir_module_module(name, state, demo) VALUES (%s, %s, (select demo from ir_module_module where name='base'))", (module, state))
 
 def column_exists(cr, table, column):
     return column_type(cr, table, column) is not None
@@ -384,7 +386,6 @@ def get_fk(cr, table):
     """
     cr.execute(q, (table,))
     return cr.fetchall()
-
 
 
 def remove_field(cr, model, fieldname):
