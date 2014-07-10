@@ -407,11 +407,14 @@ def remove_field(cr, model, fieldname):
     table = table_of_model(cr, model)
     remove_column(cr, table, fieldname)
 
-def move_field_to_other_module(cr, model, fieldname, new_module):
-    cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, fieldname))
-    fids = tuple(map(itemgetter(0), cr.fetchall()))
-    if fids:
-        cr.execute("UPDATE ir_model_data SET module=%s WHERE model=%s and res_id IN %s", (new_module, model, fids))
+def move_field_to_module(cr, model, fieldname, old_module, new_module):
+    name = 'field_%s_%s' % (model.replace('.', '_'), fieldname)
+    cr.execute("""UPDATE ir_model_data
+                     SET module=%s
+                   WHERE model=%s
+                     AND name=%s
+                     AND module=%s
+               """, (new_module, 'ir.model.fields', name, old_module))
 
 def rename_field(cr, model, old, new):
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (model, new, old))
