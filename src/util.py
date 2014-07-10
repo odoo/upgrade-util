@@ -423,6 +423,55 @@ def rename_field(cr, model, old, new):
     if column_exists(cr, table, old):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
+def convert_field_to_property(cr, model, field, type,
+                              default_value, default_value_ref=None,
+                              company_field='company_id'):
+    type2field = {
+        'char': 'value_text',
+        'float': 'value_float',
+        'boolean': 'value_integer',
+        'integer': 'value_integer',
+        'text': 'value_text',
+        'binary': 'value_binary',
+        'many2one': 'value_reference',
+        'date': 'value_datetime',
+        'datetime': 'value_datetime',
+        'selection': 'value_text',
+    }
+
+    assert type in type2field
+
+    cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, field))
+    [fields_id] = cr.fetchone()
+
+    table = table_of_model(cr, model)
+
+    cr.execute("""INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
+                    SELECT %s, %s, %s, {company_field}, CONCAT('{model},', id), {field}
+                      FROM {table}
+                     WHERE {field} != %s
+               """.format(value_field=type2field[type], company_field=company_field, model=model,
+                          table=table, field=field),
+               (field, type, fields_id, default_value)
+               )
+    # default property
+    if default_value:
+        cr.execute("""INSERT INTO ir_property(name, type, fields_id, {value_field})
+                           VALUES (%s, %s, %s, %s)
+                        RETURNING id
+                   """.format(value_field=type2field[type]),
+                   (field, type, fields_id, default_value)
+                   )
+        [prop_id] = cr.fetchone()
+        if default_value_ref:
+            module, _, xid = default_value_ref.partition('.')
+            cr.execute("""INSERT INTO ir_model_data
+                                      (module, name, model, res_id, noupdate)
+                               VALUES (%s, %s, %s, %s, %s)
+                       """, (module, xid, 'ir.property', prop_id, True))
+
+    remove_column(cr, table, field, cascade=True)
+
 
 def res_model_res_id(cr, filtered=True):
     each = [
