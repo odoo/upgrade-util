@@ -31,6 +31,10 @@ def savepoint(cr):
         cr.execute('ROLLBACK TO SAVEPOINT %s' % (name,))
         raise
 
+def pg_array_uniq(a, drop_null=False):
+    dn = "WHERE x IS NOT NULL" if drop_null else ""
+    return "ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn)
+
 
 def table_of_model(cr, model):
     return {
