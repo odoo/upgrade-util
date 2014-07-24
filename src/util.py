@@ -280,6 +280,12 @@ def rename_module(cr, old, new):
     cr.execute("UPDATE ir_module_module SET name=%s WHERE name=%s", (new, old))
     cr.execute("UPDATE ir_module_module_dependency SET name=%s WHERE name=%s", (new, old))
     cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s", (new, old))
+    cr.execute("""\
+        UPDATE ir_model_data SET name='module_'||%s
+        WHERE name='module_'%s
+            AND module = 'base'
+            AND model = 'ir.module.module'""",
+              (new, old))
 
 def force_install_module(cr, module, if_installed=None):
     subquery = ""
@@ -362,7 +368,20 @@ def new_module(cr, module, auto_install_deps=None):
         state = 'to install' if cr.fetchone()[0] == len(auto_install_deps) else 'uninstalled'
     else:
         state = 'uninstalled'
-    cr.execute("INSERT INTO ir_module_module(name, state, demo) VALUES (%s, %s, (select demo from ir_module_module where name='base'))", (module, state))
+    cr.execute("""\
+        INSERT INTO ir_module_module (
+            name, state, demo
+        ) VALUES (
+            %s, %s, (select demo from ir_module_module where name='base'))
+        RETURNING id""", (module, state))
+    new_id, = cr.fetchone()
+
+    cr.execute("""\
+        INSERT INTO ir_model_data (
+            name, module, noupdate, model, res_id
+        ) VALUES (
+            'module_'||%s, 'base', 't', 'ir.module.module', %s
+        )""", (module, new_id))
 
 def column_exists(cr, table, column):
     return column_type(cr, table, column) is not None
