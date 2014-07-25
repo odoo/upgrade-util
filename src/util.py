@@ -715,4 +715,4 @@ def announce(cr, version, msg, format='rst', header=_DEFAULT_HEADER, footer=_DEF
     try:
         poster.message_post(message, partner_ids=[user.partner_id.id], type='notification', subtype='mail.mt_comment')
     except Exception:
-        _logger.warning('Cannot annouce new version', exc_info=True)
+        _logger.warning('Cannot announce new version', exc_info=True)
