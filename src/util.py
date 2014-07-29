@@ -693,18 +693,22 @@ _DEFAULT_HEADER = """
 
 _DEFAULT_FOOTER = "<p>Enjoy the new OpenERP Online!</p>"
 
-def announce(cr, version, msg, format='rst', header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
+def announce(cr, version, msg, format='rst', recipient='mail.group_all_employees',
+             header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
     registry = RegistryManager.get(cr.dbname)
     IMD = registry['ir.model.data']
     user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID)
-    try:
-        poster = IMD.get_object(cr, SUPERUSER_ID, 'mail', 'group_all_employees')
-    except ValueError:
-        # Cannot found group, post the message on the wall of the admin
-        poster = user
 
-    if not poster.exists():
-        return
+    # default recipient
+    poster = user.message_post
+
+    if recipient:
+        rmod, _, rxid = recipient.partition('.')
+        try:
+            poster = IMD.get_object(cr, SUPERUSER_ID, rmod, rxid).message_post
+        except (ValueError, AttributeError):
+            # Cannot found record, post the message on the wall of the admin
+            pass
 
     if format == 'rst':
         msg = rst2html(msg)
@@ -713,6 +717,7 @@ def announce(cr, version, msg, format='rst', header=_DEFAULT_HEADER, footer=_DEF
     _logger.debug(message)
 
     try:
-        poster.message_post(message, partner_ids=[user.partner_id.id], type='notification', subtype='mail.mt_comment')
+        poster(body=message, partner_ids=[user.partner_id.id],
+               type='notification', subtype='mail.mt_comment')
     except Exception:
-        _logger.warning('Cannot announce new version', exc_info=True)
+        _logger.warning('Cannot announce message', exc_info=True)
