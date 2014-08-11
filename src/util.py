@@ -558,15 +558,47 @@ def res_model_res_id(cr, filtered=True):
 
         yield model, res_model, res_id
 
+def _rm_refs(cr, model, ids=None):
+    if ids is None:
+        match = 'like %s'
+        needle = model + ',%'
+    else:
+        if not ids:
+            return
+        match = 'in %s'
+        needle = tuple('{0},{1}'.format(model, i) for i in ids)
+
+    cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
+    for ref_model, ref_column in cr.fetchall():
+        table = table_of_model(cr, ref_model)
+        if column_exists(cr, table, ref_column):
+            query = 'DELETE FROM "{0}" WHERE "{1}" {2}'.format(table, ref_column, match)
+            cr.execute(query, (needle,))
+            # TODO make it recursive?
+
+    if model.startswith('ir.action'):
+        query = 'DELETE FROM ir_values WHERE key=%s AND value {0}'.format(match)
+        cr.execute(query, ('action', needle))
+        # TODO make it recursive?
+
 def delete_model(cr, model, drop_table=True):
     model_underscore = model.replace('.', '_')
+
+    # remove references
+    for dest_model, res_model, _ in res_model_res_id(cr):
+        table = table_of_model(cr, dest_model)
+        query = 'DELETE FROM "{0}" WHERE "{1}"=%s RETURNING id'.format(table, res_model)
+        cr.execute(query, (model,))
+        ids = map(itemgetter(0), cr.fetchall())
+        _rm_refs(cr, dest_model, ids)
+
+    _rm_refs(cr, model)
+
     cr.execute("SELECT id FROM ir_model WHERE model=%s", (model,))
     [mod_id] = cr.fetchone() or [None]
     if mod_id:
         cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
-    cr.execute("DELETE FROM ir_model WHERE model=%s", (model,))
-    cr.execute("DELETE FROM ir_model_data WHERE model=%s", (model,))
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name=%s",
                ('ir.model', 'model_%s' % model_underscore))
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name like %s",
