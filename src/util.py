@@ -586,6 +586,8 @@ def delete_model(cr, model, drop_table=True):
 
     # remove references
     for dest_model, res_model, _ in res_model_res_id(cr):
+        if dest_model == 'ir.model':
+            continue
         table = table_of_model(cr, dest_model)
         query = 'DELETE FROM "{0}" WHERE "{1}"=%s RETURNING id'.format(table, res_model)
         cr.execute(query, (model,))
@@ -599,6 +601,7 @@ def delete_model(cr, model, drop_table=True):
     if mod_id:
         cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
+        cr.execute("DELETE FROM ir_model WHERE id=%s", (mod_id,))
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name=%s",
                ('ir.model', 'model_%s' % model_underscore))
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name like %s",
