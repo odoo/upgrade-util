@@ -212,9 +212,11 @@ def remove_module(cr, module):
 
     for rel in relations:
         rel_name, rel_model = rel
-        cr.execute("""\
-            select count(*) from ir_model_relation where name = %s and model = %s""",
-        [rel_name, rel_model])
+        cr.execute("""SELECT count(1)
+                        FROM ir_model_relation
+                       WHERE name = %s
+                         AND model = %s
+                   """, [rel_name, rel_model])
         other_relation_exists, = cr.fetchone()
         if not other_relation_exists:
             if table_exists(cr, rel_name):
@@ -280,12 +282,14 @@ def rename_module(cr, old, new):
     cr.execute("UPDATE ir_module_module SET name=%s WHERE name=%s", (new, old))
     cr.execute("UPDATE ir_module_module_dependency SET name=%s WHERE name=%s", (new, old))
     cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s", (new, old))
-    cr.execute("""\
-        UPDATE ir_model_data SET name='module_'||%s
-        WHERE name='module_'%s
-            AND module = 'base'
-            AND model = 'ir.module.module'""",
-              (new, old))
+    mod_old = 'module_' + old
+    mod_new = 'module_' + new
+    cr.execute("""UPDATE ir_model_data
+                     SET name = %s
+                   WHERE name = %s
+                     AND module = %s
+                     AND model = %s
+               """, (mod_new, mod_old, 'base', 'ir.module.module'))
 
 def force_install_module(cr, module, if_installed=None):
     subquery = ""
