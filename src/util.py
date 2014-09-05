@@ -5,6 +5,7 @@ import logging
 from operator import itemgetter
 from textwrap import dedent
 import time
+import lxml
 
 from docutils.core import publish_string
 
@@ -12,6 +13,7 @@ from openerp import SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
 from openerp.modules.registry import RegistryManager
 from openerp.tools.mail import html_sanitize
+from openerp.tools import UnquoteEvalContext
 
 _logger = logging.getLogger(__name__)
 
@@ -241,7 +243,7 @@ def remove_module(cr, module):
                """, (mod_id,))
 
     # delete data
-    model_ids = tuple()
+    model_ids, field_ids = (), ()
     cr.execute("""SELECT model, array_agg(res_id)
                     FROM ir_model_data d
                    WHERE NOT EXISTS (SELECT 1
@@ -256,8 +258,44 @@ def remove_module(cr, module):
     for model, res_ids in cr.fetchall():
         if model == 'ir.model':
             model_ids = tuple(res_ids)
+        elif model == 'ir.model.fields':
+            field_ids = tuple(res_ids)
         else:
             cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table_of_model(cr, model), (tuple(res_ids),))
+
+    # clean up dashboards
+    if field_ids:
+        # clean dashboards group_by from removed columns
+        cr.execute("""\
+            SELECT      f.model, array_agg(f.name), array_agg(aw.id)
+            FROM        ir_model_fields f
+                JOIN    ir_act_window aw
+                ON      aw.res_model = f.model
+            WHERE       f.id IN %s
+            AND         NOT f.model_id = ANY(%s)
+            GROUP BY    f.model
+            """, [field_ids, list(model_ids)])
+        for model, fields, actions in cr.fetchall():
+            cr.execute("""\
+                SELECT  id, arch
+                FROM    ir_ui_view_custom
+                WHERE   arch ~ %s
+                """, ["name=[\"'](%s)[\"']" % '|'.join(map(str, actions))])
+            for id, arch in ((x, lxml.etree.fromstring(y))
+                             for x, y in cr.fetchall()):
+                for action in arch.iterfind('.//action'):
+                    context = eval(action.get('context', '{}'),
+                                   UnquoteEvalContext())
+                    if context.get('group_by'):
+                        context['group_by'] = list(
+                            set(context['group_by']) - set(fields))
+                        action.set('context', unicode(context))
+                cr.execute("""\
+                    UPDATE  ir_ui_view_custom
+                    SET     arch = %s
+                    WHERE   id = %s
+                    """, [lxml.etree.tostring(arch), id])
+        cr.execute("DELETE FROM ir_model_fields WHERE id IN %s", [field_ids])
 
     # remove relations
     cr.execute("""SELECT name
