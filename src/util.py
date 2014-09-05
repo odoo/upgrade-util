@@ -765,11 +765,11 @@ def rst2html(rst):
 
 
 _DEFAULT_HEADER = """
-<p>OpenERP has been upgraded to version {version}.</p>
+<p>Odoo has been upgraded to version {version}.</p>
 <h2>What's new in this upgrade?</h2>
 """
 
-_DEFAULT_FOOTER = "<p>Enjoy the new OpenERP Online!</p>"
+_DEFAULT_FOOTER = "<p>Enjoy the new Odoo Online!</p>"
 
 def announce(cr, version, msg, format='rst', recipient='mail.group_all_employees',
              header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
