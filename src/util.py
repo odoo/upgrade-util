@@ -122,6 +122,20 @@ def ref(cr, xmlid):
         return data[0]
     return None
 
+
+def force_noupdate(cr, xmlid, noupdate=True):
+    if '.' not in xmlid:
+        raise ValueError('Please use fully qualified name <module>.<name>')
+
+    module, _, name = xmlid.partition('.')
+    cr.execute("""UPDATE ir_model_data
+                     SET noupdate = %s
+                   WHERE module = %s
+                     AND name = %s
+                """, (noupdate, module, name))
+    return cr.rowcount
+
+
 def ensure_xmlid_match_record(cr, xmlid, model, values):
     if '.' not in xmlid:
         raise ValueError('Please use fully qualified name <module>.<name>')
