@@ -123,7 +123,7 @@ def ref(cr, xmlid):
     return None
 
 
-def force_noupdate(cr, xmlid, noupdate=True):
+def force_noupdate(cr, xmlid, noupdate=True, warn=False):
     if '.' not in xmlid:
         raise ValueError('Please use fully qualified name <module>.<name>')
 
@@ -132,7 +132,10 @@ def force_noupdate(cr, xmlid, noupdate=True):
                      SET noupdate = %s
                    WHERE module = %s
                      AND name = %s
-                """, (noupdate, module, name))
+                     AND noupdate != %s
+                """, (noupdate, module, name, noupdate))
+    if noupdate is False and cr.rowcount and warn:
+        _logger.warning('Customizations on `%s` might be lost!', xmlid)
     return cr.rowcount
 
 
