@@ -792,7 +792,11 @@ def announce(cr, version, msg, format='rst', recipient='mail.group_all_employees
              header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
     registry = RegistryManager.get(cr.dbname)
     IMD = registry['ir.model.data']
-    user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID)
+
+    # do not notify early, in case the migration fails halfway through
+    ctx = {'mail_notify_force_send': False}
+
+    user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID, context=ctx)
 
     # default recipient
     poster = user.message_post
@@ -800,9 +804,9 @@ def announce(cr, version, msg, format='rst', recipient='mail.group_all_employees
     if recipient:
         rmod, _, rxid = recipient.partition('.')
         try:
-            poster = IMD.get_object(cr, SUPERUSER_ID, rmod, rxid).message_post
+            poster = IMD.get_object(cr, SUPERUSER_ID, rmod, rxid, context=ctx).message_post
         except (ValueError, AttributeError):
-            # Cannot found record, post the message on the wall of the admin
+            # Cannot find record, post the message on the wall of the admin
             pass
 
     if format == 'rst':
