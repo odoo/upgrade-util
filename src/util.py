@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 import logging
 from operator import itemgetter
+import sys
 from textwrap import dedent
 import time
 import lxml
@@ -12,6 +13,7 @@ from docutils.core import publish_string
 from openerp import SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
 from openerp.modules.registry import RegistryManager
+from openerp.sql_db import db_connect
 from openerp.tools.mail import html_sanitize
 from openerp.tools import UnquoteEvalContext
 
@@ -21,6 +23,16 @@ _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 
 class MigrationError(Exception):
     pass
+
+
+def main(func, version=None):
+    """a main() function for scripts"""
+    if len(sys.argv) != 2:
+        sys.exit("Usage: %s <dbname>" % (sys.argv[0],))
+    dbname = sys.argv[1]
+    with db_connect(dbname).cursor() as cr:
+        func(cr, version)
+
 
 @contextmanager
 def savepoint(cr):
