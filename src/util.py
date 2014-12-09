@@ -1,14 +1,15 @@
 # Utility functions for migration scripts
 
-from contextlib import contextmanager
 import logging
-from operator import itemgetter
-import sys
-from textwrap import dedent
-import time
 import lxml
+import os
+import sys
+import time
 
+from contextlib import contextmanager
 from docutils.core import publish_string
+from operator import itemgetter
+from textwrap import dedent
 
 from openerp import SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
@@ -20,6 +21,8 @@ from openerp.tools import UnquoteEvalContext
 _logger = logging.getLogger(__name__)
 
 _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
+
+DROP_DEPRECATED_CUSTOM = os.getenv('OE_DROP_DEPRECATED_CUSTOM')
 
 class MigrationError(Exception):
     pass
@@ -74,8 +77,63 @@ def table_of_model(cr, model):
     }.get(model, model.replace('.', '_'))
 
 
+def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM):
+    """
+    Recursively delete the given view and its inherited views, as long as they
+    are part of a module. Will crash as soon as a custom view exists anywhere
+    in the hierarchy.
+    """
+    parent_view_id = ref(cr, xml_id)
+    cr.execute("""
+        WITH RECURSIVE view_hierarchy (id, parent_id, xml_id, level) AS
+        (
+            SELECT v.id, v.inherit_id, x.module || '.' ||  x.name, 1
+            FROM ir_ui_view v LEFT JOIN
+               ir_model_data x ON (v.id = x.res_id and x.model = 'ir.ui.view')
+          UNION
+            SELECT uv.id, v.inherit_id, uv.xml_id, uv.level+1
+            FROM view_hierarchy uv JOIN
+               ir_ui_view v ON (uv.parent_id = v.id) AND
+               v.inherit_id IS NOT NULL
+        )
+
+        SELECT id, xml_id from view_hierarchy
+        WHERE parent_id = %s OR (id = %s and level = 1)
+        ORDER BY level desc, id desc;
+    """, (parent_view_id, parent_view_id))
+    for view_id, view_xml_id in cr.fetchall():
+        if view_xml_id:
+            _logger.info('Dropping deprecated built-in view %s (ID %s), '
+                         'as parent %s (ID %s) was removed',
+                         view_xml_id, view_id, xml_id, parent_view_id)
+            remove_record(cr, view_xml_id)
+        else:
+            if deactivate_custom:
+                _logger.warning('Deactivating deprecated custom view with ID %s, '
+                                'as parent %s (ID %s) was removed',
+                                view_id, xml_id, parent_view_id)
+                disable_view_query = """
+                    UPDATE ir_ui_view
+                    SET name = (name || ' - old view, inherited from ' || %%s),
+                        model = (model || '.disabled'),
+                        inherit_id = NULL
+                        %s
+                        WHERE id = %%s
+                """
+                # In 8.0, disabling requires setting mode to 'primary' 
+                extra_set_sql = ''
+                if column_exists(cr, 'ir_ui_view', 'mode'):
+                    extra_set_sql = ",  mode = 'primary'  "
+
+                disable_view_query = disable_view_query % extra_set_sql
+                cr.execute(disable_view_query, (xml_id, view_id))
+            else:
+                raise MigrationError('Deprecated custom view with ID %s needs migration, '
+                                     'as parent %s (ID %s) was removed' %
+                                        (view_id, xml_id, parent_view_id))
+
 def remove_record(cr, name, deactivate=False, active_field='active'):
-    if isinstance(name, str):
+    if isinstance(name, basestring):
         if '.' not in name:
             raise ValueError('Please use fully qualified name <module>.<name>')
         module, _, name = name.partition('.')
