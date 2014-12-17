@@ -77,41 +77,33 @@ def table_of_model(cr, model):
     }.get(model, model.replace('.', '_'))
 
 
-def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM):
+def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=False):
     """
     Recursively delete the given view and its inherited views, as long as they
     are part of a module. Will crash as soon as a custom view exists anywhere
     in the hierarchy.
     """
-    parent_view_id = ref(cr, xml_id)
+    view_id = ref(cr, xml_id)
+    if not view_id:
+        return
     cr.execute("""
-        WITH RECURSIVE view_hierarchy (id, parent_id, xml_id, level) AS
-        (
-            SELECT v.id, v.inherit_id, x.module || '.' ||  x.name, 1
-            FROM ir_ui_view v LEFT JOIN
-               ir_model_data x ON (v.id = x.res_id and x.model = 'ir.ui.view')
-          UNION
-            SELECT uv.id, v.inherit_id, uv.xml_id, uv.level+1
-            FROM view_hierarchy uv JOIN
-               ir_ui_view v ON (uv.parent_id = v.id) AND
-               v.inherit_id IS NOT NULL
-        )
-
-        SELECT id, xml_id from view_hierarchy
-        WHERE parent_id = %s OR (id = %s and level = 1)
-        ORDER BY level desc, id desc;
-    """, (parent_view_id, parent_view_id))
-    for view_id, view_xml_id in cr.fetchall():
-        if view_xml_id:
+        SELECT v.id, x.module || '.' || x.name
+        FROM ir_ui_view v LEFT JOIN
+           ir_model_data x ON (v.id = x.res_id AND x.model = 'ir.ui.view' AND x.module !~ '^_')
+        WHERE v.inherit_id = %s;
+    """, [view_id])
+    for child_id, child_xml_id in cr.fetchall():
+        if child_xml_id:
             _logger.info('Dropping deprecated built-in view %s (ID %s), '
-                         'as parent %s (ID %s) was removed',
-                         view_xml_id, view_id, xml_id, parent_view_id)
-            remove_record(cr, view_xml_id)
+                         'as parent %s (ID %s) is going to be removed',
+                         child_xml_id, child_id, xml_id, view_id)
+            remove_view(cr, child_xml_id, deactivate_custom=deactivate_custom,
+                        silent=True)
         else:
             if deactivate_custom:
                 _logger.warning('Deactivating deprecated custom view with ID %s, '
                                 'as parent %s (ID %s) was removed',
-                                view_id, xml_id, parent_view_id)
+                                child_id, xml_id, view_id)
                 disable_view_query = """
                     UPDATE ir_ui_view
                     SET name = (name || ' - old view, inherited from ' || %%s),
@@ -126,11 +118,15 @@ def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM):
                     extra_set_sql = ",  mode = 'primary'  "
 
                 disable_view_query = disable_view_query % extra_set_sql
-                cr.execute(disable_view_query, (xml_id, view_id))
+                cr.execute(disable_view_query, (xml_id, child_id))
             else:
                 raise MigrationError('Deprecated custom view with ID %s needs migration, '
-                                     'as parent %s (ID %s) was removed' %
-                                        (view_id, xml_id, parent_view_id))
+                                     'as parent %s (ID %s) is going to be removed' %
+                                        (child_id, xml_id, view_id))
+    if not silent:
+        _logger.info('Dropping deprecated built-in view %s (ID %s).',
+                     xml_id, view_id)
+    remove_record(cr, xml_id)
 
 def remove_record(cr, name, deactivate=False, active_field='active'):
     if isinstance(name, basestring):
