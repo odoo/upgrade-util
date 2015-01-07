@@ -442,27 +442,6 @@ def force_install_module(cr, module, if_installed=None):
 
 def new_module_dep(cr, module, new_dep):
     # One new dep at a time
-    # Update new_dep state depending of module state
-
-    cr.execute("""UPDATE ir_module_module
-                     SET state=CASE
-                                 WHEN state = %s
-                                   THEN %s
-                                 WHEN state = %s
-                                   THEN %s
-                                 ELSE state
-                               END,
-                    demo=(select demo from ir_module_module where name='base')
-                   WHERE name=%s
-                     AND EXISTS(SELECT id
-                                  FROM ir_module_module
-                                 WHERE name=%s
-                                   AND state IN %s
-                                )
-               """, ('to remove', 'to upgrade',
-                     'uninstalled', 'to install',
-                     new_dep, module, _INSTALLED_MODULE_STATES))
-
     cr.execute("""INSERT INTO ir_module_module_dependency(name, module_id)
                        SELECT %s, id
                          FROM ir_module_module m
@@ -472,6 +451,36 @@ def new_module_dep(cr, module, new_dep):
                                           WHERE module_id = m.id
                                             AND name=%s)
                 """, (new_dep, module, new_dep))
+
+    # Update new_dep state depending on module state
+    cr.execute("""SELECT m.state from ir_module_module
+                  WHERE name = %s""", (module,))
+    mod_state = (cr.fetchone() or ['n/a'])[0]
+    if mod_state in _INSTALLED_MODULE_STATES:
+        # Module was installed, need to install all its deps, recursively,
+        # to make sure the new dep is installed
+        cr.execute("""
+            WITH RECURSIVE deps (mod_id, mod_name, mod_state, dep_name) AS (
+                  SELECT m.id, m.name, m.state, d.name from ir_module_module_dependency d
+                  JOIN ir_module_module m on (d.module_id = m.id)
+                  WHERE m.name = %s
+                UNION
+                  SELECT m.id, m.name, m.state, d.name from ir_module_module m
+                  JOIN deps ON deps.dep_name = m.name
+                  JOIN ir_module_module_dependency d on (d.module_id = m.id)
+            )
+            UPDATE ir_module_module m
+                       SET state = CASE
+                                    WHEN state = 'to remove'
+                                      THEN 'to upgrade'
+                                    WHEN state = 'uninstalled'
+                                      THEN 'to install'
+                                   END,
+                           demo=(select demo from ir_module_module where name='base')
+                       FROM deps d
+                       WHERE m.id = d.mod_id
+                         AND d.mod_state in ('to remove', 'uninstalled')
+        """, (module,))
 
 def remove_module_deps(cr, module, old_deps):
     assert isinstance(old_deps, tuple)
