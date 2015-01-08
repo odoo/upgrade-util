@@ -453,8 +453,8 @@ def new_module_dep(cr, module, new_dep):
                 """, (new_dep, module, new_dep))
 
     # Update new_dep state depending on module state
-    cr.execute("""SELECT m.state from ir_module_module
-                  WHERE name = %s""", (module,))
+    cr.execute("""SELECT state from ir_module_module
+                  WHERE name = %s""", [module])
     mod_state = (cr.fetchone() or ['n/a'])[0]
     if mod_state in _INSTALLED_MODULE_STATES:
         # Module was installed, need to install all its deps, recursively,
