@@ -706,7 +706,8 @@ def _rm_refs(cr, model, ids=None):
     cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
     for ref_model, ref_column in cr.fetchall():
         table = table_of_model(cr, ref_model)
-        if column_exists(cr, table, ref_column):
+        # NOTE table_exists is needed to avoid deleting from views
+        if table_exists(cr, table) and column_exists(cr, table, ref_column):
             query = 'DELETE FROM "{0}" WHERE "{1}" {2}'.format(table, ref_column, match)
             cr.execute(query, (needle,))
             # TODO make it recursive?
