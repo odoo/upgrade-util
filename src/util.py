@@ -505,6 +505,43 @@ def rename_module(cr, old, new):
                      AND model = %s
                """, (mod_new, mod_old, 'base', 'ir.module.module'))
 
+def merge_module(cr, old, into):
+    """Move all references of module `old` into module `into`
+    """
+    cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
+    mod_ids = dict(cr.fetchall())
+
+    def _up(table, old, new):
+        cr.execute("""UPDATE ir_model_{0} x
+                         SET module=%s
+                       WHERE module=%s
+                         AND NOT EXISTS(SELECT 1
+                                          FROM ir_model_{0} y
+                                         WHERE y.name = x.name
+                                           AND y.module = %s)
+                   """.format(table),
+                   [new, old, new])
+        cr.execute("DELETE FROM ir_model_{0} WHERE module=%s".format(table), [old])
+
+    _up('constraint', mod_ids[old], mod_ids[into])
+    _up('relation', mod_ids[old], mod_ids[into])
+    _up('data', old, into)
+
+    # update dependencies
+    cr.execute("""
+        INSERT INTO ir_module_module_dependency(module_id, name)
+        SELECT module_id, %s
+          FROM ir_module_module_dependency d
+         WHERE name=%s
+           AND NOT EXISTS(SELECT 1
+                            FROM ir_module_module_dependency o
+                           WHERE o.module_id = d.module_id
+                             AND o.name=%s)
+    """, [into, old, into])
+
+    cr.execute("DELETE FROM ir_module_module WHERE name=%s", [old])
+    cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", [old])
+
 def force_install_module(cr, module, if_installed=None):
     subquery = ""
     subparams = ()
