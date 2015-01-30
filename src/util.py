@@ -36,6 +36,12 @@ def main(func, version=None):
     with db_connect(dbname).cursor() as cr:
         func(cr, version)
 
+def splitlines(s):
+    """ yield stripped lines of `s`.
+        Skip empty lines
+        Remove comments (starts with `#`).
+    """
+    return filter(None, map(lambda x: x.split('#', 1)[0].strip(), s.splitlines()))
 
 @contextmanager
 def savepoint(cr):
