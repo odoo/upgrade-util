@@ -282,6 +282,15 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     if cr.fetchone()[0]:
         remove_column(cr, src_table, column, cascade=True)
 
+def module_installed(cr, module):
+    """return True if `module` is (about to be) installed"""
+    cr.execute("""SELECT 1
+                    FROM ir_module_module
+                   WHERE name=%s
+                     AND state IN %s
+               """, [module, _INSTALLED_MODULE_STATES])
+    return bool(cr.rowcount)
+
 def remove_module(cr, module):
     """ Uninstall the module and delete references to it
        Ensure to reassign records before calling this method
