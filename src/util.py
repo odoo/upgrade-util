@@ -586,6 +586,23 @@ def get_fk(cr, table):
     cr.execute(q, (table,))
     return cr.fetchall()
 
+def get_depending_views(cr, table, column):
+    # http://stackoverflow.com/a/11773226/75349
+    q = """
+        SELECT distinct dependee.relname
+        FROM pg_depend
+        JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
+        JOIN pg_class as dependee ON pg_rewrite.ev_class = dependee.oid
+        JOIN pg_class as dependent ON pg_depend.refobjid = dependent.oid
+        JOIN pg_attribute ON pg_depend.refobjid = pg_attribute.attrelid
+            AND pg_depend.refobjsubid = pg_attribute.attnum
+        WHERE dependent.relname = %s
+        AND pg_attribute.attnum > 0
+        AND pg_attribute.attname = %s
+        AND dependee.relkind='v'
+    """
+    cr.execute(q, [table, column])
+    return map(itemgetter(0), cr.fetchall())
 
 def remove_field(cr, model, fieldname):
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
