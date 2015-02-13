@@ -265,6 +265,22 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
     return res_id
 
+def fix_wrong_m2o(cr, table, column, target, value=None):
+    cr.execute("""
+        WITH wrongs_m2o AS (
+            SELECT s.id
+              FROM {table} s
+         LEFT JOIN {target} t
+                ON s.{column} = t.id
+             WHERE s.{column} IS NOT NULL
+               AND t.id IS NULL
+        )
+        UPDATE {table} s
+           SET {column}=%s
+          FROM wrongs_m2o w
+         WHERE s.id = w.id
+    """.format(table=table, column=column, target=target), [value])
+
 def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     """
         Fix broken m2o relations.
