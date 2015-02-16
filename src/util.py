@@ -798,6 +798,7 @@ def res_model_res_id(cr, filtered=True):
         ('mail.wizard.invite', 'res_model', 'res_id'),
         ('mail.mail.statistics', 'model', 'res_id'),
         ('project.project', 'alias_model', None),
+        ('rating.rating', 'res_model', 'res_id'),
     ]
 
     for model, res_model, res_id in each:
