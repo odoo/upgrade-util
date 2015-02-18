@@ -583,8 +583,17 @@ def table_exists(cr, table):
     return cr.fetchone() is not None
 
 def get_fk(cr, table):
+    """return the list of foreign keys pointing to `table`
+
+        returns a 4 tuple: (foreign_table, foreign_column, constraint_name, on_delete_action)
+
+        Foreign key deletion action code:
+            a = no action, r = restrict, c = cascade, n = set null, d = set default
+    """
     q = """SELECT quote_ident(cl1.relname) as table,
-                  quote_ident(att1.attname) as column
+                  quote_ident(att1.attname) as column,
+                  quote_ident(con.conname) as conname,
+                  con.confdeltype
              FROM pg_constraint as con, pg_class as cl1, pg_class as cl2,
                   pg_attribute as att1, pg_attribute as att2
             WHERE con.conrelid = cl1.oid
@@ -883,7 +892,7 @@ def replace_record_references(cr, old, new):
 
     if old[0] == new[0]:
         # same model, also change direct references (fk)
-        for table, fk in get_fk(cr, table_of_model(cr, old[0])):
+        for table, fk, _, _ in get_fk(cr, table_of_model(cr, old[0])):
             cr.execute('UPDATE {table} SET {fk}=%s WHERE {fk}=%s'.format(table=table, fk=fk),
                        (new[1], old[1]))
 
