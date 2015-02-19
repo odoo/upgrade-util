@@ -43,6 +43,27 @@ def splitlines(s):
     """
     return filter(None, map(lambda x: x.split('#', 1)[0].strip(), s.splitlines()))
 
+
+@contextmanager
+def skippable_cm():
+    """Allow a contextmanager to not yield.
+    """
+    if not hasattr(skippable_cm, '_msg'):
+        @contextmanager
+        def _():
+            if 0:
+                yield
+        try:
+            with _():
+                pass
+        except RuntimeError, r:
+            skippable_cm._msg = str(r)
+    try:
+        yield
+    except RuntimeError, r:
+        if str(r) != skippable_cm._msg:
+            raise
+
 @contextmanager
 def savepoint(cr):
     name = hex(int(time.time() * 1000))[1:]
@@ -133,6 +154,45 @@ def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=Fal
         _logger.info('Dropping deprecated built-in view %s (ID %s).',
                      xml_id, view_id)
     remove_record(cr, xml_id)
+
+
+@contextmanager
+def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
+    """Contextmanager that may yield etree arch of a view.
+    As it may not yield, you must use `skippable_cm`
+
+        with util.skippable_cm(), util.edit_view(cr, 'xml.id') as arch:
+            arch.attrib['string'] = 'My Form'
+    """
+    assert bool(xmlid) ^ bool(view_id), "You Must specify either xmlid or view_id"
+    noupdate = True
+    if xmlid:
+        if '.' not in xmlid:
+            raise ValueError('Please use fully qualified name <module>.<name>')
+
+        module, _, name = xmlid.partition('.')
+        cr.execute("""SELECT res_id, noupdate
+                        FROM ir_model_data
+                       WHERE module = %s
+                         AND name = %s
+                   """, (module, name))
+        data = cr.fetchone()
+        if data:
+            view_id, noupdate = data
+
+    if view_id and not (skip_if_not_noupdate and not noupdate):
+        arch_col = 'arch_db' if column_exists(cr, 'ir_ui_view', 'arch_db') else 'arch'
+        cr.execute("""SELECT {arch}
+                        FROM ir_ui_view
+                       WHERE id=%s
+                   """.format(arch=arch_col), [view_id])
+        [arch] = cr.fetchone() or [None]
+        if arch:
+            arch = lxml.etree.fromstring(arch)
+            yield arch
+            cr.execute("UPDATE ir_ui_view SET {arch}=%s WHERE id=%s".format(arch=arch_col),
+                       [lxml.etree.tostring(arch), view_id])
+
 
 def remove_record(cr, name, deactivate=False, active_field='active'):
     if isinstance(name, basestring):
