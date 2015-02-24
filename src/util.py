@@ -11,6 +11,8 @@ from docutils.core import publish_string
 from operator import itemgetter
 from textwrap import dedent
 
+import markdown
+
 from openerp import SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
 from openerp.modules.registry import RegistryManager
@@ -999,6 +1001,13 @@ def rst2html(rst):
     html = publish_string(source=dedent(rst), settings_overrides=overrides, writer=MyWriter())
     return html_sanitize(html, silent=False)
 
+def md2html(md):
+    extensions = [
+        'markdown.extensions.smart_strong',
+        'markdown.extensions.nl2br',
+        'markdown.extensions.sane_lists',
+    ]
+    return markdown.markdown(md, extensions=extensions)
 
 _DEFAULT_HEADER = """
 <p>Odoo has been upgraded to version {version}.</p>
@@ -1030,6 +1039,8 @@ def announce(cr, version, msg, format='rst', recipient='mail.group_all_employees
 
     if format == 'rst':
         msg = rst2html(msg)
+    elif format == 'md':
+        msg = md2html(msg)
 
     message = ((header or "") + msg + (footer or "")).format(version=version)
     _logger.debug(message)
