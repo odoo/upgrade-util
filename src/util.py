@@ -943,6 +943,11 @@ def rename_model(cr, old, new, rename_table=True):
                      AND name LIKE %s
                """, ('field_%s_' % new_u, len(old_u) + 7, 'ir.model.fields', 'field_%s_%%' % old_u))
 
+    cr.execute(r"""UPDATE ir_act_server
+                      SET code=regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g'),
+                          condition=regexp_replace(condition, '([''"]){old}\1', '\1{new}\1', 'g')
+                """.format(old=old.replace('.', r'\.'), new=new))
+
 
 def replace_record_references(cr, old, new):
     """replace all (in)direct references of a record by another"""
