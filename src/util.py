@@ -865,7 +865,15 @@ def delete_model(cr, model, drop_table=True):
         cr.execute('DROP TABLE "{0}" CASCADE'.format(table))
 
 
-def move_model(cr, model, from_module, to_module, move_data=False):
+def move_model(cr, model, from_module, to_module, move_data=False, delete=False):
+    """
+        move model `model` from `from_module` to `to_module`.
+        if `delete` is set and `to_module` is not installed, delete the model.
+    """
+    if delete and not module_installed(cr, to_module):
+        delete_model(cr, model)
+        return
+
     model_u = model.replace('.', '_')
     cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s AND model=%s AND name=%s",
                (to_module, from_module, 'ir.model', 'model_%s' % model_u))
