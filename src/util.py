@@ -713,7 +713,7 @@ def get_fk(cr, table):
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
     q = """
-        SELECT distinct dependee.relname
+        SELECT distinct quote_ident(dependee.relname)
         FROM pg_depend
         JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
         JOIN pg_class as dependee ON pg_rewrite.ev_class = dependee.oid
@@ -727,6 +727,11 @@ def get_depending_views(cr, table, column):
     """
     cr.execute(q, [table, column])
     return map(itemgetter(0), cr.fetchall())
+
+def drop_depending_views(cr, table, column):
+    """drop views depending on a field to allow the ORM to resize it in-place"""
+    for v in get_depending_views(cr, table, column):
+        cr.execute("DROP VIEW IF EXISTS " + v)
 
 def remove_field(cr, model, fieldname):
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
