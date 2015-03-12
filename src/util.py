@@ -731,7 +731,7 @@ def get_depending_views(cr, table, column):
 def drop_depending_views(cr, table, column):
     """drop views depending on a field to allow the ORM to resize it in-place"""
     for v in get_depending_views(cr, table, column):
-        cr.execute("DROP VIEW IF EXISTS " + v)
+        cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
 
 def remove_field(cr, model, fieldname):
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
