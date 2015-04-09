@@ -835,6 +835,7 @@ def res_model_res_id(cr, filtered=True):
         ('ir.model.fields.anonymization.migration.fix', 'model_name', None),
         ('base_import.import', 'res_model', None),
         ('email.template', 'model', None),      # stored related
+        ('mail.template', 'model', None),       # model renamed in saas~6
         # ('mail.alias', 'alias_model_id.model', 'alias_force_thread_id'),
         # ('mail.alias', 'alias_parent_model_id.model', 'alias_parent_thread_id'),
         ('mail.followers', 'res_model', 'res_id'),
