@@ -825,6 +825,7 @@ def res_model_res_id(cr, filtered=True):
         ('ir.model.fields', 'relation', None),      # destination of a relation field
         ('ir.model.data', 'model', 'res_id'),
         ('ir.filters', 'model_id', None),     # YUCK!, not an id
+        ('ir.exports', 'resource', None),
         ('ir.ui.view', 'model', None),
         ('ir.values', 'model', 'res_id'),
         ('workflow.transition', 'trigger_model', None),
