@@ -1094,3 +1094,52 @@ def announce(cr, version, msg, format='rst', recipient='mail.group_all_employees
                type='notification', subtype='mail.mt_comment')
     except Exception:
         _logger.warning('Cannot announce message', exc_info=True)
+
+def drop_workflow(cr, osv):
+    cr.execute("""
+        -- we want to first drop the foreign keys on the workitems because
+        -- it slows down the process a lot
+        ALTER TABLE wkf_triggers DROP CONSTRAINT wkf_triggers_workitem_id_fkey;
+        ALTER TABLE wkf_workitem DROP CONSTRAINT wkf_workitem_act_id_fkey;
+        ALTER TABLE wkf_workitem DROP CONSTRAINT wkf_workitem_inst_id_fkey;
+        ALTER TABLE wkf_triggers DROP CONSTRAINT wkf_triggers_instance_id_fkey;
+
+        WITH deleted_wkf AS (
+            DELETE FROM wkf WHERE osv = %s RETURNING id
+        ),
+        deleted_wkf_instance AS (
+            DELETE FROM wkf_instance WHERE EXISTS (
+                SELECT 1 FROM deleted_wkf
+                    WHERE deleted_wkf.id = wkf_instance.wkf_id
+            ) RETURNING id
+        ),
+        deleted_triggers AS (
+            DELETE FROM wkf_triggers WHERE EXISTS (
+                SELECT 1 FROM deleted_wkf_instance
+                    WHERE deleted_wkf_instance.id = wkf_triggers.instance_id
+            ) RETURNING id
+        ),
+        deleted_wkf_activity AS (
+            DELETE FROM wkf_activity WHERE EXISTS (
+                SELECT 1 FROM deleted_wkf
+                    WHERE deleted_wkf.id = wkf_activity.wkf_id
+            ) RETURNING id
+        )
+        DELETE FROM wkf_workitem WHERE EXISTS (
+            SELECT 1 FROM deleted_wkf_instance
+                WHERE deleted_wkf_instance.id = wkf_workitem.inst_id
+        );
+
+        ALTER TABLE wkf_triggers ADD CONSTRAINT wkf_triggers_workitem_id_fkey
+            FOREIGN KEY (workitem_id) REFERENCES wkf_workitem(id)
+            ON DELETE CASCADE;
+        ALTER TABLE wkf_workitem ADD CONSTRAINT wkf_workitem_act_id_fkey
+            FOREIGN key (act_id) REFERENCES wkf_activity(id)
+            ON DELETE CASCADE;
+        ALTER TABLE wkf_workitem ADD CONSTRAINT wkf_workitem_inst_id_fkey
+            FOREIGN KEY (inst_id) REFERENCES wkf_instance(id)
+            ON DELETE CASCADE;
+        ALTER TABLE wkf_triggers ADD CONSTRAINT wkf_triggers_instance_id_fkey
+            FOREIGN KEY (instance_id) REFERENCES wkf_instance(id)
+            ON DELETE CASCADE;
+        """, [osv])
