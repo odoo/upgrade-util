@@ -115,6 +115,13 @@ def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=Fal
     view_id = ref(cr, xml_id)
     if not view_id:
         return
+
+    module, _, name = xml_id.partition('.')
+    cr.execute("select 1 from ir_model_data where module = %s and name = %s and model = 'ir.ui.view'", [module, name])
+
+    if not cr.fetchone():
+        raise ValueError('Please use XML ID of a view in remove_record()')
+
     cr.execute("""
         SELECT v.id, x.module || '.' || x.name
         FROM ir_ui_view v LEFT JOIN
