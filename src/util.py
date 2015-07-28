@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from docutils.core import publish_string
 from operator import itemgetter
 from textwrap import dedent
+from itertools import chain, takewhile, islice, count
 
 import markdown
 
@@ -1150,3 +1151,23 @@ def drop_workflow(cr, osv):
             FOREIGN KEY (instance_id) REFERENCES wkf_instance(id)
             ON DELETE CASCADE;
         """, [osv])
+
+def chunk_and_wrap(func, it, size):
+    """
+    split the iterable 'it' into chunks of size 'size' and wrap each chunk
+    using function 'func'
+    """
+    return chain.from_iterable(takewhile(bool,
+        (func(islice(it, size)) for _ in count())))
+
+def iter_browse(model, cr, uid, ids, context=None, chunk_size=200):
+    """
+    Iterate and browse through record without filling the cache.
+    """
+    def browse(model, cr, uid, ids, context=None):
+        cr.commit()
+        model.invalidate_cache(cr, uid)
+        return model.browse(cr, uid, list(ids), context=context)
+    return chunk_and_wrap(
+            lambda subset: browse(model, cr, uid, subset, context=context),
+            iter(ids), 200)
