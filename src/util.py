@@ -985,7 +985,16 @@ def rename_model(cr, old, new, rename_table=True):
         query = 'UPDATE {t} SET {c}=%s WHERE {c}=%s'.format(t=table, c=column)
         cr.execute(query, (new, old))
 
-    cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
+    # "model-comma" fields
+    cr.execute("""
+        SELECT model, name
+          FROM ir_model_fields
+         WHERE ttype='reference'
+         UNION
+        SELECT 'ir.translation', 'name'
+         UNION
+        SELECT 'ir.values', 'value'
+    """)
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_exists(cr, table, column):
