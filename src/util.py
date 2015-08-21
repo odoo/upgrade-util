@@ -14,7 +14,7 @@ from itertools import chain, takewhile, islice, count
 
 import markdown
 
-from openerp import SUPERUSER_ID
+from openerp import release, SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
 from openerp.modules.registry import RegistryManager
 from openerp.sql_db import db_connect
@@ -791,13 +791,31 @@ def convert_field_to_property(cr, model, field, type,
 
     table = table_of_model(cr, model)
 
+    where_clause, where_params = '{field} != %s', (default_value,)
+    if is_field_anonymized(cr, model, field):
+        # if field is anonymized, we need to create a property for each record
+        where_clause, where_params = '1 = 1', tuple()
+        # and we need to unanonymize its values
+        sql_default_value = cr.mogrify('%s', [default_value])
+        register_unanonymization_query(
+            cr, model, field,
+            "UPDATE ir_property "
+            "   SET {value_field} = COALESCE(%(value)s, {default_value}) "
+            " WHERE res_id = CONCAT('{model},', %(id)s) "
+            "   AND name='{field}' "
+            "   AND type='{type}' "
+            "   AND field_id={field_id} "
+            "".format(value_field=type2field[type], default_value=sql_default_value,
+                      model=model, field=field, type=type, field_id=fields_id)
+        )
+
     cr.execute("""INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
                     SELECT %s, %s, %s, {company_field}, CONCAT('{model},', id), {field}
                       FROM {table}
-                     WHERE {field} != %s
+                     WHERE {where_clause}
                """.format(value_field=type2field[type], company_field=company_field, model=model,
-                          table=table, field=field),
-               (field, type, fields_id, default_value)
+                          table=table, field=field, where_clause=where_clause),
+               (field, type, fields_id) + where_params
                )
     # default property
     if default_value:
@@ -817,6 +835,22 @@ def convert_field_to_property(cr, model, field, type,
 
     remove_column(cr, table, field, cascade=True)
 
+def is_field_anonymized(cr, model, field):
+    if not module_installed(cr, 'anonymization'):
+        return False
+    cr.execute("""SELECT id
+                    FROM ir_model_fields_anonymization
+                   WHERE model_name = %s
+                     AND field_name = %s
+                     AND state = 'anonymized'
+               """, [model, field])
+    return bool(cr.rowcount)
+
+def register_unanonymization_query(cr, model, field, query, query_type='sql', sequence=10):
+    cr.execute("""INSERT INTO ir_model_fields_anonymization_migration_fix(
+                    target_version, sequence, query_type, model_name, field_name, query
+                  ) VALUES (%s, %s, %s, %s, %s, %s)
+               """, [release.major_version, sequence, query_type, model, field, query])
 
 def res_model_res_id(cr, filtered=True):
     each = [
