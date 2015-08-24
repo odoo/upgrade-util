@@ -791,7 +791,7 @@ def convert_field_to_property(cr, model, field, type,
 
     table = table_of_model(cr, model)
 
-    where_clause, where_params = '{field} != %s', (default_value,)
+    where_clause, where_params = '{field} != %s'.format(field=field), (default_value,)
     if is_field_anonymized(cr, model, field):
         # if field is anonymized, we need to create a property for each record
         where_clause, where_params = '1 = 1', tuple()
