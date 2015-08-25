@@ -804,9 +804,9 @@ def convert_field_to_property(cr, model, field, type,
             " WHERE res_id = CONCAT('{model},', %(id)s) "
             "   AND name='{field}' "
             "   AND type='{type}' "
-            "   AND field_id={field_id} "
+            "   AND fields_id={fields_id} "
             "".format(value_field=type2field[type], default_value=sql_default_value,
-                      model=model, field=field, type=type, field_id=fields_id)
+                      model=model, field=field, type=type, fields_id=fields_id)
         )
 
     cr.execute("""INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
