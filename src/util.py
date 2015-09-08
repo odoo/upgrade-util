@@ -16,6 +16,7 @@ import markdown
 
 from openerp import release, SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
+from openerp.modules.module import get_module_path
 from openerp.modules.registry import RegistryManager
 from openerp.sql_db import db_connect
 from openerp.tools.mail import html_sanitize
@@ -82,6 +83,15 @@ def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
     return "ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn)
 
+def has_enterprise():
+    """Return whernever the current installation has enterprise addons availables"""
+    # NOTE should always return True as customers need Enterprise to migrate or
+    #      they are on SaaS, which include enterpise addons.
+    #      This act as a sanity check for developpers or in case we release the scripts.
+    if os.getenv('ODOO_HAS_ENTERPRISE'):
+        return True
+    # XXX maybe we will need to change this for version > 9
+    return bool(get_module_path('delivery_fedex', downloaded=False, display_warning=False))
 
 def table_of_model(cr, model):
     return {
