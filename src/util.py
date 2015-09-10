@@ -500,6 +500,9 @@ def remove_module(cr, module):
             model_ids = tuple(res_ids)
         elif model == 'ir.model.fields':
             field_ids = tuple(res_ids)
+        elif model == 'ir.ui.view':
+            for view_id in res_ids:
+                remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
         else:
             cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table_of_model(cr, model), (tuple(res_ids),))
 
