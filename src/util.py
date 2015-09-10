@@ -117,21 +117,33 @@ def table_of_model(cr, model):
     }.get(model, model.replace('.', '_'))
 
 
-def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=False):
+def remove_view(cr, xml_id=None, view_id=None, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=False):
     """
     Recursively delete the given view and its inherited views, as long as they
     are part of a module. Will crash as soon as a custom view exists anywhere
     in the hierarchy.
     """
-    view_id = ref(cr, xml_id)
-    if not view_id:
-        return
+    assert bool(xml_id) ^ bool(view_id)
+    if xml_id:
+        view_id = ref(cr, xml_id)
+        if not view_id:
+            return
 
-    module, _, name = xml_id.partition('.')
-    cr.execute("select 1 from ir_model_data where module = %s and name = %s and model = 'ir.ui.view'", [module, name])
+        module, _, name = xml_id.partition('.')
+        cr.execute("SELECT model FROM ir_model_data WHERE module=%s AND name=%s",
+                   [module, name])
 
-    if not cr.fetchone():
-        raise ValueError('Please use XML ID of a view in remove_record()')
+        [model] = cr.fetchone()
+        if model != 'ir.ui.view':
+            raise ValueError("%r should point to a 'ir.ui.view', not a %r" % (xml_id, model))
+    elif not silent or deactivate_custom:
+        # search matching xmlid for logging or renaming of custom views
+        cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s",
+                   [view_id])
+        if cr.rowcount:
+            xml_id = "%s.%s" % cr.fetchone()
+        else:
+            xml_id = '?'
 
     cr.execute("""
         SELECT v.id, x.module || '.' || x.name
@@ -141,16 +153,18 @@ def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=Fal
     """, [view_id])
     for child_id, child_xml_id in cr.fetchall():
         if child_xml_id:
-            _logger.info('Dropping deprecated built-in view %s (ID %s), '
-                         'as parent %s (ID %s) is going to be removed',
-                         child_xml_id, child_id, xml_id, view_id)
+            if not silent:
+                _logger.info('Dropping deprecated built-in view %s (ID %s), '
+                             'as parent %s (ID %s) is going to be removed',
+                             child_xml_id, child_id, xml_id, view_id)
             remove_view(cr, child_xml_id, deactivate_custom=deactivate_custom,
                         silent=True)
         else:
             if deactivate_custom:
-                _logger.warning('Deactivating deprecated custom view with ID %s, '
-                                'as parent %s (ID %s) was removed',
-                                child_id, xml_id, view_id)
+                if not silent:
+                    _logger.warning('Deactivating deprecated custom view with ID %s, '
+                                    'as parent %s (ID %s) was removed',
+                                    child_id, xml_id, view_id)
                 disable_view_query = """
                     UPDATE ir_ui_view
                     SET name = (name || ' - old view, inherited from ' || %%s),
@@ -159,7 +173,7 @@ def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=Fal
                         %s
                         WHERE id = %%s
                 """
-                # In 8.0, disabling requires setting mode to 'primary' 
+                # In 8.0, disabling requires setting mode to 'primary'
                 extra_set_sql = ''
                 if column_exists(cr, 'ir_ui_view', 'mode'):
                     extra_set_sql = ",  mode = 'primary'  "
@@ -169,11 +183,11 @@ def remove_view(cr, xml_id, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=Fal
             else:
                 raise MigrationError('Deprecated custom view with ID %s needs migration, '
                                      'as parent %s (ID %s) is going to be removed' %
-                                        (child_id, xml_id, view_id))
+                                     (child_id, xml_id, view_id))
     if not silent:
         _logger.info('Dropping deprecated built-in view %s (ID %s).',
                      xml_id, view_id)
-    remove_record(cr, xml_id)
+    remove_record(cr, ('ir.ui.view', view_id))
 
 
 @contextmanager
