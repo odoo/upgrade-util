@@ -116,6 +116,13 @@ def table_of_model(cr, model):
         'workflow.workitem':   'wkf_workitem',
     }.get(model, model.replace('.', '_'))
 
+def env(cr):
+    try:
+        from openerp.api import Environment
+    except ImportError:
+        v = release.major_version
+        raise MigrationError('Hold on! There is not yet `Environment` in %s' % v)
+    return Environment(cr, SUPERUSER_ID, {})
 
 def remove_view(cr, xml_id=None, view_id=None, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=False):
     """
