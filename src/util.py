@@ -852,13 +852,13 @@ def drop_depending_views(cr, table, column):
     for v in get_depending_views(cr, table, column):
         cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
 
-def remove_field(cr, model, fieldname):
+def remove_field(cr, model, fieldname, cascade=False):
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
     fids = tuple(map(itemgetter(0), cr.fetchall()))
     if fids:
         cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ('ir.model.fields', fids))
     table = table_of_model(cr, model)
-    remove_column(cr, table, fieldname)
+    remove_column(cr, table, fieldname, cascade=cascade)
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
     name = 'field_%s_%s' % (model.replace('.', '_'), fieldname)
