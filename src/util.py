@@ -755,6 +755,10 @@ def table_exists(cr, table):
                """, (table,))
     return cr.fetchone() is not None
 
+def view_exists(cr, view):
+    cr.execute("SELECT 1 FROM information_schema.views WHERE table_name=%s", [view])
+    return bool(cr.rowcount)
+
 def get_fk(cr, table):
     """return the list of foreign keys pointing to `table`
 
@@ -1034,8 +1038,11 @@ def delete_model(cr, model, drop_table=True):
                ('ir.model.fields', 'field_%s_%%' % model_underscore))
 
     table = table_of_model(cr, model)
-    if drop_table and table_exists(cr, table):
-        cr.execute('DROP TABLE "{0}" CASCADE'.format(table))
+    if drop_table:
+        if table_exists(cr, table):
+            cr.execute('DROP TABLE "{0}" CASCADE'.format(table))
+        elif view_exists(cr, table):
+            cr.execute('DROP VIEW "{0}" CASCADE'.format(table))
 
 
 def move_model(cr, model, from_module, to_module, move_data=False, delete=False):
