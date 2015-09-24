@@ -1029,6 +1029,9 @@ def delete_model(cr, model, drop_table=True):
     cr.execute("SELECT id FROM ir_model WHERE model=%s", (model,))
     [mod_id] = cr.fetchone() or [None]
     if mod_id:
+        if table_exists(cr, 'base_action_rule'):
+            # As 9.0, this field is in "ON DELETE SET NULL"
+            cr.execute("DELETE FROM base_action_rule WHERE model_id=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model WHERE id=%s", (mod_id,))
