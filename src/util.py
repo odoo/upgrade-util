@@ -8,17 +8,20 @@ import time
 
 from contextlib import contextmanager
 from docutils.core import publish_string
+from inspect import currentframe
+from itertools import chain, takewhile, islice, count
 from operator import itemgetter
 from textwrap import dedent
-from itertools import chain, takewhile, islice, count
 
 import markdown
 
+import openerp
 from openerp import release, SUPERUSER_ID
 from openerp.addons.base.module.module import MyWriter
 from openerp.modules.module import get_module_path
 from openerp.modules.registry import RegistryManager
 from openerp.sql_db import db_connect
+from openerp.tools.func import frame_codeinfo
 from openerp.tools.mail import html_sanitize
 from openerp.tools import UnquoteEvalContext
 
@@ -720,6 +723,26 @@ def new_module(cr, module, auto_install_deps=None):
         ) VALUES (
             'module_'||%s, 'base', 't', 'ir.module.module', %s
         )""", (module, new_id))
+
+def force_migration_of_fresh_module(cr, module):
+    """It may appear that new (or forced installed) modules need a migration script to grab data
+       form other module. (we cannot add a pre-init hook on the fly)
+    """
+    filename, _ = frame_codeinfo(currentframe(), 1)
+    version = '.'.join(filename.split(os.path.sep)[-2].split('.')[:2])
+
+    # Force module state to be in `to upgrade`.
+    # Needed for migration script execution. See http://git.io/vnF7f
+    cr.execute("""UPDATE ir_module_module
+                     SET state='to upgrade',
+                         latest_version=%s
+                   WHERE name=%s
+                     AND state='to install'
+               RETURNING id""", [version, module])
+    if cr.rowcount:
+        # Force module in `init` mode beside its state is forced to `to upgrade`
+        # See http://git.io/vnF7O
+        openerp.tools.config['init'][module] = "oh yeah!"
 
 def column_exists(cr, table, column):
     return column_type(cr, table, column) is not None
