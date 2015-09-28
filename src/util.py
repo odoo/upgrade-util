@@ -1,5 +1,6 @@
 # Utility functions for migration scripts
 
+import imp
 import logging
 import lxml
 import os
@@ -50,6 +51,11 @@ def splitlines(s):
     """
     return filter(None, map(lambda x: x.split('#', 1)[0].strip(), s.splitlines()))
 
+def import_script(path):
+    name = os.path.basename(path)
+    full_path = os.path.join(os.path.dirname(__file__), path)
+    with open(full_path) as fp:
+        return imp.load_source(name, full_path, fp)
 
 @contextmanager
 def skippable_cm():
