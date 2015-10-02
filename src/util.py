@@ -1256,7 +1256,9 @@ _DEFAULT_HEADER = """
 
 _DEFAULT_FOOTER = "<p>Enjoy the new Odoo Online!</p>"
 
-def announce(cr, version, msg, format='rst', recipient='mail.group_all_employees',
+_DEFAULT_RECIPIENT = 'mail.%s_all_employees' % ['group', 'channel'][release.version_info[:2] >= (9, 0)]
+
+def announce(cr, version, msg, format='rst', recipient=_DEFAULT_RECIPIENT,
              header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
     registry = RegistryManager.get(cr.dbname)
     IMD = registry['ir.model.data']
