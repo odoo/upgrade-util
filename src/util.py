@@ -1264,7 +1264,7 @@ def announce(cr, version, msg, format='rst', recipient=_DEFAULT_RECIPIENT,
     IMD = registry['ir.model.data']
 
     # do not notify early, in case the migration fails halfway through
-    ctx = {'mail_notify_force_send': False}
+    ctx = {'mail_notify_force_send': False, 'mail_notify_author': True}
 
     user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID, context=ctx)
 
