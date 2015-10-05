@@ -368,6 +368,22 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     if cr.fetchone()[0]:
         remove_column(cr, src_table, column, cascade=True)
 
+def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
+    if col1 is None:
+        col1 = '%s_id' % fk1
+    if col2 is None:
+        col2 = '%s_id' % fk2
+
+    cr.execute("""
+        CREATE TABLE {m2m}(
+            {col1} integer NOT NULL REFERENCES {fk1}(id) ON DELETE CASCADE,
+            {col2} integer NOT NULL REFERENCES {fk2}(id) ON DELETE CASCADE,
+            UNIQUE ({col1}, {col2})
+        );
+        CREATE INDEX ON {m2m}({col1});
+        CREATE INDEX ON {m2m}({col2});
+    """.format(**locals()))
+
 def module_installed(cr, module):
     """return True if `module` is (about to be) installed"""
     cr.execute("""SELECT 1
