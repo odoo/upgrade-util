@@ -817,6 +817,28 @@ def get_fk(cr, table):
     cr.execute(q, (table,))
     return cr.fetchall()
 
+def get_index_on(cr, table, *columns):
+    """
+        return a tuple (index_name, unique, pk)
+    """
+    cr.execute("""
+        select name, indisunique, indisprimary
+          from (select quote_ident(i.relname) as name,
+                       x.indisunique, x.indisprimary,
+                       array_agg(a.attname::text order by a.attname) as attrs
+                  FROM (select *, unnest(indkey) as unnest_indkey from pg_index) x
+                  JOIN pg_class c ON c.oid = x.indrelid
+                  JOIN pg_class i ON i.oid = x.indexrelid
+                  JOIN pg_attribute a ON (a.attrelid=c.oid AND a.attnum=x.unnest_indkey)
+                 WHERE (c.relkind = ANY (ARRAY['r'::"char", 'm'::"char"]))
+                   AND i.relkind = 'i'::"char"
+                   AND c.relname = %s
+              group by 1, 2, 3
+          ) idx
+         where attrs = %s
+    """, [table, sorted(columns)])
+    return cr.fetchone()
+
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
     q = """
