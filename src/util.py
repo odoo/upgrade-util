@@ -773,6 +773,7 @@ def create_column(cr, table, column, definition):
 
 def remove_column(cr, table, column, cascade=False):
     if column_exists(cr, table, column):
+        drop_depending_views(cr, table, column)
         drop_cascade = " CASCADE" if cascade else ""
         cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"{2}'.format(table, column, drop_cascade))
 
