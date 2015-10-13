@@ -1287,9 +1287,11 @@ def announce(cr, version, msg, format='rst', recipient=_DEFAULT_RECIPIENT,
     message = ((header or "") + msg + (footer or "")).format(version=version)
     _logger.debug(message)
 
+    type_field = ['type', 'message_type'][release.version_info[:2] >= (9, 0)]
+    kw = {type_field: 'notification'}
+
     try:
-        poster(body=message, partner_ids=[user.partner_id.id],
-               type='notification', subtype='mail.mt_comment')
+        poster(body=message, partner_ids=[user.partner_id.id], subtype='mail.mt_comment', **kw)
     except Exception:
         _logger.warning('Cannot announce message', exc_info=True)
 
