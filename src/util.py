@@ -775,7 +775,7 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module):
                """, (new_module, 'ir.model.fields', name, old_module))
 
 def rename_field(cr, model, old, new):
-    cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (model, new, old))
+    cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
     [fid] = cr.fetchone() or [None]
     if fid:
         name = 'field_%s_%s' % (model.replace('.', '_'), new)
