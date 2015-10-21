@@ -904,6 +904,8 @@ def rename_field(cr, model, old, new):
     if fid:
         name = 'field_%s_%s' % (model.replace('.', '_'), new)
         cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (name, 'ir.model.fields', fid))
+        cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
+
     table = table_of_model(cr, model)
     if column_exists(cr, table, old):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
