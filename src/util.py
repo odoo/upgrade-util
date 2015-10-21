@@ -920,7 +920,7 @@ def convert_field_to_property(cr, model, field, type,
         'integer': 'value_integer',
         'text': 'value_text',
         'binary': 'value_binary',
-        'many2one': 'value_reference',
+        # 'many2one': 'value_reference',    # FIXME handle this correcty. See http://git.io/vWmaw
         'date': 'value_datetime',
         'datetime': 'value_datetime',
         'selection': 'value_text',
