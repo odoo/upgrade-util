@@ -26,6 +26,14 @@ from openerp.tools.func import frame_codeinfo
 from openerp.tools.mail import html_sanitize
 from openerp.tools import UnquoteEvalContext
 
+try:
+    from openerp.api import Environment
+    manage_env = Environment.manage
+except ImportError:
+    @contextmanager
+    def manage_env():
+        yield
+
 _logger = logging.getLogger(__name__)
 
 _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
@@ -41,7 +49,7 @@ def main(func, version=None):
     if len(sys.argv) != 2:
         sys.exit("Usage: %s <dbname>" % (sys.argv[0],))
     dbname = sys.argv[1]
-    with db_connect(dbname).cursor() as cr:
+    with db_connect(dbname).cursor() as cr, manage_env():
         func(cr, version)
 
 def splitlines(s):
