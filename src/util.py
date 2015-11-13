@@ -1247,6 +1247,80 @@ def replace_record_references(cr, old, new):
                        (comma_new, comma_old))
 
 
+def update_field_references(cr, old, new, only_models=None):
+    """
+        Replace all references to field `old` to `new` in:
+            - ir_filters
+            - ir_exports_line
+            - ir_act_server
+            - ir_rule
+    """
+    p = {
+        'old': '\y%s\y' % (old,),
+        'new': new,
+        'def_old': '\ydefault_%s\y' % (old,),
+        'def_new': 'default_%s' % (new,),
+        'models': tuple(only_models) if only_models else (),
+    }
+
+    q = """
+        UPDATE ir_filters
+           SET domain = regexp_replace(domain, %(old)s, %(new)s, 'g'),
+               context = regexp_replace(regexp_replace(context,
+                                                       %(old)s, %(new)s, 'g'),
+                                                       %(def_old)s, %(def_new)s, 'g')
+    """
+    if only_models:
+        q += " WHERE model_id IN %(models)s"
+
+    cr.execute(q, p)
+
+    # ir.exports.line
+    q = """
+        UPDATE ir_exports_line l
+           SET name = regexp_replace(l.name, %(old)s, %(new)s, 'g')
+    """
+    if only_models:
+        q += """
+          FROM ir_exports e
+         WHERE e.id = l.export_id
+           AND e.resource IN %(models)s
+    """
+    cr.execute(q, p)
+
+    # ir.action.server
+    q = """
+        UPDATE ir_act_server s
+           SET condition = regexp_replace(condition, %(old)s, %(new)s, 'g'),
+               code = regexp_replace(code, %(old)s, %(new)s, 'g')
+    """
+    if only_models:
+        q += """
+          FROM ir_model m
+         WHERE m.id = s.model_id
+           AND m.model IN %(models)s
+           AND
+        """
+    else:
+        q += " WHERE "
+
+    q += "s.state = 'code'"
+    cr.execute(q, p)
+
+    # ir.rule
+    q = """
+        UPDATE ir_rule r
+           SET domain_force = regexp_replace(domain_force, %(old)s, %(new)s, 'g')
+    """
+    if only_models:
+        q += """
+          FROM ir_model m
+         WHERE m.id = r.model_id
+           AND m.model IN %(models)s
+        """
+    cr.execute(q, p)
+
+
 def rst2html(rst):
     overrides = dict(embed_stylesheet=False, doctitle_xform=False, output_encoding='unicode', xml_declaration=False)
     html = publish_string(source=dedent(rst), settings_overrides=overrides, writer=MyWriter())
