@@ -802,6 +802,24 @@ def get_depending_views(cr, table, column):
     cr.execute(q, [table, column])
     return map(itemgetter(0), cr.fetchall())
 
+def get_columns(cr, table, ignore=('id',), extra_prefixes=None):
+    """return the list of columns in table (minus ignored ones)
+        can also returns the list multiple times with different prefixes.
+        This can be used to duplicating records (INSERT SELECT from the same table)
+    """
+    select = 'quote_ident(column_name)'
+    params = []
+    if extra_prefixes:
+        select = ','.join([select] + ["concat(%%s, '.', %s)" % select] * len(extra_prefixes))
+        params = list(extra_prefixes)
+
+    cr.execute("""SELECT {select}
+                   FROM information_schema.columns
+                  WHERE table_name=%s
+                    AND column_name NOT IN %s
+               """.format(select=select), params + [table, ignore])
+    return zip(*cr.fetchall())
+
 def drop_depending_views(cr, table, column):
     """drop views depending on a field to allow the ORM to resize it in-place"""
     for v in get_depending_views(cr, table, column):
