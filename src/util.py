@@ -912,10 +912,7 @@ def rename_field(cr, model, old, new):
     if fid:
         name = 'field_%s_%s' % (model.replace('.', '_'), new)
         cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (name, 'ir.model.fields', fid))
-        cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s RETURNING id", [new, fid])
-        [pid] = cr.fetchone() or [None]
-        if pid:
-            cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (new, 'ir.property', pid))
+        cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
 
     table = table_of_model(cr, model)
     if column_exists(cr, table, old):
