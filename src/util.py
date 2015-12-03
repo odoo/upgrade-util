@@ -1127,7 +1127,20 @@ def delete_model(cr, model, drop_table=True):
             cr.execute("DELETE FROM base_action_rule WHERE model_id=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
+
+        # Drop XML IDs of ir.rule and ir.model.access records that will be cascade-dropped,
+        # when the ir.model record is dropped - just in case they need to be re-created
+        cr.execute("""DELETE FROM ir_model_data x
+                            USING ir_rule a
+                            WHERE x.res_id = a.id AND x.model='ir.rule' AND
+                                  a.model_id = %s; """, (mod_id,))
+        cr.execute("""DELETE FROM ir_model_data x
+                            USING ir_model_access a
+                            WHERE x.res_id = a.id AND x.model='ir.model.access' AND
+                                  a.model_id = %s; """, (mod_id,))
+
         cr.execute("DELETE FROM ir_model WHERE id=%s", (mod_id,))
+
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name=%s",
                ('ir.model', 'model_%s' % model_underscore))
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name like %s",
