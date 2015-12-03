@@ -894,6 +894,13 @@ def remove_field(cr, model, fieldname, cascade=False):
     fids = tuple(map(itemgetter(0), cr.fetchall()))
     if fids:
         cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ('ir.model.fields', fids))
+    # cleanup translations
+    cr.execute("""
+       DELETE FROM ir_translation
+        WHERE name=%s
+          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
+    """, ['%s,%s' % (model, fieldname)])
+
     table = table_of_model(cr, model)
     remove_column(cr, table, fieldname, cascade=cascade)
 
@@ -913,6 +920,13 @@ def rename_field(cr, model, old, new):
         name = 'field_%s_%s' % (model.replace('.', '_'), new)
         cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (name, 'ir.model.fields', fid))
         cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
+
+    cr.execute("""
+       UPDATE ir_translation
+          SET name=%s
+        WHERE name=%s
+          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
+    """, ['%s,%s' % (model, new), '%s,%s' % (model, old)])
 
     table = table_of_model(cr, model)
     if column_exists(cr, table, old):
@@ -1059,7 +1073,17 @@ def _rm_refs(cr, model, ids=None):
         match = 'in %s'
         needle = tuple('{0},{1}'.format(model, i) for i in ids)
 
-    cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
+    # "model-comma" fields
+    cr.execute("""
+        SELECT model, name
+          FROM ir_model_fields
+         WHERE ttype='reference'
+         UNION
+        SELECT 'ir.translation', 'name'
+         UNION
+        SELECT 'ir.values', 'value'
+    """)
+
     for ref_model, ref_column in cr.fetchall():
         table = table_of_model(cr, ref_model)
         # NOTE table_exists is needed to avoid deleting from views
@@ -1067,6 +1091,13 @@ def _rm_refs(cr, model, ids=None):
             query = 'DELETE FROM "{0}" WHERE "{1}" {2}'.format(table, ref_column, match)
             cr.execute(query, (needle,))
             # TODO make it recursive?
+
+    if ids is None:
+        cr.execute("""
+            DELETE FROM ir_translation
+             WHERE name=%s
+               AND type IN ('constraint', 'sql_constraint', 'view', 'report', 'rml', 'xsl')
+        """, [model])
 
     if model.startswith('ir.action'):
         query = 'DELETE FROM ir_values WHERE key=%s AND value {0}'.format(match)
@@ -1193,6 +1224,12 @@ def rename_model(cr, old, new, rename_table=True):
                            WHERE {column} LIKE '{old},%'
                        """.format(table=table, column=column, new=new, old=old))
 
+    cr.execute("""
+        UPDATE ir_translation
+           SET name=%s
+         WHERE name=%s
+           AND type IN ('constraint', 'sql_constraint', 'view', 'report', 'rml', 'xsl')
+    """, [new, old])
     old_u = old.replace('.', '_')
     new_u = new.replace('.', '_')
 
