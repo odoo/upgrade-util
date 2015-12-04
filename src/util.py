@@ -454,24 +454,6 @@ def remove_module(cr, module):
     if not mod_id:
         return
 
-    # delete relations only owned by this module
-    cr.execute("""DELETE FROM ir_model_relation
-                        WHERE module=%s returning name, model
-               """, (mod_id,))
-    relations = cr.fetchall()
-
-    for rel in relations:
-        rel_name, rel_model = rel
-        cr.execute("""SELECT count(1)
-                        FROM ir_model_relation
-                       WHERE name = %s
-                         AND model = %s
-                   """, [rel_name, rel_model])
-        other_relation_exists, = cr.fetchone()
-        if not other_relation_exists:
-            if table_exists(cr, rel_name):
-                cr.execute("""DROP TABLE %s""" % (rel_name, ))
-
     # delete constraints only owned by this module
     cr.execute("""SELECT name
                     FROM ir_model_constraint
