@@ -695,6 +695,10 @@ def remove_module_deps(cr, module, old_deps):
                """, (module, old_deps))
 
 def new_module(cr, module, auto_install_deps=None):
+    if module_installed(cr, module):
+        #Avoid duplicate entries for module which is already installed,
+        #even before it has become standard module in new version
+        return
     if auto_install_deps:
         cr.execute("""SELECT count(1)
                         FROM ir_module_module
