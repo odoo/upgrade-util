@@ -1247,7 +1247,7 @@ def rename_model(cr, old, new, rename_table=True):
                 """.format(old=old.replace('.', r'\.'), new=new))
 
 
-def replace_record_references(cr, old, new):
+def replace_record_references(cr, old, new, replace_xmlid=True):
     """replace all (in)direct references of a record by another"""
     # TODO update workflow instances?
     assert isinstance(old, tuple) and len(old) == 2
@@ -1261,6 +1261,8 @@ def replace_record_references(cr, old, new):
 
     for model, res_model, res_id in res_model_res_id(cr):
         if not res_id:
+            continue
+        if model == 'ir.model.data' and not replace_xmlid:
             continue
         table = table_of_model(cr, model)
         cr.execute("""UPDATE {table}
