@@ -110,6 +110,17 @@ def has_enterprise():
     # XXX maybe we will need to change this for version > 9
     return bool(get_module_path('delivery_fedex', downloaded=False, display_warning=False))
 
+def dispatch_by_dbuuid(cr, version, callbacks):
+    cr.execute("""
+        SELECT value
+          FROM ir_config_parameter
+         WHERE key IN ('database.uuid', 'origin.database.uuid')
+      ORDER BY key DESC
+         LIMIT 1
+    """)
+    [uuid] = cr.fetchone()
+    callbacks.get(uuid, lambda *a: None)(cr, version)
+
 def table_of_model(cr, model):
     return {
         'ir.actions.actions':          'ir_actions',
