@@ -443,14 +443,18 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         CREATE INDEX ON {m2m}({col2});
     """.format(**locals()))
 
-def module_installed(cr, module):
-    """return True if `module` is (about to be) installed"""
-    cr.execute("""SELECT 1
+def modules_installed(cr, *modules):
+    """return True if all `modules` are (about to be) installed"""
+    assert modules
+    cr.execute("""SELECT count(1)
                     FROM ir_module_module
-                   WHERE name=%s
+                   WHERE name IN %s
                      AND state IN %s
-               """, [module, _INSTALLED_MODULE_STATES])
-    return bool(cr.rowcount)
+               """, [modules, _INSTALLED_MODULE_STATES])
+    return cr.fetchone()[0] == len(modules)
+
+def module_installed(cr, module):
+    return modules_installed(cr, module)
 
 def remove_module(cr, module):
     """ Uninstall the module and delete references to it
@@ -707,19 +711,13 @@ def remove_module_deps(cr, module, old_deps):
                           AND name IN %s
                """, (module, old_deps))
 
-def new_module(cr, module, auto_install_deps=None):
+def new_module(cr, module, deps=(), auto_install=False):
     if module_installed(cr, module):
         #Avoid duplicate entries for module which is already installed,
         #even before it has become standard module in new version
         return
-    if auto_install_deps:
-        cr.execute("""SELECT count(1)
-                        FROM ir_module_module
-                       WHERE name IN %s
-                         AND state IN %s
-                   """, (auto_install_deps, _INSTALLED_MODULE_STATES))
-
-        state = 'to install' if cr.fetchone()[0] == len(auto_install_deps) else 'uninstalled'
+    if deps and auto_install:
+        state = 'to install' if modules_installed(cr, *deps) else 'uninstalled'
     else:
         state = 'uninstalled'
     cr.execute("""\
@@ -736,6 +734,9 @@ def new_module(cr, module, auto_install_deps=None):
         ) VALUES (
             'module_'||%s, 'base', 't', 'ir.module.module', %s
         )""", (module, new_id))
+
+    for dep in deps:
+        new_module_dep(cr, module, dep)
 
 def force_migration_of_fresh_module(cr, module):
     """It may appear that new (or forced installed) modules need a migration script to grab data
