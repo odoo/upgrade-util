@@ -41,6 +41,9 @@ _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 
 DROP_DEPRECATED_CUSTOM = os.getenv('OE_DROP_DEPRECATED_CUSTOM')
 
+# migration environ, used to share data between scripts
+ENVIRON = {}
+
 class MigrationError(Exception):
     pass
 
