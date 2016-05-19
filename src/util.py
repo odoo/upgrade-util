@@ -595,11 +595,18 @@ def rename_module(cr, old, new):
                      AND model = %s
                """, (mod_new, mod_old, 'base', 'ir.module.module'))
 
-def merge_module(cr, old, into):
+def merge_module(cr, old, into, tolerant=False):
     """Move all references of module `old` into module `into`
     """
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
+
+    if tolerant and old not in mod_ids:
+        # this can happen in case of temp modules added after a release if the database does not
+        # know about this module, i.e: account_full_reconcile in 9.0
+        # `into` should be know. Let it crash if not
+        _logger.warning('Unknow module %s. Skip merge into %s.', old, into)
+        return
 
     def _up(table, old, new):
         cr.execute("""UPDATE ir_model_{0} x
