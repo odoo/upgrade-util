@@ -1,5 +1,6 @@
 # Utility functions for migration scripts
 
+import datetime
 import imp
 import logging
 import lxml
@@ -1553,6 +1554,7 @@ def iter_browse(model, *args, **kw):
     cr_uid = args[:-1]
     ids = args[-1]
     chunk_size = kw.pop('chunk_size', 200)      # keyword-only argument
+    logger = kw.pop('logger', _logger)
     if kw:
         raise TypeError('Unknow arguments: %s' % ', '.join(kw))
 
@@ -1567,4 +1569,22 @@ def iter_browse(model, *args, **kw):
             yield
 
     it = chain.from_iterable(chunks(ids, chunk_size, fmt=browse))
+    if logger:
+        it = log_progress(it, qualifier=model._name, logger=logger, size=len(ids))
+
     return chain(it, end())
+
+def log_progress(it, qualifier='elements', logger=_logger, size=None):
+    if size is None:
+        size = len(it)
+    l = float(size)
+    t0 = t1 = datetime.datetime.now()
+    for i, e in enumerate(it, 1):
+        yield e
+        t2 = datetime.datetime.now()
+        if (t2 - t1).total_seconds() > 60:
+            t1 = datetime.datetime.now()
+            tdiff = t2 - t0
+            logger.info("[%.02f%%] %d/%d %s processed in %s (TOTAL estimated time: %s)",
+                        (i / l * 100.0), i, l, qualifier, tdiff,
+                        datetime.timedelta(seconds=tdiff.total_seconds() * l / i))
