@@ -1544,16 +1544,25 @@ def chunks(iterable, size, fmt=None):
     while True:
         yield fmt(chain((it.next(),), islice(it, size - 1)))
 
-def iter_browse(model, cr, uid, ids, context=None, chunk_size=200):
+def iter_browse(model, *args, **kw):
     """
     Iterate and browse through record without filling the cache.
+    `args` can be `cr, uid, ids` or just `ids` depending on kind of `model` (old/new api)
     """
+    assert len(args) in [1, 3]      # either (cr, uid, ids) or (ids,)
+    cr_uid = args[:-1]
+    ids = args[-1]
+    chunk_size = kw.pop('chunk_size', 200)      # keyword-only argument
+    if kw:
+        raise TypeError('Unknow arguments: %s' % ', '.join(kw))
+
     def browse(ids):
-        model.invalidate_cache(cr, uid)
-        return model.browse(cr, uid, list(ids), context=context)
+        model.invalidate_cache(*cr_uid)
+        args = cr_uid + (list(ids),)
+        return model.browse(*args)
 
     def end():
-        model.invalidate_cache(cr, uid)
+        model.invalidate_cache(*cr_uid)
         if 0:
             yield
 
