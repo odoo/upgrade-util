@@ -10,7 +10,7 @@ import time
 from contextlib import contextmanager
 from docutils.core import publish_string
 from inspect import currentframe
-from itertools import chain, takewhile, islice, count
+from itertools import chain, islice
 from operator import itemgetter
 from textwrap import dedent
 
@@ -1521,22 +1521,37 @@ def drop_workflow(cr, osv):
             ON DELETE CASCADE;
         """, [osv])
 
-def chunk_and_wrap(func, it, size):
+
+def chunks(iterable, size, fmt=None):
     """
-    split the iterable 'it' into chunks of size 'size' and wrap each chunk
-    using function 'func'
+    Split `iterable` into chunks of `size` and wrap each chunk
+    using function 'fmt' (`iter` by default; join strings)
+
+    >>> list(chunks(range(10), 4, fmt=tuple))
+    [(0, 1, 2, 3), (4, 5, 6, 7), (8, 9)]
+    >>> ' '.join(chunks('abcdefghijklm', 3))
+    'abc def ghi jkl m'
+    >>>
+
     """
-    return chain.from_iterable(takewhile(bool,
-        (func(islice(it, size)) for _ in count())))
+    if fmt is None:
+        fmt = {
+            str: ''.join,
+            unicode: u''.join,
+        }.get(type(iterable), iter)
+
+    it = iter(iterable)
+    while True:
+        yield fmt(chain((it.next(),), islice(it, size - 1)))
 
 def iter_browse(model, cr, uid, ids, context=None, chunk_size=200):
     """
     Iterate and browse through record without filling the cache.
     """
-    def browse(model, cr, uid, ids, context=None):
+    def browse(ids):
         cr.commit()
         model.invalidate_cache(cr, uid)
         return model.browse(cr, uid, list(ids), context=context)
-    return chunk_and_wrap(
-            lambda subset: browse(model, cr, uid, subset, context=context),
-            iter(ids), 200)
+
+    it = chain.from_iterable(chunks(ids, chunk_size, fmt=browse))
+    return it
