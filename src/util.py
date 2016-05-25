@@ -1549,9 +1549,13 @@ def iter_browse(model, cr, uid, ids, context=None, chunk_size=200):
     Iterate and browse through record without filling the cache.
     """
     def browse(ids):
-        cr.commit()
         model.invalidate_cache(cr, uid)
         return model.browse(cr, uid, list(ids), context=context)
 
+    def end():
+        model.invalidate_cache(cr, uid)
+        if 0:
+            yield
+
     it = chain.from_iterable(chunks(ids, chunk_size, fmt=browse))
-    return it
+    return chain(it, end())
