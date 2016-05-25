@@ -1413,6 +1413,21 @@ def update_field_references(cr, old, new, only_models=None):
         """
     cr.execute(q, p)
 
+def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100):
+    if ids is None:
+        cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
+        ids = map(itemgetter(0), cr.fetchall())
+
+    Model = env(cr)[model]
+    size = (len(ids) + chunk_size - 1) / chunk_size
+    qual = '%s %d-bucket' % (model, chunk_size) if chunk_size != 1 else model
+    for subids in log_progress(chunks(ids, chunk_size, list), qualifier=qual, logger=logger, size=size):
+        records = Model.browse(subids)
+        for field in fields:
+            records._recompute_todo(records._fields[field])
+        records.recompute()
+        records.invalidate_cache()
+
 
 def rst2html(rst):
     overrides = dict(embed_stylesheet=False, doctitle_xform=False, output_encoding='unicode', xml_declaration=False)
