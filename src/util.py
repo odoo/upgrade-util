@@ -933,8 +933,15 @@ def rename_field(cr, model, old, new):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
 def convert_field_to_property(cr, model, field, type,
-                              default_value, default_value_ref=None,
+                              target_model=None,
+                              default_value=None, default_value_ref=None,
                               company_field='company_id'):
+    """
+        Notes:
+            `target_model` is only use when `type` is "many2one".
+            The `company_field` can be an sql expression.
+                You may use `t` to refer the model's table.
+    """
     type2field = {
         'char': 'value_text',
         'float': 'value_float',
@@ -942,51 +949,76 @@ def convert_field_to_property(cr, model, field, type,
         'integer': 'value_integer',
         'text': 'value_text',
         'binary': 'value_binary',
-        # 'many2one': 'value_reference',    # FIXME handle this correcty. See http://git.io/vWmaw
+        'many2one': 'value_reference',
         'date': 'value_datetime',
         'datetime': 'value_datetime',
         'selection': 'value_text',
     }
 
     assert type in type2field
+    value_field = type2field[type]
 
     cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, field))
     [fields_id] = cr.fetchone()
 
     table = table_of_model(cr, model)
 
-    where_clause, where_params = '{field} != %s'.format(field=field), (default_value,)
+    if default_value is None:
+        where_clause = '{field} IS NOT NULL'.format(field=field)
+    else:
+        where_clause = '{field} != %(default_value)s'.format(field=field)
+
+    if type != 'many2one':
+        value_select = field
+    else:
+        # for m2o, the store value is a refrence field, so in format `model,id`
+        value_select = "CONCAT('{target_model},', {field})".format(**locals())
+
     if is_field_anonymized(cr, model, field):
         # if field is anonymized, we need to create a property for each record
-        where_clause, where_params = '1 = 1', tuple()
+        where_clause = 'true'
         # and we need to unanonymize its values
-        sql_default_value = cr.mogrify('%s', [default_value])
+        ano_default_value = cr.mogrify('%s', [default_value])
+        if type != 'many2one':
+            ano_value_select = '%(value)s'
+        else:
+            ano_value_select = "CONCAT('{0},', %(value)s)".format(target_model)
+
         register_unanonymization_query(
             cr, model, field,
-            "UPDATE ir_property "
-            "   SET {value_field} = COALESCE(%(value)s, {default_value}) "
-            " WHERE res_id = CONCAT('{model},', %(id)s) "
-            "   AND name='{field}' "
-            "   AND type='{type}' "
-            "   AND fields_id={fields_id} "
-            "".format(value_field=type2field[type], default_value=sql_default_value,
-                      model=model, field=field, type=type, fields_id=fields_id)
+            """
+            UPDATE ir_property
+               SET {value_field} = CASE WHEN %(value)s IS NULL THEN {ano_default_value}
+                                        ELSE {ano_value_select} END
+             WHERE res_id = CONCAT('{model},', %(id)s)
+               AND name='{field}'
+               AND type='{type}'
+               AND fields_id={fields_id}
+            """.format(**locals())
         )
 
-    cr.execute("""INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
-                    SELECT %s, %s, %s, {company_field}, CONCAT('{model},', id), {field}
-                      FROM {table}
-                     WHERE {where_clause}
-               """.format(value_field=type2field[type], company_field=company_field, model=model,
-                          table=table, field=field, where_clause=where_clause),
-               (field, type, fields_id) + where_params
-               )
+    cr.execute("""
+        WITH cte AS (
+            SELECT CONCAT('{model},', id) as res_id, {value_select} as value,
+                   ({company_field}) as company
+              FROM {table} t
+             WHERE {where_clause}
+        )
+        INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
+            SELECT %(field)s, %(type)s, %(fields_id)s, cte.company, cte.res_id, cte.value
+              FROM cte
+             WHERE NOT EXISTS(SELECT 1
+                                FROM ir_property
+                               WHERE fields_id=%(fields_id)s
+                                 AND company_id=cte.company
+                                 AND res_id=cte.res_id)
+    """.format(**locals()), locals())
     # default property
     if default_value:
         cr.execute("""INSERT INTO ir_property(name, type, fields_id, {value_field})
                            VALUES (%s, %s, %s, %s)
                         RETURNING id
-                   """.format(value_field=type2field[type]),
+                   """.format(value_field=value_field),
                    (field, type, fields_id, default_value)
                    )
         [prop_id] = cr.fetchone()
