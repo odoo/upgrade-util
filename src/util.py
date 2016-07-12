@@ -652,23 +652,29 @@ def force_install_module(cr, module, if_installed=None):
                                     AND state IN %s)"""
         subparams = (tuple(if_installed), _INSTALLED_MODULE_STATES)
 
-    cr.execute("""UPDATE ir_module_module
-                     SET state=CASE
-                                 WHEN state = %s
-                                   THEN %s
-                                 WHEN state = %s
-                                   THEN %s
-                                 ELSE state
-                               END,
-                        demo=(select demo from ir_module_module where name='base')
-                   WHERE name=%s
-               """ + subquery + """
-               RETURNING state
-               """, ('to remove', 'to upgrade',
-                     'uninstalled', 'to install',
-                     module) + subparams)
+    cr.execute("""
+        WITH RECURSIVE deps (mod_id, dep_name) AS (
+              SELECT m.id, d.name from ir_module_module_dependency d
+              JOIN ir_module_module m on (d.module_id = m.id)
+              WHERE m.name = %s
+            UNION
+              SELECT m.id, d.name from ir_module_module m
+              JOIN deps ON deps.dep_name = m.name
+              JOIN ir_module_module_dependency d on (d.module_id = m.id)
+        )
+        UPDATE ir_module_module m
+           SET state = CASE WHEN state = 'to remove' THEN 'to upgrade'
+                            WHEN state = 'uninstalled' THEN 'to install'
+                            ELSE state
+                       END,
+               demo=(select demo from ir_module_module where name='base')
+          FROM deps d
+         WHERE m.id = d.mod_id
+           {0}
+     RETURNING m.name, m.state
+    """.format(subquery), (module,) + subparams)
 
-    state, = cr.fetchone() or [None]
+    state = dict(cr.fetchall()).get(module)
     return state
 
 def new_module_dep(cr, module, new_dep):
@@ -690,28 +696,7 @@ def new_module_dep(cr, module, new_dep):
     if mod_state in _INSTALLED_MODULE_STATES:
         # Module was installed, need to install all its deps, recursively,
         # to make sure the new dep is installed
-        cr.execute("""
-            WITH RECURSIVE deps (mod_id, mod_name, mod_state, dep_name) AS (
-                  SELECT m.id, m.name, m.state, d.name from ir_module_module_dependency d
-                  JOIN ir_module_module m on (d.module_id = m.id)
-                  WHERE m.name = %s
-                UNION
-                  SELECT m.id, m.name, m.state, d.name from ir_module_module m
-                  JOIN deps ON deps.dep_name = m.name
-                  JOIN ir_module_module_dependency d on (d.module_id = m.id)
-            )
-            UPDATE ir_module_module m
-                       SET state = CASE
-                                    WHEN state = 'to remove'
-                                      THEN 'to upgrade'
-                                    WHEN state = 'uninstalled'
-                                      THEN 'to install'
-                                   END,
-                           demo=(select demo from ir_module_module where name='base')
-                       FROM deps d
-                       WHERE m.id = d.mod_id
-                         AND d.mod_state in ('to remove', 'uninstalled')
-        """, (module,))
+        force_install_module(cr, module)
 
 def remove_module_deps(cr, module, old_deps):
     assert isinstance(old_deps, tuple)
