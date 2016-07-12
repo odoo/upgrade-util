@@ -580,7 +580,9 @@ def remove_module(cr, module):
             cr.execute('DROP TABLE "%s" CASCADE' % (rel,))
 
     if model_ids:
-        cr.execute("DELETE FROM ir_model WHERE id IN %s", (model_ids,))
+        cr.execute("SELECT model FROM ir_model WHERE id IN %s", [model_ids])
+        for model, in cr.fetchall():
+            delete_model(cr, model)
 
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
