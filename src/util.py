@@ -1487,32 +1487,42 @@ def drop_workflow(cr, osv):
         ALTER TABLE wkf_workitem DROP CONSTRAINT wkf_workitem_inst_id_fkey;
         ALTER TABLE wkf_triggers DROP CONSTRAINT wkf_triggers_instance_id_fkey;
 
+        -- if this workflow is used as a subflow, complete workitem running this subflow
+        UPDATE wkf_workitem wi
+           SET state = 'complete'
+          FROM wkf w
+         WHERE wi.subflow_id = w.id
+           AND w.osv = %(osv)s
+           AND wi.state = 'running'
+        ;
+
+        -- delete the workflow and dependencies
         WITH deleted_wkf AS (
-            DELETE FROM wkf WHERE osv = %s RETURNING id
+            DELETE FROM wkf WHERE osv = %(osv)s RETURNING id
         ),
         deleted_wkf_instance AS (
-            DELETE FROM wkf_instance WHERE EXISTS (
-                SELECT 1 FROM deleted_wkf
-                    WHERE deleted_wkf.id = wkf_instance.wkf_id
-            ) RETURNING id
+            DELETE FROM wkf_instance i
+                  USING deleted_wkf w
+                  WHERE i.wkf_id = w.id
+              RETURNING i.id
         ),
-        deleted_triggers AS (
-            DELETE FROM wkf_triggers WHERE EXISTS (
-                SELECT 1 FROM deleted_wkf_instance
-                    WHERE deleted_wkf_instance.id = wkf_triggers.instance_id
-            ) RETURNING id
+        _delete_triggers AS (
+            DELETE FROM wkf_triggers t
+                  USING deleted_wkf_instance i
+                  WHERE t.instance_id = i.id
         ),
         deleted_wkf_activity AS (
-            DELETE FROM wkf_activity WHERE EXISTS (
-                SELECT 1 FROM deleted_wkf
-                    WHERE deleted_wkf.id = wkf_activity.wkf_id
-            ) RETURNING id
+            DELETE FROM wkf_activity a
+                  USING deleted_wkf w
+                  WHERE a.wkf_id = w.id
+              RETURNING a.id
         )
-        DELETE FROM wkf_workitem WHERE EXISTS (
-            SELECT 1 FROM deleted_wkf_instance
-                WHERE deleted_wkf_instance.id = wkf_workitem.inst_id
-        );
+        DELETE FROM wkf_workitem wi
+              USING deleted_wkf_instance i
+              WHERE wi.inst_id = i.id
+        ;
 
+        -- recreate constraints
         ALTER TABLE wkf_triggers ADD CONSTRAINT wkf_triggers_workitem_id_fkey
             FOREIGN KEY (workitem_id) REFERENCES wkf_workitem(id)
             ON DELETE CASCADE;
@@ -1525,7 +1535,7 @@ def drop_workflow(cr, osv):
         ALTER TABLE wkf_triggers ADD CONSTRAINT wkf_triggers_instance_id_fkey
             FOREIGN KEY (instance_id) REFERENCES wkf_instance(id)
             ON DELETE CASCADE;
-        """, [osv])
+        """, dict(osv=osv))
 
 
 def chunks(iterable, size, fmt=None):
