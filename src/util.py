@@ -1490,8 +1490,8 @@ def drop_workflow(cr, osv):
         -- if this workflow is used as a subflow, complete workitem running this subflow
         UPDATE wkf_workitem wi
            SET state = 'complete'
-          FROM wkf w
-         WHERE wi.subflow_id = w.id
+          FROM wkf_instance i JOIN wkf w ON (w.id = i.wkf_id)
+         WHERE wi.subflow_id = i.id
            AND w.osv = %(osv)s
            AND wi.state = 'running'
         ;
