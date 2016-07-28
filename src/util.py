@@ -123,7 +123,10 @@ def dispatch_by_dbuuid(cr, version, callbacks):
          LIMIT 1
     """)
     [uuid] = cr.fetchone()
-    callbacks.get(uuid, lambda *a: None)(cr, version)
+    if uuid in callbacks:
+        func = callbacks[uuid]
+        _logger.info('calling dbuuid-specific function `%s`', func.__name__)
+        func(cr, version)
 
 def table_of_model(cr, model):
     return {
