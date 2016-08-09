@@ -1001,7 +1001,7 @@ def convert_field_to_property(cr, model, field, type,
     cr.execute("""
         WITH cte AS (
             SELECT CONCAT('{model},', id) as res_id, {value_select} as value,
-                   ({company_field}) as company
+                   ({company_field})::integer as company
               FROM {table} t
              WHERE {where_clause}
         )
@@ -1011,7 +1011,7 @@ def convert_field_to_property(cr, model, field, type,
              WHERE NOT EXISTS(SELECT 1
                                 FROM ir_property
                                WHERE fields_id=%(fields_id)s
-                                 AND company_id=cte.company
+                                 AND COALESCE(company_id, 0) = COALESCE(cte.company, 0)
                                  AND res_id=cte.res_id)
     """.format(**locals()), locals())
     # default property
