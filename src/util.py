@@ -587,6 +587,7 @@ def remove_module(cr, module):
         for model, in cr.fetchall():
             delete_model(cr, model)
 
+    cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
