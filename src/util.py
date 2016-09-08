@@ -5,6 +5,7 @@ import imp
 import logging
 import lxml
 import os
+import re
 import sys
 import time
 
@@ -1445,8 +1446,20 @@ _DEFAULT_FOOTER = "<p>Enjoy the new Odoo Online!</p>"
 
 _DEFAULT_RECIPIENT = 'mail.%s_all_employees' % ['group', 'channel'][release.version_info[:2] >= (9, 0)]
 
-def announce(cr, version, msg, format='rst', recipient=_DEFAULT_RECIPIENT,
-             header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER):
+def announce(cr, version, msg, format='rst',
+             recipient=_DEFAULT_RECIPIENT, header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER,
+             pluses_for_enterprise=None):
+
+    if pluses_for_enterprise is None:
+        # default value depend on format and version
+        major = int(version[0])
+        pluses_for_enterprise = major >= 9 and format == 'md'
+
+    if pluses_for_enterprise:
+        plus_re = r'^(\s*)\+ (.+)\n'
+        replacement = r'\1- \2\n' if has_enterprise() else ''
+        msg = re.sub(plus_re, replacement, msg, flags=re.M)
+
     registry = RegistryManager.get(cr.dbname)
     IMD = registry['ir.model.data']
 
