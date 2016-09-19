@@ -152,6 +152,29 @@ def table_of_model(cr, model):
         'workflow.workitem':   'wkf_workitem',
     }.get(model, model.replace('.', '_'))
 
+def model_of_table(cr, table):
+    return {
+        # can also be act_window_close, but there are chance it wont be usefull for anyone...
+        'ir_actions':         'ir.actions.actions',
+        'ir_act_url':         'ir.actions.act_url',
+        'ir_act_window':      'ir.actions.act_window',
+        'ir_act_window_view': 'ir.actions.act_window.view',
+        'ir_act_client':      'ir.actions.client',
+        'ir_act_report_xml':  'ir.actions.report.xml',
+        'ir_act_server':      'ir.actions.server',
+        'ir_act_wizard':      'ir.actions.wizard',
+
+        'wkf':            'workflow',
+        'wkf_activity':   'workflow.activity',
+        'wkf_instance':   'workflow.instance',
+        'wkf_transition': 'workflow.transition',
+        'wkf_triggers':   'workflow.triggers',
+        'wkf_workitem':   'workflow.workitem',
+
+        'ir_config_parameter':  'ir.config_parameter',
+
+    }.get(table, table.replace('_', '.'))
+
 def env(cr):
     try:
         from openerp.api import Environment
