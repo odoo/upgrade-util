@@ -64,6 +64,17 @@ def splitlines(s):
     """
     return filter(None, map(lambda x: x.split('#', 1)[0].strip(), s.splitlines()))
 
+def expand_braces(s):
+    # expand braces (a la bash)
+    # only handle one expension of a 2 parts (because we don't need more)
+    r = re.compile(r'(.*){([^},]*?,[^},]*?)}(.*)')
+    m = r.search(s)
+    if not m:
+        raise ValueError('no braces to expand')
+    head, match, tail = m.groups()
+    a, b = match.split(',')
+    return [head + a + tail, head + b + tail]
+
 def import_script(path):
     name = os.path.basename(path)
     full_path = os.path.join(os.path.dirname(__file__), path)
