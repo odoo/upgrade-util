@@ -1457,6 +1457,28 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100
         records.recompute()
         records.invalidate_cache()
 
+def split_group(cr, from_groups, to_group):
+    if not isinstance(from_groups, (list, tuple, set)):
+        from_groups = [from_groups]
+    from_groups = [ref(cr, g) if isinstance(g, basestring) else g for g in from_groups]
+
+    if isinstance(to_group, basestring):
+        to_group = ref(cr, to_group)
+
+    assert from_groups and all(from_groups)
+    assert to_group
+
+    cr.execute("""
+        INSERT INTO res_groups_users_rel(uid, gid)
+             SELECT uid, %s
+               FROM res_groups_users_rel
+           GROUP BY uid
+             HAVING array_agg(gid) @> %s
+             EXCEPT
+             SELECT uid, gid
+               FROM res_groups_users_rel
+              WHERE gid = %s
+    """, [to_group, from_groups, to_group])
 
 def rst2html(rst):
     overrides = dict(embed_stylesheet=False, doctitle_xform=False, output_encoding='unicode', xml_declaration=False)
