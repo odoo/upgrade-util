@@ -348,7 +348,12 @@ def rename_xmlid(cr, old, new):
     cr.execute("""UPDATE ir_model_data
                      SET module=%s, name=%s
                    WHERE module=%s AND name=%s
+               RETURNING res_id
                """, (new_module, new_name, old_module, old_name))
+    data = cr.fetchone()
+    if data:
+        return data[0]
+    return None
 
 def ref(cr, xmlid):
     if '.' not in xmlid:
