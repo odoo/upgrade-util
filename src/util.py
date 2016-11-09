@@ -348,7 +348,12 @@ def rename_xmlid(cr, old, new):
     cr.execute("""UPDATE ir_model_data
                      SET module=%s, name=%s
                    WHERE module=%s AND name=%s
+               RETURNING res_id
                """, (new_module, new_name, old_module, old_name))
+    data = cr.fetchone()
+    if data:
+        return data[0]
+    return None
 
 def ref(cr, xmlid):
     if '.' not in xmlid:
@@ -1457,6 +1462,28 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100
         records.recompute()
         records.invalidate_cache()
 
+def split_group(cr, from_groups, to_group):
+    if not isinstance(from_groups, (list, tuple, set)):
+        from_groups = [from_groups]
+    from_groups = [ref(cr, g) if isinstance(g, basestring) else g for g in from_groups]
+
+    if isinstance(to_group, basestring):
+        to_group = ref(cr, to_group)
+
+    assert from_groups and all(from_groups)
+    assert to_group
+
+    cr.execute("""
+        INSERT INTO res_groups_users_rel(uid, gid)
+             SELECT uid, %s
+               FROM res_groups_users_rel
+           GROUP BY uid
+             HAVING array_agg(gid) @> %s
+             EXCEPT
+             SELECT uid, gid
+               FROM res_groups_users_rel
+              WHERE gid = %s
+    """, [to_group, from_groups, to_group])
 
 def rst2html(rst):
     overrides = dict(embed_stylesheet=False, doctitle_xform=False, output_encoding='unicode', xml_declaration=False)
@@ -1494,21 +1521,30 @@ def announce(cr, version, msg, format='rst',
         replacement = r'\1- \2\n' if has_enterprise() else ''
         msg = re.sub(plus_re, replacement, msg, flags=re.M)
 
-    registry = RegistryManager.get(cr.dbname)
-    IMD = registry['ir.model.data']
-
     # do not notify early, in case the migration fails halfway through
     ctx = {'mail_notify_force_send': False, 'mail_notify_author': True}
 
-    user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID, context=ctx)
+    try:
+        registry = env(cr)
+        user = registry['res.users'].browse([SUPERUSER_ID])[0].with_context(ctx)
+
+        def ref(xid):
+            return registry.ref(xid).with_context(ctx)
+
+    except MigrationError:
+        registry = RegistryManager.get(cr.dbname)
+        user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID, context=ctx)
+
+        def ref(xid):
+            rmod, _, rxid = recipient.partition('.')
+            return registry['ir.model.data'].get_object(cr, SUPERUSER_ID, rmod, rxid, context=ctx)
 
     # default recipient
     poster = user.message_post
 
     if recipient:
-        rmod, _, rxid = recipient.partition('.')
         try:
-            poster = IMD.get_object(cr, SUPERUSER_ID, rmod, rxid, context=ctx).message_post
+            poster = ref(recipient).message_post
         except (ValueError, AttributeError):
             # Cannot find record, post the message on the wall of the admin
             pass
