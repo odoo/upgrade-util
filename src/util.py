@@ -1463,14 +1463,26 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100
         records.invalidate_cache()
 
 def split_group(cr, from_groups, to_group):
+    """Users have all `from_groups` will be added into `to_group`"""
+
+    def check_group(g):
+        if isinstance(g, basestring):
+            gid = ref(cr, g)
+            if not gid:
+                _logger.warning('split_group(): Unknow group: %r', g)
+            return gid
+        return g
+
     if not isinstance(from_groups, (list, tuple, set)):
         from_groups = [from_groups]
-    from_groups = [ref(cr, g) if isinstance(g, basestring) else g for g in from_groups]
+
+    from_groups = filter(None, map(check_group, from_groups))
+    if not from_groups:
+        return
 
     if isinstance(to_group, basestring):
         to_group = ref(cr, to_group)
 
-    assert from_groups and all(from_groups)
     assert to_group
 
     cr.execute("""
