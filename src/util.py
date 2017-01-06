@@ -76,7 +76,7 @@ def expand_braces(s):
     return [head + a + tail, head + b + tail]
 
 def import_script(path):
-    name = os.path.basename(path)
+    name, _ = os.path.splitext(os.path.basename(path))
     full_path = os.path.join(os.path.dirname(__file__), path)
     with open(full_path) as fp:
         return imp.load_source(name, full_path, fp)
