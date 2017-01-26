@@ -1291,7 +1291,8 @@ def rename_model(cr, old, new, rename_table=True):
             cr.execute("DELETE FROM ir_model_constraint WHERE name=%s", (const,))
             cr.execute('ALTER TABLE "{0}" DROP CONSTRAINT "{1}"'.format(new_table, const))
 
-    updates = [('wkf', 'osv')] + [r[:2] for r in res_model_res_id(cr)]
+    updates = [('wkf', 'osv')] if table_exists(cr, 'wkf') else []
+    updates += [r[:2] for r in res_model_res_id(cr)]
 
     for model, column in updates:
         table = table_of_model(cr, model)
