@@ -1123,6 +1123,7 @@ def res_model_res_id(cr, filtered=True):
         ('mail.message', 'model', 'res_id'),
         ('mail.wizard.invite', 'res_model', 'res_id'),
         ('mail.mail.statistics', 'model', 'res_id'),
+        ('mail.mass_mailing', 'mailing_model', None),
         ('project.project', 'alias_model', None),
         ('rating.rating', 'res_model', 'res_id'),
     ]
@@ -1381,6 +1382,7 @@ def update_field_references(cr, old, new, only_models=None):
             - ir_exports_line
             - ir_act_server
             - ir_rule
+            - mail.mass_mailing
     """
     p = {
         'old': '\y%s\y' % (old,),
@@ -1446,6 +1448,16 @@ def update_field_references(cr, old, new, only_models=None):
            AND m.model IN %(models)s
         """
     cr.execute(q, p)
+
+    # mass mailing
+    if table_exists(cr, 'mail_mass_mailing'):
+        q = """
+            UPDATE mail_mass_mailing m
+               SET mailing_domain = regexp_replace(mailing_domain, %(old)s, %(new)s, 'g')
+        """
+        if only_models:
+            q += "WHERE  mailing_model IN %(models)s"
+        cr.execute(q, p)
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100):
     if ids is None:
