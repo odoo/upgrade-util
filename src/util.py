@@ -20,7 +20,10 @@ import markdown
 
 import openerp
 from openerp import release, SUPERUSER_ID
-from openerp.addons.base.module.module import MyWriter
+try:
+    from odoo.addons.base.module.module import MyWriter
+except ImportError:
+    from openerp.addons.base.module.module import MyWriter
 from openerp.modules.module import get_module_path
 from openerp.modules.registry import RegistryManager
 from openerp.sql_db import db_connect
