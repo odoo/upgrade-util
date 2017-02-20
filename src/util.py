@@ -1199,7 +1199,7 @@ def delete_model(cr, model, drop_table=True):
     if mod_id:
         # some required fk are in "ON DELETE SET NULL".
         for tbl in 'base_action_rule google_drive_config'.split():
-            if table_exists(cr, tbl):
+            if column_exists(cr, tbl, 'model_id'):
                 cr.execute("DELETE FROM {0} WHERE model_id=%s".format(tbl), [mod_id])
         cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
