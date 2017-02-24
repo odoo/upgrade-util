@@ -955,7 +955,7 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module):
                      AND module=%s
                """, (new_module, 'ir.model.fields', name, old_module))
 
-def rename_field(cr, model, old, new):
+def rename_field(cr, model, old, new, update_references=True):
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
     [fid] = cr.fetchone() or [None]
     if fid:
@@ -973,6 +973,9 @@ def rename_field(cr, model, old, new):
     table = table_of_model(cr, model)
     if column_exists(cr, table, old):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
+
+    if update_references:
+        update_field_references(cr, old, new, only_models=(model,))
 
 def convert_field_to_property(cr, model, field, type,
                               target_model=None,
