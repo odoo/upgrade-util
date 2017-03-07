@@ -1457,7 +1457,7 @@ def update_field_references(cr, old, new, only_models=None):
     cr.execute(q, p)
 
     # mass mailing
-    if table_exists(cr, 'mail_mass_mailing'):
+    if column_exists(cr, 'mail_mass_mailing', 'mailing_domain'):
         q = """
             UPDATE mail_mass_mailing m
                SET mailing_domain = regexp_replace(mailing_domain, %(old)s, %(new)s, 'g')
