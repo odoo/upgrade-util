@@ -493,6 +493,56 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         CREATE INDEX ON {m2m}({col2});
     """.format(**locals()))
 
+def uniq_tags(cr, model, uniq_column='name', order='id'):
+    """
+        Deduplicated "tag" models entries.
+        Should only be referenced as many2many
+
+        By using `uniq_column=lower(name)` and `order=name`
+        you can prioritize tags in CamelCase/UPPERCASE.
+    """
+    table = table_of_model(cr, model)
+    upds = []
+    for ft, fc, _, da in get_fk(cr, table):
+        assert da == 'c'    # should be a ondelete=cascade fk
+        cols = get_columns(cr, ft, ignore=(fc,))[0]
+        assert len(cols) == 1   # it's a m2, should have only 2 columns
+
+        upds.append("""
+            INSERT INTO {rel}({c1}, {c2})
+                 SELECT r.{c1}, d.id
+                   FROM {rel} r
+                   JOIN dups d ON (r.{c2} = ANY(d.others))
+                 EXCEPT
+                 SELECT r.{c1}, r.{c2}
+                   FROM {rel} r
+                   JOIN dups d ON (r.{c2} = d.id)
+        """.format(rel=ft, c1=cols[0], c2=fc))
+
+    assert upds         # if not m2m found, there is something wrong...
+
+    updates = ','.join('_upd_%s AS (%s)' % x for x in enumerate(upds))
+    query = """
+        WITH dups AS (
+            SELECT (array_agg(id order by {order}))[1] as id,
+                   (array_agg(id order by {order}))[2:array_length(array_agg(id), 1)] as others
+              FROM {table}
+          GROUP BY {uniq_column}
+            HAVING count(id) > 1
+        ),
+        _upd_imd AS (
+            UPDATE ir_model_data x
+               SET res_id = d.id
+              FROM dups d
+             WHERE x.model = %s
+               AND x.res_id = ANY(d.others)
+        ),
+        {updates}
+        DELETE FROM {table} WHERE id IN (SELECT unnest(others) FROM dups)
+    """.format(**locals())
+
+    cr.execute(query, [model])
+
 def modules_installed(cr, *modules):
     """return True if all `modules` are (about to be) installed"""
     assert modules
