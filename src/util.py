@@ -1127,6 +1127,7 @@ def res_model_res_id(cr, filtered=True):
         ('mail.followers', 'res_model', 'res_id'),
         ('mail.message.subtype', 'res_model', None),
         ('mail.message', 'model', 'res_id'),
+        ('mail.compose.message', 'model', 'res_id'),
         ('mail.wizard.invite', 'res_model', 'res_id'),
         ('mail.mail.statistics', 'model', 'res_id'),
         ('mail.mass_mailing', 'mailing_model', None),
