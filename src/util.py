@@ -1598,6 +1598,11 @@ def announce(cr, version, msg, format='rst',
         _logger.warning('Cannot announce message', exc_info=True)
 
 def drop_workflow(cr, osv):
+    if not table_exists(cr, 'wkf'):
+        # workflows have been removed in 10.saas~14
+        # noop if there is no workflow tables anymore...
+        return
+
     cr.execute("""
         -- we want to first drop the foreign keys on the workitems because
         -- it slows down the process a lot
