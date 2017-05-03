@@ -1398,10 +1398,15 @@ def rename_model(cr, old, new, rename_table=True):
                      AND name LIKE %s
                """, ('field_%s_' % new_u, len(old_u) + 7, 'ir.model.fields', 'field_%s_%%' % old_u))
 
-    cr.execute(r"""UPDATE ir_act_server
-                      SET code=regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g'),
-                          condition=regexp_replace(condition, '([''"]){old}\1', '\1{new}\1', 'g')
-                """.format(old=old.replace('.', r'\.'), new=new))
+    col_prefix = ""
+    if not column_exists(cr, 'ir_act_server', 'condition'):
+        col_prefix = '--'     # sql comment the line
+
+    cr.execute(r"""
+        UPDATE ir_act_server
+           SET {col_prefix} condition=regexp_replace(condition, '([''"]){old}\1', '\1{new}\1', 'g'),
+               code=regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g')
+    """.format(col_prefix=col_prefix, old=old.replace('.', r'\.'), new=new))
 
 
 def replace_record_references(cr, old, new, replace_xmlid=True):
@@ -1515,11 +1520,14 @@ def update_field_references(cr, old, new, only_models=None):
     cr.execute(q, p)
 
     # ir.action.server
+    col_prefix = ""
+    if not column_exists(cr, 'ir_act_server', 'condition'):
+        col_prefix = '--'     # sql comment the line
     q = """
         UPDATE ir_act_server s
-           SET condition = regexp_replace(condition, %(old)s, %(new)s, 'g'),
+           SET {col_prefix} condition = regexp_replace(condition, %(old)s, %(new)s, 'g'),
                code = regexp_replace(code, %(old)s, %(new)s, 'g')
-    """
+    """.format(col_prefix=col_prefix)
     if only_models:
         q += """
           FROM ir_model m
