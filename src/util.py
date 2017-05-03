@@ -25,7 +25,11 @@ try:
 except ImportError:
     from openerp.addons.base.module.module import MyWriter
 from openerp.modules.module import get_module_path
-from openerp.modules.registry import RegistryManager
+try:
+    from openerp.modules.registry import RegistryManager
+except ImportError:
+    # from saas~16, we use the Registry class directly.
+    from odoo.modules.registry import Registry as RegistryManager
 from openerp.sql_db import db_connect
 from openerp.tools.func import frame_codeinfo
 from openerp.tools.mail import html_sanitize
