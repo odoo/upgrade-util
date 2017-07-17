@@ -1404,8 +1404,25 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
     if old[0] == new[0]:
         # same model, also change direct references (fk)
         for table, fk, _, _ in get_fk(cr, table_of_model(cr, old[0])):
-            cr.execute('UPDATE {table} SET {fk}=%s WHERE {fk}=%s'.format(table=table, fk=fk),
-                       (new[1], old[1]))
+            query = 'UPDATE {table} t SET {fk}=%(new)s WHERE {fk}=%(old)s'
+
+            col2 = None
+            if not column_exists(cr, table, 'id'):
+                # seems to be a m2m table. Avoid duplicated entries
+                cols = get_columns(cr, table, ignore=(fk,))[0]
+                assert len(cols) == 1   # it's a m2, should have only 2 columns
+                col2 = cols[0]
+                query = """
+                    WITH _existing AS (
+                        SELECT {col2} FROM {table} WHERE {fk}=%%(new)s
+                    )
+                    %s
+                    AND NOT EXISTS(SELECT 1 FROM _existing WHERE {col2}=t.{col2});
+                    DELETE FROM {table} WHERE {fk}=%%(old)s;
+                """ % query
+
+            cr.execute(query.format(table=table, fk=fk, col2=col2),
+                       dict(new=new[1], old=old[1]))
 
     for model, res_model, res_id in res_model_res_id(cr):
         if not res_id:
