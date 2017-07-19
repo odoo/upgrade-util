@@ -32,6 +32,11 @@ from openerp.tools.mail import html_sanitize
 from openerp.tools import UnquoteEvalContext
 
 try:
+    from odoo.tools import pickle
+except ImportError:
+    import cPickle as pickle
+
+try:
     from openerp.api import Environment
     manage_env = Environment.manage
 except ImportError:
@@ -1423,6 +1428,19 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
 
             cr.execute(query.format(table=table, fk=fk, col2=col2),
                        dict(new=new[1], old=old[1]))
+
+            if not col2:    # it's a model
+                # update default values
+                old_pckl = pickle.dumps(old[1])
+                new_pckl = pickle.dumps(new[1])
+                cr.execute("""
+                    UPDATE ir_values
+                       SET value=%s
+                     WHERE key='default'
+                       AND model=%s
+                       AND name=%s
+                       AND value=%s
+                """, [new_pckl, model_of_table(cr, table), fk, old_pckl])
 
     for model, res_model, res_id in res_model_res_id(cr):
         if not res_id:
