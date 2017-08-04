@@ -344,8 +344,12 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             raise
         cr.execute('UPDATE "%s" SET "%s"=%%s WHERE id=%%s' % (table, active_field), (False, res_id))
     else:
-        # TODO delete attachments & workflow instances
-        pass
+        for rmodel, rmodcol, ridcol in res_model_res_id(cr):
+            if not ridcol:
+                continue
+            rtable = table_of_model(cr, rmodel)
+            cr.execute("DELETE FROM %s WHERE %s=%%s AND %s=%%s" % (rtable, rmodcol, ridcol),
+                       [model, res_id])
 
 def rename_xmlid(cr, old, new):
     if '.' not in old or '.' not in new:
