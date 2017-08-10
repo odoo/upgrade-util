@@ -63,6 +63,9 @@ class MigrationError(Exception):
 
 def main(func, version=None):
     """a main() function for scripts"""
+    # NOTE: this is not recommanded when the func callback use the ORM as the addon-path is
+    # incomplete. Please pipe your script into `odoo shell`. Use `if __name__ == '__builtin__':`
+    # pattern in this case. Do not forget to commit the cursor at the end.
     if len(sys.argv) != 2:
         sys.exit("Usage: %s <dbname>" % (sys.argv[0],))
     dbname = sys.argv[1]
