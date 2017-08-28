@@ -630,6 +630,7 @@ def remove_module(cr, module):
                                         AND model = d.model
                                         AND module != d.module)
                      AND module=%s
+                     AND model != 'ir.module.module'
                 GROUP BY model
                """, (module,))
     for model, res_ids in cr.fetchall():
