@@ -844,6 +844,13 @@ def remove_module_deps(cr, module, old_deps):
                           AND name IN %s
                """, (module, old_deps))
 
+
+def module_deps_diff(cr, module, plus=(), minus=()):
+    for new_dep in plus:
+        new_module_dep(cr, module, new_dep)
+    if minus:
+        remove_module_deps(cr, module, tuple(minus))
+
 def new_module(cr, module, deps=(), auto_install=False):
     if module_installed(cr, module):
         #Avoid duplicate entries for module which is already installed,
