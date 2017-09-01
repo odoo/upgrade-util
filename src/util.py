@@ -197,6 +197,7 @@ def table_of_model(cr, model):
         'ir.actions.act_window.view':  'ir_act_window_view',
         'ir.actions.client':           'ir_act_client',
         'ir.actions.report.xml':       'ir_act_report_xml',
+        'ir.actions.report':           'ir_act_report_xml',
         'ir.actions.server':           'ir_act_server',
         'ir.actions.wizard':           'ir_act_wizard',
 
@@ -211,6 +212,9 @@ def table_of_model(cr, model):
         'workflow.workitem':   'wkf_workitem',
     }.get(model, model.replace('.', '_'))
 
+
+_ACTION_REPORT_MODEL = 'ir.actions.report' if version_gte('10.saas~17') else 'ir.actions.report.xml'
+
 def model_of_table(cr, table):
     return {
         # can also be act_window_close, but there are chance it wont be usefull for anyone...
@@ -219,7 +223,7 @@ def model_of_table(cr, table):
         'ir_act_window':      'ir.actions.act_window',
         'ir_act_window_view': 'ir.actions.act_window.view',
         'ir_act_client':      'ir.actions.client',
-        'ir_act_report_xml':  'ir.actions.report.xml',
+        'ir_act_report_xml':  _ACTION_REPORT_MODEL,
         'ir_act_server':      'ir.actions.server',
         'ir_act_wizard':      'ir.actions.wizard',
 
@@ -1214,6 +1218,7 @@ def res_model_res_id(cr, filtered=True):
         ('ir.attachment', 'res_model', 'res_id'),
         ('ir.cron', 'model', None),
         ('ir.actions.report.xml', 'model', None),
+        ('ir.actions.report', 'model', None),       # >= saas~17
         ('ir.actions.act_window', 'res_model', 'res_id'),
         ('ir.actions.act_window', 'src_model', None),
         ('ir.actions.server', 'wkf_model_name', None),   # stored related, also need to be updated
