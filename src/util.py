@@ -667,40 +667,6 @@ def remove_module(cr, module):
     for view_id in view_ids:
         remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
 
-    # clean up dashboards
-    if field_ids:
-        # clean dashboards group_by from removed columns
-        cr.execute("""\
-            SELECT      f.model, array_agg(f.name), array_agg(aw.id)
-            FROM        ir_model_fields f
-                JOIN    ir_act_window aw
-                ON      aw.res_model = f.model
-            WHERE       f.id IN %s
-            AND         NOT f.model_id = ANY(%s)
-            GROUP BY    f.model
-            """, [field_ids, list(model_ids)])
-        for model, fields, actions in cr.fetchall():
-            cr.execute("""\
-                SELECT  id, arch
-                FROM    ir_ui_view_custom
-                WHERE   arch ~ %s
-                """, ["name=[\"'](%s)[\"']" % '|'.join(map(str, actions))])
-            for id, arch in ((x, lxml.etree.fromstring(y))
-                             for x, y in cr.fetchall()):
-                for action in arch.iterfind('.//action'):
-                    context = eval(action.get('context', '{}'),
-                                   UnquoteEvalContext())
-                    if context.get('group_by'):
-                        context['group_by'] = list(
-                            set(context['group_by']) - set(fields))
-                        action.set('context', unicode(context))
-                cr.execute("""\
-                    UPDATE  ir_ui_view_custom
-                    SET     arch = %s
-                    WHERE   id = %s
-                    """, [lxml.etree.tostring(arch), id])
-        cr.execute("DELETE FROM ir_model_fields WHERE id IN %s", [field_ids])
-
     # remove relations
     cr.execute("""SELECT name
                     FROM ir_model_relation
@@ -717,6 +683,11 @@ def remove_module(cr, module):
         cr.execute("SELECT model FROM ir_model WHERE id IN %s", [model_ids])
         for model, in cr.fetchall():
             delete_model(cr, model)
+
+    if field_ids:
+        cr.execute("SELECT model, name FROM ir_model_fields WHERE id IN %s", [field_ids])
+        for model, name in cr.fetchall():
+            remove_field(cr, model, name)
 
     cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
@@ -1030,10 +1001,41 @@ def drop_depending_views(cr, table, column):
         cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
 
 def remove_field(cr, model, fieldname, cascade=False):
+    # clean dashboards' `group_by`
+    cr.execute("""
+        SELECT      array_agg(f.name), array_agg(aw.id)
+        FROM        ir_model_fields f
+            JOIN    ir_act_window aw
+            ON      aw.res_model = f.model
+        WHERE       f.model = %s AND f.name = %s
+        GROUP BY    f.model
+        """, [model, fieldname])
+    for fields, actions in cr.fetchall():
+        cr.execute("""\
+            SELECT  id, arch
+            FROM    ir_ui_view_custom
+            WHERE   arch ~ %s
+            """, ["name=[\"'](%s)[\"']" % '|'.join(map(str, actions))])
+        for id, arch in ((x, lxml.etree.fromstring(y))
+                         for x, y in cr.fetchall()):
+            for action in arch.iterfind('.//action'):
+                context = eval(action.get('context', '{}'),
+                               UnquoteEvalContext())
+                if context.get('group_by'):
+                    context['group_by'] = list(
+                        set(context['group_by']) - set(fields))
+                    action.set('context', unicode(context))
+            cr.execute("""\
+                UPDATE  ir_ui_view_custom
+                SET     arch = %s
+                WHERE   id = %s
+                """, [lxml.etree.tostring(arch), id])
+
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
     fids = tuple(map(itemgetter(0), cr.fetchall()))
     if fids:
         cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ('ir.model.fields', fids))
+
     # cleanup translations
     cr.execute("""
        DELETE FROM ir_translation
