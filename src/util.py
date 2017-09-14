@@ -671,7 +671,9 @@ def remove_module(cr, module):
         elif model == 'ir.ui.view':
             view_ids = tuple(res_ids)
         else:
-            cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table_of_model(cr, model), (tuple(res_ids),))
+            table = table_of_model(cr, model)
+            if table_exists(cr, table):
+                cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table, [tuple(res_ids)])
 
     for view_id in view_ids:
         remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
