@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Utility functions for migration scripts
 
 import datetime
@@ -59,6 +60,14 @@ DROP_DEPRECATED_CUSTOM = os.getenv('OE_DROP_DEPRECATED_CUSTOM')
 # migration environ, used to share data between scripts
 ENVIRON = {}
 
+
+# python3 shims
+try:
+    basestring
+except NameError:
+    basestring = unicode = str
+
+
 class MigrationError(Exception):
     pass
 
@@ -79,7 +88,7 @@ def splitlines(s):
         Skip empty lines
         Remove comments (starts with `#`).
     """
-    return filter(None, map(lambda x: x.split('#', 1)[0].strip(), s.splitlines()))
+    return (sl for l in s.splitlines() for sl in [l.split('#', 1)[0].strip()] if sl)
 
 def expand_braces(s):
     # expand braces (a la bash)
@@ -110,11 +119,11 @@ def skippable_cm():
         try:
             with _():
                 pass
-        except RuntimeError, r:
+        except RuntimeError as r:
             skippable_cm._msg = str(r)
     try:
         yield
-    except RuntimeError, r:
+    except RuntimeError as r:
         if str(r) != skippable_cm._msg:
             raise
 
@@ -993,7 +1002,7 @@ def get_columns(cr, table, ignore=('id',), extra_prefixes=None):
                   WHERE table_name=%s
                     AND column_name NOT IN %s
                """.format(select=select), params + [table, ignore])
-    return zip(*cr.fetchall())
+    return list(zip(*cr.fetchall()))
 
 def drop_depending_views(cr, table, column):
     """drop views depending on a field to allow the ORM to resize it in-place"""
@@ -1293,7 +1302,7 @@ def delete_model(cr, model, drop_table=True):
         table = table_of_model(cr, dest_model)
         query = 'DELETE FROM "{0}" WHERE "{1}"=%s RETURNING id'.format(table, res_model)
         cr.execute(query, (model,))
-        ids = map(itemgetter(0), cr.fetchall())
+        ids = tuple(map(itemgetter(0), cr.fetchall()))
         _rm_refs(cr, dest_model, ids)
 
     _rm_refs(cr, model)
@@ -1608,7 +1617,7 @@ def update_field_references(cr, old, new, only_models=None):
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100):
     if ids is None:
         cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
-        ids = map(itemgetter(0), cr.fetchall())
+        ids = tuple(map(itemgetter(0), cr.fetchall()))
 
     Model = env(cr)[model]
     size = (len(ids) + chunk_size - 1) / chunk_size
@@ -1634,7 +1643,7 @@ def split_group(cr, from_groups, to_group):
     if not isinstance(from_groups, (list, tuple, set)):
         from_groups = [from_groups]
 
-    from_groups = filter(None, map(check_group, from_groups))
+    from_groups = [g for g in map(check_group, from_groups) if g]
     if not from_groups:
         return
 
@@ -1667,6 +1676,7 @@ def md2html(md):
         'markdown.extensions.sane_lists',
     ]
     return markdown.markdown(md, extensions=extensions)
+
 
 _DEFAULT_HEADER = """
 <p>Odoo has been upgraded to version {version}.</p>
@@ -1819,8 +1829,11 @@ def chunks(iterable, size, fmt=None):
         }.get(type(iterable), iter)
 
     it = iter(iterable)
-    while True:
-        yield fmt(chain((it.next(),), islice(it, size - 1)))
+    try:
+        while True:
+            yield fmt(chain((next(it),), islice(it, size - 1)))
+    except StopIteration:
+        return
 
 def iter_browse(model, *args, **kw):
     """
