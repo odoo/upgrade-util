@@ -1253,6 +1253,25 @@ def res_model_res_id(cr, filtered=True):
 
         yield model, res_model, res_id
 
+
+def _ir_values_value(cr):
+    # returns the casting from bytea to text needed in saas~17 for column `value` of `ir_values`
+    # returns tuple(column_read, cast_write)
+    result = getattr(_ir_values_value, 'result', None)
+
+    if result is None:
+        if column_type(cr, 'ir_values', 'value') == 'bytea':
+            cr.execute("SELECT character_set_name FROM information_schema.character_sets")
+            charset, = cr.fetchone()
+            column_read = "convert_from(value, '%s')" % charset
+            cast_write = "convert_to(%%s, '%s')" % charset
+        else:
+            column_read = 'value'
+            cast_write = '%s'
+        _ir_values_value.result = result = (column_read, cast_write)
+
+    return result
+
 def _rm_refs(cr, model, ids=None):
     if ids is None:
         match = 'like %s'
@@ -1270,8 +1289,6 @@ def _rm_refs(cr, model, ids=None):
          WHERE ttype='reference'
          UNION
         SELECT 'ir.translation', 'name'
-         UNION
-        SELECT 'ir.values', 'value'
     """)
 
     for ref_model, ref_column in cr.fetchall():
@@ -1282,17 +1299,17 @@ def _rm_refs(cr, model, ids=None):
             cr.execute(query, (needle,))
             # TODO make it recursive?
 
+    if table_exists(cr, 'ir_values'):
+        column, _ = _ir_values_value(cr)
+        query = 'DELETE FROM ir_values WHERE {0} {1}'.format(column, match)
+        cr.execute(query, [needle])
+
     if ids is None:
         cr.execute("""
             DELETE FROM ir_translation
              WHERE name=%s
                AND type IN ('constraint', 'sql_constraint', 'view', 'report', 'rml', 'xsl')
         """, [model])
-
-    if model.startswith('ir.action'):
-        query = 'DELETE FROM ir_values WHERE key=%s AND value {0}'.format(match)
-        cr.execute(query, ('action', needle))
-        # TODO make it recursive?
 
 def remove_model(cr, model, drop_table=True):
     model_underscore = model.replace('.', '_')
@@ -1421,8 +1438,6 @@ def rename_model(cr, old, new, rename_table=True):
          WHERE ttype='reference'
          UNION
         SELECT 'ir.translation', 'name'
-         UNION
-        SELECT 'ir.values', 'value'
     """)
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
@@ -1431,6 +1446,15 @@ def rename_model(cr, old, new, rename_table=True):
                              SET {column}='{new}' || substring({column} FROM '%#",%#"' FOR '#')
                            WHERE {column} LIKE '{old},%'
                        """.format(table=table, column=column, new=new, old=old))
+
+    if table_exists(cr, 'ir_values'):
+        column_read, cast_write = _ir_values_value(cr)
+        query = """
+            UPDATE ir_values
+               SET value = {cast[0]}'{new}' || substring({column} FROM '%#",%#"' FOR '#'){cast[2]}
+             WHERE {column} LIKE '{old},%'
+        """.format(column=column_read, new=new, old=old, cast=cast_write.partition('%s'))
+        cr.execute(query)
 
     cr.execute("""
         UPDATE ir_translation
