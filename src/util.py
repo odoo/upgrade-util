@@ -1294,7 +1294,7 @@ def _rm_refs(cr, model, ids=None):
         cr.execute(query, ('action', needle))
         # TODO make it recursive?
 
-def delete_model(cr, model, drop_table=True):
+def remove_model(cr, model, drop_table=True):
     model_underscore = model.replace('.', '_')
 
     # remove references
@@ -1344,6 +1344,9 @@ def delete_model(cr, model, drop_table=True):
         elif view_exists(cr, table):
             cr.execute('DROP VIEW "{0}" CASCADE'.format(table))
 
+
+# compat layer...
+delete_model = remove_model
 
 def move_model(cr, model, from_module, to_module, move_data=False, delete=False):
     """
