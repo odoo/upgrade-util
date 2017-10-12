@@ -1238,6 +1238,7 @@ def res_model_res_id(cr, filtered=True):
         ('ir.model.fields.anonymization', 'model_name', None),
         ('ir.model.fields.anonymization.migration.fix', 'model_name', None),
         ('base_import.import', 'res_model', None),
+        ('calendar.event', 'res_model', 'res_id'),      # new in saas~18
         ('email.template', 'model', None),      # stored related
         ('mail.template', 'model', None),       # model renamed in saas~6
         # ('mail.alias', 'alias_model_id.model', 'alias_force_thread_id'),
