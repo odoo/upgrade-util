@@ -1509,6 +1509,9 @@ def update_field_references(cr, old, new, only_models=None):
                                                        %(old)s, %(new)s, 'g'),
                                                        %(def_old)s, %(def_new)s, 'g')
     """
+    if column_exists(cr, 'ir_filters', 'sort'):
+        q += ", sort = regexp_replace(sort, %(old)s, %(new)s, 'g')"
+
     if only_models:
         q += " WHERE model_id IN %(models)s"
 
