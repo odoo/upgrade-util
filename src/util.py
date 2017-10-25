@@ -37,6 +37,7 @@ from openerp.sql_db import db_connect
 from openerp.tools.func import frame_codeinfo
 from openerp.tools.mail import html_sanitize
 from openerp.tools import UnquoteEvalContext
+from openerp.tools.parse_version import parse_version
 
 try:
     from odoo.tools import pickle
@@ -71,6 +72,8 @@ except NameError:
 class MigrationError(Exception):
     pass
 
+def version_gte(version):
+    return parse_version(release.series) >= parse_version(version)
 
 def main(func, version=None):
     """a main() function for scripts"""
