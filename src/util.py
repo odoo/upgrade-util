@@ -1647,11 +1647,18 @@ def update_field_references(cr, old, new, only_models=None):
     # mass mailing
     if column_exists(cr, 'mail_mass_mailing', 'mailing_domain'):
         q = """
-            UPDATE mail_mass_mailing m
-               SET mailing_domain = regexp_replace(mailing_domain, %(old)s, %(new)s, 'g')
+            UPDATE mail_mass_mailing u
+               SET mailing_domain = regexp_replace(u.mailing_domain, %(old)s, %(new)s, 'g')
         """
         if only_models:
-            q += "WHERE  mailing_model IN %(models)s"
+            if column_exists(cr, 'mail_mass_mailing', 'mailing_model_id'):
+                q += """
+                  FROM ir_model m
+                 WHERE m.id = u.mailing_model_id
+                   AND m.model IN %(models)s
+                """
+            else:
+                q += "WHERE u.mailing_model IN %(models)s"
         cr.execute(q, p)
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100):
