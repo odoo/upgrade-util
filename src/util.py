@@ -174,7 +174,7 @@ def has_enterprise():
     # XXX maybe we will need to change this for version > 9
     return bool(get_module_path('delivery_fedex', downloaded=False, display_warning=False))
 
-def dispatch_by_dbuuid(cr, version, callbacks):
+def dbuuid(cr):
     cr.execute("""
         SELECT value
           FROM ir_config_parameter
@@ -182,7 +182,10 @@ def dispatch_by_dbuuid(cr, version, callbacks):
       ORDER BY key DESC
          LIMIT 1
     """)
-    [uuid] = cr.fetchone()
+    return cr.fetchone()[0]
+
+def dispatch_by_dbuuid(cr, version, callbacks):
+    uuid = dbuuid(cr)
     if uuid in callbacks:
         func = callbacks[uuid]
         _logger.info('calling dbuuid-specific function `%s`', func.__name__)
