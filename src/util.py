@@ -3,6 +3,7 @@
 
 import datetime
 import imp
+import json
 import logging
 import lxml
 import os
@@ -1530,16 +1531,31 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
 
             if not col2:    # it's a model
                 # update default values
-                old_pckl = pickle.dumps(old[1])
-                new_pckl = pickle.dumps(new[1])
-                cr.execute("""
-                    UPDATE ir_values
-                       SET value=%s
-                     WHERE key='default'
-                       AND model=%s
-                       AND name=%s
-                       AND value=%s
-                """, [new_pckl, model_of_table(cr, table), fk, old_pckl])
+                model = model_of_table(cr, table)
+                if table_exists(cr, 'ir_values'):
+                    old_pckl = pickle.dumps(old[1])
+                    new_pckl = pickle.dumps(new[1])
+                    query = """
+                         UPDATE ir_values
+                            SET value={1}
+                          WHERE key='default'
+                            AND model=%s
+                            AND name=%s
+                            AND {0}=%s
+                    """.format(*_ir_values_value(cr))
+                    cr.execute(query, [new_pckl, model, fk, old_pckl])
+                else:
+                    old_json = json.dumps(old[1])
+                    new_json = json.dumps(new[1])
+                    cr.execute("""
+                        UPDATE ir_default d
+                           SET json_value = %s
+                          FROM ir_model_fields f
+                         WHERE f.id = d.field_id
+                           AND f.model = %s
+                           AND f.name = %s
+                           AND d.json_value = %s
+                    """, [new_json, model, fk, old_json])
 
     for model, res_model, res_id in res_model_res_id(cr):
         if not res_id:
