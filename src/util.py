@@ -41,11 +41,6 @@ from openerp.tools import UnquoteEvalContext
 from openerp.tools.parse_version import parse_version
 
 try:
-    from odoo.tools import pickle
-except ImportError:
-    import cPickle as pickle
-
-try:
     from openerp.api import Environment
     manage_env = Environment.manage
 except ImportError:
@@ -1506,10 +1501,40 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
     assert isinstance(old, tuple) and len(old) == 2
     assert isinstance(new, tuple) and len(new) == 2
 
-    if old[0] == new[0]:
-        # same model, also change direct references (fk)
-        for table, fk, _, _ in get_fk(cr, table_of_model(cr, old[0])):
-            query = 'UPDATE {table} t SET {fk}=%(new)s WHERE {fk}=%(old)s'
+    if not old[1]:
+        return
+
+    return replace_record_references_batch(cr, {old[1]: new[1]}, old[0], new[0], replace_xmlid)
+
+def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, replace_xmlid=True):
+    assert id_mapping
+    assert all(isinstance(v, int) and isinstance(k, int) for k, v in id_mapping.items())
+
+    if model_dst is None:
+        model_dst = model_src
+
+    old = tuple(id_mapping.keys())
+    new = tuple(id_mapping.values())
+    jmap = json.dumps(id_mapping)
+
+    def genmap(fmt_k, fmt_v=None):
+        # generate map using given format
+        fmt_v = fmt_k if fmt_v is None else fmt_v
+        m = {fmt_k % k: fmt_v % v for k, v in id_mapping.items()}
+        return json.dumps(m), tuple(m.keys())
+
+    if model_src == model_dst:
+        pmap, pmap_keys = genmap('I%d\n.')      # 7 time faster than using pickle.dumps
+        smap, smap_keys = genmap("%d")
+
+        column_read, cast_write = _ir_values_value(cr)
+
+        for table, fk, _, _ in get_fk(cr, table_of_model(cr, model_src)):
+            query = """
+                UPDATE {table} t
+                   SET {fk} = ('{jmap}'::json->>{fk}::varchar)::int4
+                 WHERE {fk} IN %(old)s
+            """
 
             col2 = None
             if not column_exists(cr, table, 'id'):
@@ -1519,44 +1544,42 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
                 col2 = cols[0]
                 query = """
                     WITH _existing AS (
-                        SELECT {col2} FROM {table} WHERE {fk}=%%(new)s
+                        SELECT {col2} FROM {table} WHERE {fk} IN %%(new)s
                     )
                     %s
                     AND NOT EXISTS(SELECT 1 FROM _existing WHERE {col2}=t.{col2});
-                    DELETE FROM {table} WHERE {fk}=%%(old)s;
+                    DELETE FROM {table} WHERE {fk} IN %%(old)s;
                 """ % query
 
-            cr.execute(query.format(table=table, fk=fk, col2=col2),
-                       dict(new=new[1], old=old[1]))
+            cr.execute(query.format(table=table, fk=fk, jmap=jmap, col2=col2),
+                       dict(new=new, old=old))
 
             if not col2:    # it's a model
                 # update default values
+                # TODO? update all defaults using 1 query (using `WHERE (model, name) IN ...`)
                 model = model_of_table(cr, table)
                 if table_exists(cr, 'ir_values'):
-                    old_pckl = pickle.dumps(old[1])
-                    new_pckl = pickle.dumps(new[1])
                     query = """
                          UPDATE ir_values
-                            SET value={1}
+                            SET value = {cast[0]} '{pmap}'::json->>({col}) {cast[2]}
                           WHERE key='default'
                             AND model=%s
                             AND name=%s
-                            AND {0}=%s
-                    """.format(*_ir_values_value(cr))
-                    cr.execute(query, [new_pckl, model, fk, old_pckl])
+                            AND {col} IN %s
+                    """.format(col=column_read, cast=cast_write.partition('%s'), pmap=pmap)
+                    cr.execute(query, [model, fk, pmap_keys])
                 else:
-                    old_json = json.dumps(old[1])
-                    new_json = json.dumps(new[1])
                     cr.execute("""
                         UPDATE ir_default d
-                           SET json_value = %s
+                           SET json_value = '{smap}'::json->>json_value
                           FROM ir_model_fields f
                          WHERE f.id = d.field_id
                            AND f.model = %s
                            AND f.name = %s
-                           AND d.json_value = %s
-                    """, [new_json, model, fk, old_json])
+                           AND d.json_value IN %s
+                    """.format(smap=smap), [model, fk, smap_keys])
 
+    # indirect references
     for model, res_model, res_id in res_model_res_id(cr):
         if not res_id:
             continue
@@ -1564,24 +1587,24 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
             continue
         table = table_of_model(cr, model)
         cr.execute("""UPDATE {table}
-                         SET {res_model}=%s, {res_id}=%s
-                       WHERE {res_model}=%s
-                         AND {res_id}=%s
-                   """.format(table=table, res_model=res_model, res_id=res_id),
-                   new + old)
+                         SET {res_model} = %s,
+                             {res_id} = ('{jmap}'::json->>{res_id}::varchar)::int4
+                       WHERE {res_model} = %s
+                         AND {res_id} IN %s
+                   """.format(table=table, res_model=res_model, res_id=res_id, jmap=jmap),
+                   [model_dst, model_src, old])
 
-    comma_new = '%s,%d' % new
-    comma_old = '%s,%d' % old
-    cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype=%s", ('reference',))
+    # reference fields
+    cmap, cmap_keys = genmap("%s,%%d" % model_src, "%s,%%d" % model_dst)
+    cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype='reference'")
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_exists(cr, table, column):
             cr.execute("""UPDATE "{table}"
-                             SET "{column}"=%s
-                           WHERE "{column}"=%s
-                       """.format(table=table, column=column),
-                       (comma_new, comma_old))
-
+                             SET "{column}" = '{cmap}'::json->>"{column}"
+                           WHERE "{column}" IN %s
+                       """.format(table=table, column=column, cmap=cmap),
+                       [cmap_keys])
 
 def update_field_references(cr, old, new, only_models=None):
     """
