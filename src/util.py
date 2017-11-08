@@ -391,17 +391,19 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             cr.execute("DELETE FROM %s WHERE %s=%%s AND %s=%%s" % (rtable, rmodcol, ridcol),
                        [model, res_id])
 
-def rename_xmlid(cr, old, new):
+def rename_xmlid(cr, old, new, noupdate=None):
     if '.' not in old or '.' not in new:
         raise ValueError('Please use fully qualified name <module>.<name>')
 
     old_module, _, old_name = old.partition('.')
     new_module, _, new_name = new.partition('.')
+    nu = '' if noupdate is None else (', noupdate=' + str(bool(noupdate)).lower())
     cr.execute("""UPDATE ir_model_data
                      SET module=%s, name=%s
+                         {}
                    WHERE module=%s AND name=%s
                RETURNING res_id
-               """, (new_module, new_name, old_module, old_name))
+               """.format(nu), (new_module, new_name, old_module, old_name))
     data = cr.fetchone()
     if data:
         return data[0]
