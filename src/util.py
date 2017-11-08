@@ -1956,7 +1956,7 @@ def iter_browse(model, *args, **kw):
 def log_progress(it, qualifier='elements', logger=_logger, size=None):
     if size is None:
         size = len(it)
-    l = float(size)
+    size = float(size)
     t0 = t1 = datetime.datetime.now()
     for i, e in enumerate(it, 1):
         yield e
@@ -1965,5 +1965,5 @@ def log_progress(it, qualifier='elements', logger=_logger, size=None):
             t1 = datetime.datetime.now()
             tdiff = t2 - t0
             logger.info("[%.02f%%] %d/%d %s processed in %s (TOTAL estimated time: %s)",
-                        (i / l * 100.0), i, l, qualifier, tdiff,
-                        datetime.timedelta(seconds=tdiff.total_seconds() * l / i))
+                        (i / size * 100.0), i, size, qualifier, tdiff,
+                        datetime.timedelta(seconds=tdiff.total_seconds() * size / i))
