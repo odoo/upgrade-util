@@ -1703,7 +1703,7 @@ def update_field_references(cr, old, new, only_models=None):
                 q += "WHERE u.mailing_model IN %(models)s"
         cr.execute(q, p)
 
-def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=100):
+def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
     if ids is None:
         cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
         ids = tuple(map(itemgetter(0), cr.fetchall()))
