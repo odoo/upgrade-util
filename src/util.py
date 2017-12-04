@@ -394,6 +394,29 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             cr.execute("DELETE FROM %s WHERE %s=%%s AND %s=%%s" % (rtable, rmodcol, ridcol),
                        [model, res_id])
 
+def remove_menus(cr, menu_ids):
+    if not menu_ids:
+        return
+    cr.execute("""
+        WITH RECURSIVE tree(id) AS (
+            SELECT id
+              FROM ir_ui_menu
+             WHERE id IN %s
+             UNION
+            SELECT m.id
+              FROM ir_ui_menu m
+              JOIN tree t ON (m.parent_id = t.id)
+        )
+        DELETE FROM ir_ui_menu m
+              USING tree t
+              WHERE m.id = t.id
+          RETURNING m.id
+    """, [tuple(menu_ids)])
+    ids = tuple(x[0] for x in cr.fetchall())
+    if ids:
+        cr.execute("DELETE FROM ir_model_data WHERE model='ir.ui.menu' AND res_id IN %s", [ids])
+
+
 def rename_xmlid(cr, old, new, noupdate=None):
     if '.' not in old or '.' not in new:
         raise ValueError('Please use fully qualified name <module>.<name>')
@@ -658,7 +681,7 @@ def remove_module(cr, module):
         """)
 
     # delete data
-    model_ids, field_ids, view_ids = (), (), ()
+    model_ids, field_ids, view_ids, menu_ids = (), (), (), ()
     cr.execute("""SELECT model, array_agg(res_id)
                     FROM ir_model_data d
                    WHERE NOT EXISTS (SELECT 1
@@ -678,6 +701,8 @@ def remove_module(cr, module):
             field_ids = tuple(res_ids)
         elif model == 'ir.ui.view':
             view_ids = tuple(res_ids)
+        elif model == 'ir.ui.menu':
+            menu_ids = tuple(res_ids)
         else:
             table = table_of_model(cr, model)
             if table_exists(cr, table):
@@ -685,6 +710,9 @@ def remove_module(cr, module):
 
     for view_id in view_ids:
         remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
+
+    if menu_ids:
+        remove_menus(cr, menu_ids)
 
     # remove relations
     cr.execute("""SELECT name
@@ -1305,9 +1333,18 @@ def _rm_refs(cr, model, ids=None):
         table = table_of_model(cr, ref_model)
         # NOTE table_exists is needed to avoid deleting from views
         if table_exists(cr, table) and column_exists(cr, table, ref_column):
-            query = 'DELETE FROM "{0}" WHERE "{1}" {2}'.format(table, ref_column, match)
-            cr.execute(query, (needle,))
-            # TODO make it recursive?
+            query_tail = ' FROM "{0}" WHERE "{1}" {2}'.format(table, ref_column, match)
+            if ref_model == 'ir.ui.view':
+                cr.execute('SELECT id' + query_tail, [needle])
+                for view_id, in cr.fetchall():
+                    remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
+            elif ref_model == 'ir.ui.menu':
+                cr.execute('SELECT id' + query_tail, [needle])
+                menu_ids = tuple(m[0] for m in cr.fetchall())
+                remove_menus(cr, menu_ids)
+            else:
+                cr.execute('DELETE' + query_tail, [needle])
+                # TODO make it recursive?
 
     if table_exists(cr, 'ir_values'):
         column, _ = _ir_values_value(cr)
