@@ -664,22 +664,6 @@ def remove_module(cr, module):
                         WHERE module=%s
                """, (mod_id,))
 
-    # When deleting a non-leaf module, installed modules that used to depend on it may
-    # have menus whose parent will be deleted. Unfortunately, there is a constraint
-    # that `RESTRICT` us to do so. Recreate it to `SET NULL` on parent.
-    # The culprit menu should be corrected when corresponding module will be updated.
-    cr.execute("""SELECT 1
-                    FROM pg_constraint
-                   WHERE conname='ir_ui_menu_parent_id_fkey'
-                     AND confdeltype='r'
-               """)
-    if cr.rowcount:
-        cr.execute("""
-            ALTER TABLE ir_ui_menu DROP CONSTRAINT ir_ui_menu_parent_id_fkey;
-            ALTER TABLE ir_ui_menu ADD CONSTRAINT ir_ui_menu_parent_id_fkey
-                FOREIGN KEY(parent_id) REFERENCES ir_ui_menu ON DELETE SET NULL;
-        """)
-
     # delete data
     model_ids, field_ids, view_ids, menu_ids = (), (), (), ()
     cr.execute("""SELECT model, array_agg(res_id)
