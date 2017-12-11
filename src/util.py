@@ -761,6 +761,25 @@ def merge_module(cr, old, into, tolerant=False):
                                            AND y.module = %s)
                    """.format(table),
                    [new, old, new])
+
+        if table == 'data':
+            cr.execute("""
+                SELECT model, array_agg(res_id)
+                  FROM ir_model_data
+                 WHERE module=%s
+                   AND model NOT LIKE 'ir.model%%'
+              GROUP BY model
+            """, [old])
+            for model, res_ids in cr.fetchall():
+                if model == 'ir.ui.view':
+                    for v in res_ids:
+                        remove_view(cr, view_id=v, deactivate_custom=True, silent=True)
+                elif model == 'ir.ui.menu':
+                    remove_menus(cr, tuple(res_ids))
+                else:
+                    for r in res_ids:
+                        remove_record(cr, (model, r))
+
         cr.execute("DELETE FROM ir_model_{0} WHERE module=%s".format(table), [old])
 
     _up('constraint', mod_ids[old], mod_ids[into])
