@@ -1051,6 +1051,11 @@ def drop_depending_views(cr, table, column):
         cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
 
 def remove_field(cr, model, fieldname, cascade=False):
+    if fieldname == 'id':
+        # called by `remove_module`. May happen when a model defined in a removed module was
+        # overwritten by another module in previous version.
+        return remove_model(cr, model)
+
     # clean dashboards' `group_by`
     cr.execute("""
         SELECT      array_agg(f.name), array_agg(aw.id)
