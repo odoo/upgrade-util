@@ -428,11 +428,14 @@ def rename_xmlid(cr, old, new, noupdate=None):
                      SET module=%s, name=%s
                          {}
                    WHERE module=%s AND name=%s
-               RETURNING res_id
+               RETURNING model, res_id
                """.format(nu), (new_module, new_name, old_module, old_name))
     data = cr.fetchone()
     if data:
-        return data[0]
+        model, rid = data
+        if model == 'ir.ui.view' and column_exists(cr, 'ir_ui_view', 'key'):
+            cr.execute("UPDATE ir_ui_view SET key=%s WHERE id=%s AND key=%s", [new, rid, old])
+        return rid
     return None
 
 def ref(cr, xmlid):
@@ -725,9 +728,25 @@ def remove_module(cr, module):
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
 
+
+def _update_view_key(cr, old, new):
+    # update view key for renamed & merged modules
+    if not column_exists(cr, 'ir_ui_view', 'key'):
+        return
+    cr.execute("""
+        UPDATE ir_ui_view v
+           SET key = CONCAT(%s, '.', x.name)
+          FROM ir_model_data x
+         WHERE x.model = 'ir.ui.view'
+           AND x.res_id = v.id
+           AND x.module = %s
+           AND v.key = CONCAT(x.module, '.', x.name)
+    """, [new, old])
+
 def rename_module(cr, old, new):
     cr.execute("UPDATE ir_module_module SET name=%s WHERE name=%s", (new, old))
     cr.execute("UPDATE ir_module_module_dependency SET name=%s WHERE name=%s", (new, old))
+    _update_view_key(cr, old, new)
     cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s", (new, old))
     mod_old = 'module_' + old
     mod_new = 'module_' + new
@@ -784,6 +803,7 @@ def merge_module(cr, old, into, tolerant=False):
 
     _up('constraint', mod_ids[old], mod_ids[into])
     _up('relation', mod_ids[old], mod_ids[into])
+    _update_view_key(cr, old, into)
     _up('data', old, into)
 
     # update dependencies
