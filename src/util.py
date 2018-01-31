@@ -11,6 +11,7 @@ import re
 import sys
 import time
 
+from collections import namedtuple
 from contextlib import contextmanager
 from docutils.core import publish_string
 from inspect import currentframe
@@ -237,6 +238,7 @@ def model_of_table(cr, table):
 
     }.get(table, table.replace('_', '.'))
 
+
 def env(cr):
     try:
         from openerp.api import Environment
@@ -387,12 +389,9 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             raise
         cr.execute('UPDATE "%s" SET "%s"=%%s WHERE id=%%s' % (table, active_field), (False, res_id))
     else:
-        for rmodel, rmodcol, ridcol in res_model_res_id(cr):
-            if not ridcol:
-                continue
-            rtable = table_of_model(cr, rmodel)
-            cr.execute("DELETE FROM %s WHERE %s=%%s AND %s=%%s" % (rtable, rmodcol, ridcol),
-                       [model, res_id])
+        for ir in indirect_references(cr, bound_only=True):
+            query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(ir.table, ir.model_filter(), ir.res_id)
+            cr.execute(query, [model, res_id])
 
 def remove_menus(cr, menu_ids):
     if not menu_ids:
@@ -1268,57 +1267,86 @@ def register_unanonymization_query(cr, model, field, query, query_type='sql', se
                   ) VALUES (%s, %s, %s, %s, %s, %s)
                """, [release.major_version, sequence, query_type, model, field, query])
 
-def res_model_res_id(cr, filtered=True):
-    each = [
-        ('ir.attachment', 'res_model', 'res_id'),
-        ('ir.cron', 'model', None),
-        ('ir.actions.report.xml', 'model', None),
-        ('ir.actions.report', 'model', None),       # >= saas~17
-        ('ir.actions.act_window', 'res_model', 'res_id'),
-        ('ir.actions.act_window', 'src_model', None),
-        ('ir.actions.server', 'wkf_model_name', None),   # stored related, also need to be updated
-        ('ir.actions.server', 'crud_model_name', None),  # idem
-        ('ir.actions.client', 'res_model', None),
-        ('ir.model', 'model', None),
-        ('ir.model.fields', 'model', None),
-        ('ir.model.fields', 'relation', None),      # destination of a relation field
-        ('ir.model.data', 'model', 'res_id'),
-        ('ir.filters', 'model_id', None),     # YUCK!, not an id
-        ('ir.exports', 'resource', None),
-        ('ir.ui.view', 'model', None),
-        ('ir.values', 'model', 'res_id'),
-        ('workflow.transition', 'trigger_model', None),
-        ('workflow_triggers', 'model', None),
 
-        ('ir.model.fields.anonymization', 'model_name', None),
-        ('ir.model.fields.anonymization.migration.fix', 'model_name', None),
-        ('base_import.import', 'res_model', None),
-        ('calendar.event', 'res_model', 'res_id'),      # new in saas~18
-        ('email.template', 'model', None),      # stored related
-        ('mail.template', 'model', None),       # model renamed in saas~6
-        # ('mail.alias', 'alias_model_id.model', 'alias_force_thread_id'),
-        # ('mail.alias', 'alias_parent_model_id.model', 'alias_parent_thread_id'),
-        ('mail.followers', 'res_model', 'res_id'),
-        ('mail.message.subtype', 'res_model', None),
-        ('mail.message', 'model', 'res_id'),
-        ('mail.compose.message', 'model', 'res_id'),
-        ('mail.wizard.invite', 'res_model', 'res_id'),
-        ('mail.mail.statistics', 'model', 'res_id'),
-        ('mail.mass_mailing', 'mailing_model', None),
-        ('project.project', 'alias_model', None),
-        ('rating.rating', 'res_model', 'res_id'),
+class IndirectReference(namedtuple('IndirectReference', 'table res_model res_id res_model_id')):
+    def model_filter(self, prefix="", placeholder="%s"):
+        if prefix and prefix[-1] != '.':
+            prefix += '.'
+        if self.res_model_id:
+            placeholder = '(SELECT id FROM ir_model WHERE model={})'.format(placeholder)
+            column = self.res_model_id
+        else:
+            column = self.res_model
+
+        return '{}"{}"={}'.format(prefix, column, placeholder)
+
+
+IndirectReference.__new__.__defaults__ = (None, None)   # https://stackoverflow.com/a/18348004
+
+def indirect_references(cr, bound_only=False):
+    IR = IndirectReference
+    each = [
+        IR('ir_attachment', 'res_model', 'res_id'),
+        IR('ir_cron', 'model', None),
+        IR('ir_act_report_xml', 'model', None),
+        IR('ir_act_window', 'res_model', 'res_id'),
+        IR('ir_act_window', 'src_model', None),
+        IR('ir_act_server', 'wkf_model_name', None),
+        IR('ir_act_server', 'crud_model_name', None),
+        IR('ir_act_client', 'res_model', None),
+        IR('ir_model', 'model', None),
+        IR('ir_model_fields', 'model', None),
+        IR('ir_model_fields', 'relation', None),     # destination of a relation field
+        IR('ir_model_data', 'model', 'res_id'),
+        IR('ir_filters', 'model_id', None),     # YUCK!, not an id
+        IR('ir_exports', 'resource', None),
+        IR('ir_ui_view', 'model', None),
+        IR('ir_values', 'model', 'res_id'),
+        IR('wkf_transition', 'trigger_model', None),
+        IR('wkf_triggers', 'model', None),
+        IR('ir_model_fields_anonymization', 'model_name', None),
+        IR('ir_model_fields_anonymization_migration_fix', 'model_name', None),
+        IR('base_import_import', 'res_model', None),
+        IR('calendar_event', 'res_model', 'res_id'),      # new in saas~18
+        IR('email_template', 'model', None),      # stored related
+        IR('mail_template', 'model', None),       # model renamed in saas~6
+        IR('mail_activity', 'res_model', 'res_id', 'res_model_id'),
+        IR('mail_alias', None, 'alias_force_thread_id', 'alias_model_id'),
+        IR('mail_alias', None, 'alias_parent_thread_id', 'alias_parent_model_id'),
+        IR('mail-followers', 'res_model', 'res_id'),
+        IR('mail_message_subtype', 'res_model', None),
+        IR('mail_message', 'model', 'res_id'),
+        IR('mail_compose_message', 'model', 'res_id'),
+        IR('mail_wizard_invite', 'res_model', 'res_id'),
+        IR('mail_mail_statistics', 'model', 'res_id'),
+        IR('mail_mass_mailing', 'mailing_model', None),
+        IR('project_project', 'alias_model', None),
+        IR('rating_rating', 'res_model', 'res_id', 'res_model_id'),
+        IR('rating_rating', 'parent_res_model', 'parent_res_id', 'parent_res_model_id'),
     ]
 
-    for model, res_model, res_id in each:
-        if filtered:
-            table = table_of_model(cr, model)
-            if not column_exists(cr, table, res_model):
-                continue
-            if res_id and not column_exists(cr, table, res_id):
-                continue
+    for ir in each:
+        if bound_only and not ir.res_id:
+            continue
+        if ir.res_id and not column_exists(cr, ir.table, ir.res_id):
+            continue
 
-        yield model, res_model, res_id
+        # some `res_model/res_model_id` combination may change between
+        # versions (i.e. rating_rating.res_model_id was added in saas~15).
+        # we need to verify existance of columns before using them.
+        if ir.res_model and not column_exists(cr, ir.table, ir.res_model):
+            ir = ir._replace(res_model=None)
+        if ir.res_model_id and not column_exists(cr, ir.table, ir.res_model_id):
+            ir = ir._replace(res_model_id=None)
+        if not ir.res_model and not ir.res_model_id:
+            continue
 
+        yield ir
+
+def res_model_res_id(cr, filtered=True):
+    for ir in indirect_references(cr):
+        if ir.res_model:
+            yield model_of_table(cr, ir.table), ir.res_model, ir.res_id
 
 def _ir_values_value(cr):
     # returns the casting from bytea to text needed in saas~17 for column `value` of `ir_values`
@@ -1390,14 +1418,13 @@ def remove_model(cr, model, drop_table=True):
     model_underscore = model.replace('.', '_')
 
     # remove references
-    for dest_model, res_model, _ in res_model_res_id(cr):
-        if dest_model == 'ir.model':
+    for ir in indirect_references(cr):
+        if ir.table == 'ir_model':
             continue
-        table = table_of_model(cr, dest_model)
-        query = 'DELETE FROM "{0}" WHERE "{1}"=%s RETURNING id'.format(table, res_model)
-        cr.execute(query, (model,))
+        query = 'DELETE FROM "{0}" WHERE {1} RETURNING id'.format(ir.table, ir.model_filter())
+        cr.execute(query, [model])
         ids = tuple(map(itemgetter(0), cr.fetchall()))
-        _rm_refs(cr, dest_model, ids)
+        _rm_refs(cr, model_of_table(cr, ir.table), ids)
 
     _rm_refs(cr, model)
 
@@ -1645,19 +1672,26 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                     """.format(smap=smap), [model, fk, smap_keys])
 
     # indirect references
-    for model, res_model, res_id in res_model_res_id(cr):
-        if not res_id:
+    for ir in indirect_references(cr, bound_only=True):
+        if ir.table == 'ir_model_data' and not replace_xmlid:
             continue
-        if model == 'ir.model.data' and not replace_xmlid:
-            continue
-        table = table_of_model(cr, model)
-        cr.execute("""UPDATE {table}
-                         SET {res_model} = %s,
-                             {res_id} = ('{jmap}'::json->>{res_id}::varchar)::int4
-                       WHERE {res_model} = %s
-                         AND {res_id} IN %s
-                   """.format(table=table, res_model=res_model, res_id=res_id, jmap=jmap),
-                   [model_dst, model_src, old])
+        upd = ""
+        if ir.res_model:
+            upd += '"{ir.res_model}" = %(model_dst)s,'
+        if ir.res_model_id:
+            upd += '"{ir.res_model_id}" = (SELECT id FROM ir_model WHERE model=%(model_dst)s),'
+        upd = upd.format(ir=ir)
+        whr = ir.model_filter(placeholder="%(model_src)s")
+
+        query = """
+            UPDATE "{ir.table}"
+               SET {upd}
+                   "{ir.res_id}" = ('{jmap}'::json->>{ir.res_id}::varchar)::int4
+             WHERE {whr}
+               AND {ir.res_id} IN %(old)s
+        """.format(**locals())
+
+        cr.execute(query, locals())
 
     # reference fields
     cmap, cmap_keys = genmap("%s,%%d" % model_src, "%s,%%d" % model_dst)
