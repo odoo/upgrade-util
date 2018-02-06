@@ -13,10 +13,12 @@ from contextlib import contextmanager
 from docutils.core import publish_string
 from inspect import currentframe
 from itertools import chain, islice
+from functools import reduce
 from operator import itemgetter
 from textwrap import dedent
 
 import markdown
+import psycopg2
 
 import openerp
 from openerp import release, SUPERUSER_ID
@@ -130,6 +132,25 @@ def savepoint(cr):
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
     return "ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn)
+
+def pg_html_escape(s, quote=True):
+    """sql version of html.escape"""
+    replacements = [
+        ("&", "&amp;"),   # Must be done first!
+        ("<", "&lt;"),
+        (">", "&gt;"),
+    ]
+    if quote:
+        replacements += [
+            ('"', "&quot;"),
+            ('\'', "&#x27;"),
+        ]
+
+    q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode('utf-8')     # noqa: E731
+    return reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s)
+
+def pg_text2html(s):
+    return r"CONCAT('<p>', replace({0}, E'\n', '<br>'), '</p>')".format(pg_html_escape(s))
 
 def has_enterprise():
     """Return whernever the current installation has enterprise addons availables"""
