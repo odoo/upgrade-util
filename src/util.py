@@ -1313,7 +1313,7 @@ def indirect_references(cr, bound_only=False):
         IR('mail_activity', 'res_model', 'res_id', 'res_model_id'),
         IR('mail_alias', None, 'alias_force_thread_id', 'alias_model_id'),
         IR('mail_alias', None, 'alias_parent_thread_id', 'alias_parent_model_id'),
-        IR('mail-followers', 'res_model', 'res_id'),
+        IR('mail_followers', 'res_model', 'res_id'),
         IR('mail_message_subtype', 'res_model', None),
         IR('mail_message', 'model', 'res_id'),
         IR('mail_compose_message', 'model', 'res_id'),
