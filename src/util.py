@@ -622,6 +622,28 @@ def uniq_tags(cr, model, uniq_column='name', order='id'):
 
     cr.execute(query, [model])
 
+
+def delete_unused(cr, table, xmlids, set_noupdate=True):
+    sub = ' UNION '.join(['SELECT 1 FROM "{}" x WHERE x."{}"=t.id'.format(f[0], f[1])
+                          for f in get_fk(cr, table)])
+    idmap = {ref(cr, x): x for x in xmlids}
+    idmap.pop(None, None)
+    if not sub or not idmap:
+        return
+    cr.execute("""
+        SELECT id
+          FROM "{}" t
+         WHERE id=ANY(%s)
+           AND NOT EXISTS({})
+    """.format(table, sub), [list(idmap)])
+
+    for tid, in cr.fetchall():
+        remove_record(cr, idmap.pop(tid))
+
+    if set_noupdate:
+        for xid in idmap.values():
+            force_noupdate(cr, xid, True)
+
 def modules_installed(cr, *modules):
     """return True if all `modules` are (about to be) installed"""
     assert modules
