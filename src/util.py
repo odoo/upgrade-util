@@ -1167,7 +1167,8 @@ def rename_field(cr, model, old, new, update_references=True):
     """, ['%s,%s' % (model, new), '%s,%s' % (model, old)])
 
     table = table_of_model(cr, model)
-    if column_exists(cr, table, old):
+    # NOTE table_exists is needed to avoid altering views
+    if table_exists(cr, table) and column_exists(cr, table, old):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
     if update_references:
