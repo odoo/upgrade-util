@@ -355,7 +355,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
             arch = lxml.etree.fromstring(arch)
             yield arch
             cr.execute("UPDATE ir_ui_view SET {arch}=%s WHERE id=%s".format(arch=arch_col),
-                       [lxml.etree.tostring(arch), view_id])
+                       [lxml.etree.tostring(arch, encoding='unicode'), view_id])
 
 
 def remove_record(cr, name, deactivate=False, active_field='active'):
@@ -1103,7 +1103,7 @@ def remove_field(cr, model, fieldname, cascade=False):
                 UPDATE  ir_ui_view_custom
                 SET     arch = %s
                 WHERE   id = %s
-                """, [lxml.etree.tostring(arch), id])
+                """, [lxml.etree.tostring(arch, encoding='unicode'), id])
 
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
     fids = tuple(map(itemgetter(0), cr.fetchall()))
