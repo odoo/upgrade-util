@@ -26,9 +26,12 @@ import psycopg2
 import openerp
 from openerp import release, SUPERUSER_ID
 try:
-    from odoo.addons.base.module.module import MyWriter
+    from odoo.addons.base.models.ir_module import MyWriter  # > 11.0
 except ImportError:
-    from openerp.addons.base.module.module import MyWriter
+    try:
+        from odoo.addons.base.module.module import MyWriter
+    except ImportError:
+        from openerp.addons.base.module.module import MyWriter
 from openerp.modules.module import get_module_path
 try:
     from openerp.modules.registry import RegistryManager
@@ -1896,7 +1899,7 @@ _DEFAULT_HEADER = """
 
 _DEFAULT_FOOTER = "<p>Enjoy the new Odoo Online!</p>"
 
-_DEFAULT_RECIPIENT = 'mail.%s_all_employees' % ['group', 'channel'][release.version_info[:2] >= (9, 0)]
+_DEFAULT_RECIPIENT = 'mail.%s_all_employees' % ['group', 'channel'][version_gte('9.0')]
 
 def announce(cr, version, msg, format='rst',
              recipient=_DEFAULT_RECIPIENT, header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER,
@@ -1948,7 +1951,7 @@ def announce(cr, version, msg, format='rst',
     message = ((header or "") + msg + (footer or "")).format(version=version)
     _logger.debug(message)
 
-    type_field = ['type', 'message_type'][release.version_info[:2] >= (9, 0)]
+    type_field = ['type', 'message_type'][version_gte('9.0')]
     kw = {type_field: 'notification'}
 
     try:
