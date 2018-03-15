@@ -217,6 +217,7 @@ def table_of_model(cr, model):
 
 
 _ACTION_REPORT_MODEL = 'ir.actions.report' if version_gte('10.saas~17') else 'ir.actions.report.xml'
+IMD_FIELD_PATTERN = 'field_%s__%s' if version_gte('saas~11.2') else 'field_%s_%s'
 
 def model_of_table(cr, table):
     return {
@@ -1146,7 +1147,7 @@ def remove_field(cr, model, fieldname, cascade=False):
     remove_column(cr, table, fieldname, cascade=cascade)
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
-    name = 'field_%s_%s' % (model.replace('.', '_'), fieldname)
+    name = IMD_FIELD_PATTERN % (model.replace('.', '_'), fieldname)
     cr.execute("""UPDATE ir_model_data
                      SET module=%s
                    WHERE model=%s
@@ -1158,7 +1159,7 @@ def rename_field(cr, model, old, new, update_references=True):
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
     [fid] = cr.fetchone() or [None]
     if fid:
-        name = 'field_%s_%s' % (model.replace('.', '_'), new)
+        name = IMD_FIELD_PATTERN % (model.replace('.', '_'), new)
         cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (name, 'ir.model.fields', fid))
         cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
 
@@ -1479,8 +1480,8 @@ def remove_model(cr, model, drop_table=True):
 
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name=%s",
                ('ir.model', 'model_%s' % model_underscore))
-    cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name like %s",
-               ('ir.model.fields', 'field_%s_%%' % model_underscore))
+    cr.execute("DELETE FROM ir_model_data WHERE model='ir.model.fields' AND name LIKE %s",
+               [(IMD_FIELD_PATTERN % (model_underscore, '%')).replace('_', r'\_')])
 
     table = table_of_model(cr, model)
     if drop_table:
@@ -1509,9 +1510,10 @@ def move_model(cr, model, from_module, to_module, move_data=False, delete=False)
     cr.execute("""UPDATE ir_model_data
                      SET module=%s
                    WHERE module=%s
-                     AND model=%s
+                     AND model='ir.model.fields'
                      AND name LIKE %s
-               """, (to_module, from_module, 'ir.model.fields', 'field_%s_%%' % model_u))
+               """, [to_module, from_module,
+                     (IMD_FIELD_PATTERN % (model_u, '%')).replace('_', r'\_')])
 
     if move_data:
         cr.execute("""UPDATE ir_model_data
@@ -1598,9 +1600,10 @@ def rename_model(cr, old, new, rename_table=True):
 
     cr.execute("""UPDATE ir_model_data
                      SET name=%s || substring(name from %s)
-                   WHERE model=%s
+                   WHERE model='ir.model.fields'
                      AND name LIKE %s
-               """, ('field_%s_' % new_u, len(old_u) + 7, 'ir.model.fields', 'field_%s_%%' % old_u))
+               """, ['field_%s' % new_u, len(old_u) + 6,
+                     (IMD_FIELD_PATTERN % (old_u, '%')).replace('_', r'\_')])
 
     col_prefix = ""
     if not column_exists(cr, 'ir_act_server', 'condition'):
