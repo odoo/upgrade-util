@@ -26,9 +26,12 @@ import psycopg2
 import openerp
 from openerp import release, SUPERUSER_ID
 try:
-    from odoo.addons.base.module.module import MyWriter
+    from odoo.addons.base.models.ir_module import MyWriter  # > 11.0
 except ImportError:
-    from openerp.addons.base.module.module import MyWriter
+    try:
+        from odoo.addons.base.module.module import MyWriter
+    except ImportError:
+        from openerp.addons.base.module.module import MyWriter
 from openerp.modules.module import get_module_path
 try:
     from openerp.modules.registry import RegistryManager
@@ -214,6 +217,7 @@ def table_of_model(cr, model):
 
 
 _ACTION_REPORT_MODEL = 'ir.actions.report' if version_gte('10.saas~17') else 'ir.actions.report.xml'
+IMD_FIELD_PATTERN = 'field_%s__%s' if version_gte('saas~11.2') else 'field_%s_%s'
 
 def model_of_table(cr, table):
     return {
@@ -621,6 +625,28 @@ def uniq_tags(cr, model, uniq_column='name', order='id'):
     """.format(**locals())
 
     cr.execute(query, [model])
+
+
+def delete_unused(cr, table, xmlids, set_noupdate=True):
+    sub = ' UNION '.join(['SELECT 1 FROM "{}" x WHERE x."{}"=t.id'.format(f[0], f[1])
+                          for f in get_fk(cr, table)])
+    idmap = {ref(cr, x): x for x in xmlids}
+    idmap.pop(None, None)
+    if not sub or not idmap:
+        return
+    cr.execute("""
+        SELECT id
+          FROM "{}" t
+         WHERE id=ANY(%s)
+           AND NOT EXISTS({})
+    """.format(table, sub), [list(idmap)])
+
+    for tid, in cr.fetchall():
+        remove_record(cr, idmap.pop(tid))
+
+    if set_noupdate:
+        for xid in idmap.values():
+            force_noupdate(cr, xid, True)
 
 def modules_installed(cr, *modules):
     """return True if all `modules` are (about to be) installed"""
@@ -1121,7 +1147,7 @@ def remove_field(cr, model, fieldname, cascade=False):
     remove_column(cr, table, fieldname, cascade=cascade)
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
-    name = 'field_%s_%s' % (model.replace('.', '_'), fieldname)
+    name = IMD_FIELD_PATTERN % (model.replace('.', '_'), fieldname)
     cr.execute("""UPDATE ir_model_data
                      SET module=%s
                    WHERE model=%s
@@ -1133,7 +1159,7 @@ def rename_field(cr, model, old, new, update_references=True):
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
     [fid] = cr.fetchone() or [None]
     if fid:
-        name = 'field_%s_%s' % (model.replace('.', '_'), new)
+        name = IMD_FIELD_PATTERN % (model.replace('.', '_'), new)
         cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (name, 'ir.model.fields', fid))
         cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
 
@@ -1145,7 +1171,8 @@ def rename_field(cr, model, old, new, update_references=True):
     """, ['%s,%s' % (model, new), '%s,%s' % (model, old)])
 
     table = table_of_model(cr, model)
-    if column_exists(cr, table, old):
+    # NOTE table_exists is needed to avoid altering views
+    if table_exists(cr, table) and column_exists(cr, table, old):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
     if update_references:
@@ -1453,8 +1480,8 @@ def remove_model(cr, model, drop_table=True):
 
     cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name=%s",
                ('ir.model', 'model_%s' % model_underscore))
-    cr.execute("DELETE FROM ir_model_data WHERE model=%s AND name like %s",
-               ('ir.model.fields', 'field_%s_%%' % model_underscore))
+    cr.execute("DELETE FROM ir_model_data WHERE model='ir.model.fields' AND name LIKE %s",
+               [(IMD_FIELD_PATTERN % (model_underscore, '%')).replace('_', r'\_')])
 
     table = table_of_model(cr, model)
     if drop_table:
@@ -1483,9 +1510,10 @@ def move_model(cr, model, from_module, to_module, move_data=False, delete=False)
     cr.execute("""UPDATE ir_model_data
                      SET module=%s
                    WHERE module=%s
-                     AND model=%s
+                     AND model='ir.model.fields'
                      AND name LIKE %s
-               """, (to_module, from_module, 'ir.model.fields', 'field_%s_%%' % model_u))
+               """, [to_module, from_module,
+                     (IMD_FIELD_PATTERN % (model_u, '%')).replace('_', r'\_')])
 
     if move_data:
         cr.execute("""UPDATE ir_model_data
@@ -1572,9 +1600,10 @@ def rename_model(cr, old, new, rename_table=True):
 
     cr.execute("""UPDATE ir_model_data
                      SET name=%s || substring(name from %s)
-                   WHERE model=%s
+                   WHERE model='ir.model.fields'
                      AND name LIKE %s
-               """, ('field_%s_' % new_u, len(old_u) + 7, 'ir.model.fields', 'field_%s_%%' % old_u))
+               """, ['field_%s' % new_u, len(old_u) + 6,
+                     (IMD_FIELD_PATTERN % (old_u, '%')).replace('_', r'\_')])
 
     col_prefix = ""
     if not column_exists(cr, 'ir_act_server', 'condition'):
@@ -1873,7 +1902,7 @@ _DEFAULT_HEADER = """
 
 _DEFAULT_FOOTER = "<p>Enjoy the new Odoo Online!</p>"
 
-_DEFAULT_RECIPIENT = 'mail.%s_all_employees' % ['group', 'channel'][release.version_info[:2] >= (9, 0)]
+_DEFAULT_RECIPIENT = 'mail.%s_all_employees' % ['group', 'channel'][version_gte('9.0')]
 
 def announce(cr, version, msg, format='rst',
              recipient=_DEFAULT_RECIPIENT, header=_DEFAULT_HEADER, footer=_DEFAULT_FOOTER,
@@ -1925,7 +1954,7 @@ def announce(cr, version, msg, format='rst',
     message = ((header or "") + msg + (footer or "")).format(version=version)
     _logger.debug(message)
 
-    type_field = ['type', 'message_type'][release.version_info[:2] >= (9, 0)]
+    type_field = ['type', 'message_type'][version_gte('9.0')]
     kw = {type_field: 'notification'}
 
     try:
