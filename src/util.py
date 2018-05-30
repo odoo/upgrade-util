@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Utility functions for migration scripts
 
+import collections
 import datetime
 import imp
 import json
@@ -11,7 +12,6 @@ import re
 import sys
 import time
 
-from collections import namedtuple
 from contextlib import contextmanager
 from docutils.core import publish_string
 from inspect import currentframe
@@ -902,13 +902,14 @@ def new_module_dep(cr, module, new_dep):
         force_install_module(cr, module)
 
 def remove_module_deps(cr, module, old_deps):
-    assert isinstance(old_deps, tuple)
+    assert isinstance(old_deps, (collections.Sequence, collections.Set)) \
+        and not isinstance(old_deps, basestring)
     cr.execute("""DELETE FROM ir_module_module_dependency
                         WHERE module_id = (SELECT id
                                              FROM ir_module_module
                                             WHERE name=%s)
                           AND name IN %s
-               """, (module, old_deps))
+               """, [module, tuple(old_deps)])
 
 
 def module_deps_diff(cr, module, plus=(), minus=()):
@@ -1312,7 +1313,7 @@ def register_unanonymization_query(cr, model, field, query, query_type='sql', se
                """, [release.major_version, sequence, query_type, model, field, query])
 
 
-class IndirectReference(namedtuple('IndirectReference', 'table res_model res_id res_model_id')):
+class IndirectReference(collections.namedtuple('IndirectReference', 'table res_model res_id res_model_id')):
     def model_filter(self, prefix="", placeholder="%s"):
         if prefix and prefix[-1] != '.':
             prefix += '.'
