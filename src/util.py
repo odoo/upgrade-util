@@ -918,10 +918,13 @@ def module_deps_diff(cr, module, plus=(), minus=()):
         remove_module_deps(cr, module, tuple(minus))
 
 def new_module(cr, module, deps=(), auto_install=False):
-    if module_installed(cr, module):
-        #Avoid duplicate entries for module which is already installed,
-        #even before it has become standard module in new version
+    cr.execute("SELECT count(1) FROM ir_module_module WHERE name = %s", [module])
+    if cr.fetchone()[0]:
+        # Avoid duplicate entries for module which is already installed,
+        # even before it has become standard module in new version
+        # Also happen for modules added afterward, which should be added by multiple series.
         return
+
     if deps and auto_install:
         state = 'to install' if modules_installed(cr, *deps) else 'uninstalled'
     else:
