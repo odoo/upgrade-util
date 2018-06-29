@@ -1605,7 +1605,7 @@ def rename_model(cr, old, new, rename_table=True):
                      SET name=%s || substring(name from %s)
                    WHERE model='ir.model.fields'
                      AND name LIKE %s
-               """, ['field_%s' % new_u, len(old_u) + 6,
+               """, ['field_%s' % new_u, len(old_u) + 7,
                      (IMD_FIELD_PATTERN % (old_u, '%')).replace('_', r'\_')])
 
     col_prefix = ""
