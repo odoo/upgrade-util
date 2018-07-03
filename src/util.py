@@ -1163,7 +1163,21 @@ def rename_field(cr, model, old, new, update_references=True):
     [fid] = cr.fetchone() or [None]
     if fid:
         name = IMD_FIELD_PATTERN % (model.replace('.', '_'), new)
-        cr.execute("UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s", (name, 'ir.model.fields', fid))
+        try:
+            with savepoint(cr):
+                cr.execute(
+                    "UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s",
+                    [name, fid]
+                )
+        except psycopg2.IntegrityError:
+            # duplicate key. May happen du to conflict between
+            # some_model.sub_id and some_model_sub.id
+            # (before saas~11.2, where pattern changed)
+            name = '%s_%s' % (name, fid)
+            cr.execute(
+                "UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s",
+                [name, fid]
+            )
         cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
 
     cr.execute("""
