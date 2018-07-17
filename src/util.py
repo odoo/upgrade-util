@@ -752,6 +752,7 @@ def remove_module(cr, module):
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
+    cr.execute("DELETE FROM ir_translation WHERE module=%s", [module])
 
 
 def _update_view_key(cr, old, new):
@@ -773,6 +774,8 @@ def rename_module(cr, old, new):
     cr.execute("UPDATE ir_module_module_dependency SET name=%s WHERE name=%s", (new, old))
     _update_view_key(cr, old, new)
     cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s", (new, old))
+    cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [new, old])
+
     mod_old = 'module_' + old
     mod_new = 'module_' + new
     cr.execute("""UPDATE ir_model_data
@@ -830,6 +833,7 @@ def merge_module(cr, old, into, tolerant=False):
     _up('relation', mod_ids[old], mod_ids[into])
     _update_view_key(cr, old, into)
     _up('data', old, into)
+    cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [into, old])
 
     # update dependencies
     cr.execute("""
