@@ -1588,8 +1588,6 @@ def rename_model(cr, old, new, rename_table=True):
         SELECT model, name
           FROM ir_model_fields
          WHERE ttype='reference'
-         UNION
-        SELECT 'ir.translation', 'name'
     """)
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
@@ -1598,6 +1596,22 @@ def rename_model(cr, old, new, rename_table=True):
                              SET {column}='{new}' || substring({column} FROM '%#",%#"' FOR '#')
                            WHERE {column} LIKE '{old},%'
                        """.format(table=table, column=column, new=new, old=old))
+
+    # translations
+    cr.execute("""
+        WITH renames AS (
+            SELECT id, name, '{new}' || substring(name FROM '%#",%#"' FOR '#') as new
+              FROM ir_translation
+             WHERE name LIKE '{old},%'
+        )
+        UPDATE ir_translation t
+           SET name = r.new
+          FROM renames r
+     LEFT JOIN ir_translation e ON (e.name = r.new)
+         WHERE t.name = r.name
+           AND e.id IS NULL
+    """.format(new=new, old=old))
+    cr.execute("DELETE FROM ir_translation WHERE name LIKE '{},%'".format(old))
 
     if table_exists(cr, 'ir_values'):
         column_read, cast_write = _ir_values_value(cr)
