@@ -952,9 +952,13 @@ def new_module(cr, module, deps=(), auto_install=False):
     for dep in deps:
         new_module_dep(cr, module, dep)
 
-def force_migration_of_fresh_module(cr, module):
+def force_migration_of_fresh_module(cr, module, init=True):
     """It may appear that new (or forced installed) modules need a migration script to grab data
        form other module. (we cannot add a pre-init hook on the fly)
+
+       Being in init mode may make sens in some situations (when?) but has the nasty side effect
+       of not respecting noupdate flags (in xml file nor in ir_model_data) which can be quite
+       problematic
     """
     filename, _ = frame_codeinfo(currentframe(), 1)
     version = '.'.join(filename.split(os.path.sep)[-2].split('.')[:2])
@@ -967,7 +971,7 @@ def force_migration_of_fresh_module(cr, module):
                    WHERE name=%s
                      AND state='to install'
                RETURNING id""", [version, module])
-    if cr.rowcount:
+    if init and cr.rowcount:
         # Force module in `init` mode beside its state is forced to `to upgrade`
         # See http://git.io/vnF7O
         openerp.tools.config['init'][module] = "oh yeah!"
