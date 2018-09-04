@@ -1066,6 +1066,37 @@ def get_index_on(cr, table, *columns):
     """, [table, sorted(columns)])
     return cr.fetchone()
 
+@contextmanager
+def disabled_index_on(cr, table_name):
+    """
+    This method will disable indexes on one table, perform your operation, then re-enable indices
+    and reindex the table. Usefull for mass updates.
+
+    Usage:
+    with disabled_index_on(cr, 'my_big_table'):
+        my_big_operation()
+    """
+    cr.execute("""
+        UPDATE pg_index
+        SET indisready=false
+        WHERE indrelid = (
+            SELECT oid
+            FROM pg_class
+            WHERE relname=%s
+        )
+    """, [table_name])
+    yield
+    cr.execute("""
+        UPDATE pg_index
+        SET indisready=true
+        WHERE indrelid = (
+            SELECT oid
+            FROM pg_class
+            WHERE relname=%s
+        )
+    """, [table_name])
+    cr.execute('REINDEX TABLE "%s"' % table_name)
+
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
     q = """
