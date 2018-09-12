@@ -162,7 +162,11 @@ def pg_html_escape(s, quote=True):
     return reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s)
 
 def pg_text2html(s):
-    return r"CONCAT('<p>', replace({0}, E'\n', '<br>'), '</p>')".format(pg_html_escape(s))
+    return r"""
+        CASE WHEN TRIM(COALESCE({0}, '')) ~ '^<.+</\w+>$' THEN {0}
+             ELSE CONCAT('<p>', replace({0}, E'\n', '<br>'), '</p>')
+         END
+    """.format(pg_html_escape(s))
 
 def has_enterprise():
     """Return whernever the current installation has enterprise addons availables"""
