@@ -1187,7 +1187,7 @@ def remove_field(cr, model, fieldname, cascade=False):
     cr.execute("""
        DELETE FROM ir_translation
         WHERE name=%s
-          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
+          AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
     """, ['%s,%s' % (model, fieldname)])
 
     table = table_of_model(cr, model)
@@ -1228,7 +1228,7 @@ def rename_field(cr, model, old, new, update_references=True):
        UPDATE ir_translation
           SET name=%s
         WHERE name=%s
-          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
+          AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
     """, ['%s,%s' % (model, new), '%s,%s' % (model, old)])
 
     table = table_of_model(cr, model)
