@@ -401,6 +401,29 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(ir.table, ir.model_filter(), ir.res_id)
             cr.execute(query, [model, res_id])
 
+def remove_record_if_unchanged(cr, xmlid, interval='1 minute'):
+    # Sometimes, some records are in noupdate=1 (in xml) but needs to be updated anyway.
+    # Remove the record if it hasn't been modified in `interval`
+    # Most of the time, it's for mail templates...
+    assert '.' in xmlid
+    module, _, name = xmlid.partition('.')
+    cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
+    data = cr.fetchone()
+    if not data:
+        return
+    model, res_id = data
+    table = table_of_model(cr, model)
+    cr.execute("""
+        SELECT 1
+          FROM {}
+         WHERE id = %s
+           -- Note: use a negative search to handle the case of NULL values in write/create_date
+           AND write_date - create_date > interval %s
+    """.format(table), [res_id, interval])
+    if not cr.rowcount:
+        remove_record(cr, (model, res_id))
+
+
 def remove_menus(cr, menu_ids):
     if not menu_ids:
         return
