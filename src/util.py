@@ -1214,7 +1214,9 @@ def remove_field(cr, model, fieldname, cascade=False):
     """, ['%s,%s' % (model, fieldname)])
 
     table = table_of_model(cr, model)
-    remove_column(cr, table, fieldname, cascade=cascade)
+    # NOTE table_exists is needed to avoid altering views
+    if table_exists(cr, table) and column_exists(cr, table, fieldname):
+        remove_column(cr, table, fieldname, cascade=cascade)
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
     name = IMD_FIELD_PATTERN % (model.replace('.', '_'), fieldname)
