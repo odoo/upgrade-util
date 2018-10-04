@@ -99,10 +99,14 @@ def expand_braces(s):
     r = re.compile(r'(.*){([^},]*?,[^},]*?)}(.*)')
     m = r.search(s)
     if not m:
-        raise ValueError('no braces to expand')
+        raise ValueError("No expansion braces found")
     head, match, tail = m.groups()
     a, b = match.split(',')
-    return [head + a + tail, head + b + tail]
+    first = head + a + tail
+    second = head + b + tail
+    if r.search(first):  # as the regexp will match the last expansion, we only need to verify first term
+        raise ValueError("Multiple expansion braces found")
+    return [first, second]
 
 def import_script(path):
     name, _ = os.path.splitext(os.path.basename(path))
