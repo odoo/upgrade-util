@@ -1024,9 +1024,10 @@ def create_column(cr, table, column, definition):
     curtype = column_type(cr, table, column)
     if curtype:
         # TODO compare with definition
-        pass
+        return False
     else:
         cr.execute("""ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition))
+        return True
 
 def remove_column(cr, table, column, cascade=False):
     if column_exists(cr, table, column):
