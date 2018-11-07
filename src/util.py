@@ -2026,23 +2026,24 @@ def announce(cr, version, msg, format='rst',
     # do not notify early, in case the migration fails halfway through
     ctx = {'mail_notify_force_send': False, 'mail_notify_author': True}
 
+    uid = guess_admin_id(cr)
     try:
         registry = env(cr)
-        user = registry['res.users'].browse([SUPERUSER_ID])[0].with_context(ctx)
+        user = registry['res.users'].browse([uid])[0].with_context(ctx)
 
         def ref(xid):
             return registry.ref(xid).with_context(ctx)
 
     except MigrationError:
         registry = RegistryManager.get(cr.dbname)
-        user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID, context=ctx)
+        user = registry['res.users'].browse(cr, SUPERUSER_ID, uid, context=ctx)
 
         def ref(xid):
             rmod, _, rxid = recipient.partition('.')
             return registry['ir.model.data'].get_object(cr, SUPERUSER_ID, rmod, rxid, context=ctx)
 
     # default recipient
-    poster = user.message_post
+    poster = user.message_post if hasattr(user, 'message_post') else user.partner_id.message_post
 
     if recipient:
         try:
@@ -2066,6 +2067,22 @@ def announce(cr, version, msg, format='rst',
         poster(body=message, partner_ids=[user.partner_id.id], subtype='mail.mt_comment', **kw)
     except Exception:
         _logger.warning('Cannot announce message', exc_info=True)
+
+def guess_admin_id(cr):
+    """guess the admin user id of `cr` database"""
+    if not version_gte('12.0'):
+        return SUPERUSER_ID
+    cr.execute("""
+        SELECT min(r.uid)
+          FROM res_groups_users_rel r
+          JOIN res_users u ON r.uid = u.id
+         WHERE u.active
+           AND r.gid = (SELECT res_id
+                          FROM ir_model_data
+                         WHERE module = 'base'
+                           AND name = 'group_system')
+    """, [SUPERUSER_ID])
+    return cr.fetchone()[0] or SUPERUSER_ID
 
 def drop_workflow(cr, osv):
     if not table_exists(cr, 'wkf'):
