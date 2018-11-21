@@ -99,10 +99,14 @@ def expand_braces(s):
     r = re.compile(r'(.*){([^},]*?,[^},]*?)}(.*)')
     m = r.search(s)
     if not m:
-        raise ValueError('no braces to expand')
+        raise ValueError("No expansion braces found")
     head, match, tail = m.groups()
     a, b = match.split(',')
-    return [head + a + tail, head + b + tail]
+    first = head + a + tail
+    second = head + b + tail
+    if r.search(first):  # as the regexp will match the last expansion, we only need to verify first term
+        raise ValueError("Multiple expansion braces found")
+    return [first, second]
 
 def import_script(path):
     name, _ = os.path.splitext(os.path.basename(path))
@@ -400,6 +404,29 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
         for ir in indirect_references(cr, bound_only=True):
             query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(ir.table, ir.model_filter(), ir.res_id)
             cr.execute(query, [model, res_id])
+
+def remove_record_if_unchanged(cr, xmlid, interval='1 minute'):
+    # Sometimes, some records are in noupdate=1 (in xml) but needs to be updated anyway.
+    # Remove the record if it hasn't been modified in `interval`
+    # Most of the time, it's for mail templates...
+    assert '.' in xmlid
+    module, _, name = xmlid.partition('.')
+    cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
+    data = cr.fetchone()
+    if not data:
+        return
+    model, res_id = data
+    table = table_of_model(cr, model)
+    cr.execute("""
+        SELECT 1
+          FROM {}
+         WHERE id = %s
+           -- Note: use a negative search to handle the case of NULL values in write/create_date
+           AND write_date - create_date > interval %s
+    """.format(table), [res_id, interval])
+    if not cr.rowcount:
+        remove_record(cr, (model, res_id))
+
 
 def remove_menus(cr, menu_ids):
     if not menu_ids:
@@ -997,9 +1024,10 @@ def create_column(cr, table, column, definition):
     curtype = column_type(cr, table, column)
     if curtype:
         # TODO compare with definition
-        pass
+        return False
     else:
         cr.execute("""ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition))
+        return True
 
 def remove_column(cr, table, column, cascade=False):
     if column_exists(cr, table, column):
@@ -1187,11 +1215,13 @@ def remove_field(cr, model, fieldname, cascade=False):
     cr.execute("""
        DELETE FROM ir_translation
         WHERE name=%s
-          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
+          AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
     """, ['%s,%s' % (model, fieldname)])
 
     table = table_of_model(cr, model)
-    remove_column(cr, table, fieldname, cascade=cascade)
+    # NOTE table_exists is needed to avoid altering views
+    if table_exists(cr, table) and column_exists(cr, table, fieldname):
+        remove_column(cr, table, fieldname, cascade=cascade)
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
     name = IMD_FIELD_PATTERN % (model.replace('.', '_'), fieldname)
@@ -1228,7 +1258,7 @@ def rename_field(cr, model, old, new, update_references=True):
        UPDATE ir_translation
           SET name=%s
         WHERE name=%s
-          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
+          AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
     """, ['%s,%s' % (model, new), '%s,%s' % (model, old)])
 
     table = table_of_model(cr, model)
@@ -1996,23 +2026,24 @@ def announce(cr, version, msg, format='rst',
     # do not notify early, in case the migration fails halfway through
     ctx = {'mail_notify_force_send': False, 'mail_notify_author': True}
 
+    uid = guess_admin_id(cr)
     try:
         registry = env(cr)
-        user = registry['res.users'].browse([SUPERUSER_ID])[0].with_context(ctx)
+        user = registry['res.users'].browse([uid])[0].with_context(ctx)
 
         def ref(xid):
             return registry.ref(xid).with_context(ctx)
 
     except MigrationError:
         registry = RegistryManager.get(cr.dbname)
-        user = registry['res.users'].browse(cr, SUPERUSER_ID, SUPERUSER_ID, context=ctx)
+        user = registry['res.users'].browse(cr, SUPERUSER_ID, uid, context=ctx)
 
         def ref(xid):
             rmod, _, rxid = recipient.partition('.')
             return registry['ir.model.data'].get_object(cr, SUPERUSER_ID, rmod, rxid, context=ctx)
 
     # default recipient
-    poster = user.message_post
+    poster = user.message_post if hasattr(user, 'message_post') else user.partner_id.message_post
 
     if recipient:
         try:
@@ -2036,6 +2067,22 @@ def announce(cr, version, msg, format='rst',
         poster(body=message, partner_ids=[user.partner_id.id], subtype='mail.mt_comment', **kw)
     except Exception:
         _logger.warning('Cannot announce message', exc_info=True)
+
+def guess_admin_id(cr):
+    """guess the admin user id of `cr` database"""
+    if not version_gte('12.0'):
+        return SUPERUSER_ID
+    cr.execute("""
+        SELECT min(r.uid)
+          FROM res_groups_users_rel r
+          JOIN res_users u ON r.uid = u.id
+         WHERE u.active
+           AND r.gid = (SELECT res_id
+                          FROM ir_model_data
+                         WHERE module = 'base'
+                           AND name = 'group_system')
+    """, [SUPERUSER_ID])
+    return cr.fetchone()[0] or SUPERUSER_ID
 
 def drop_workflow(cr, osv):
     if not table_exists(cr, 'wkf'):
