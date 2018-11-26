@@ -724,8 +724,8 @@ def remove_module(cr, module):
                """, (mod_id,))
 
     # delete data
-    model_ids, field_ids, view_ids, menu_ids = (), (), (), ()
-    cr.execute("""SELECT model, array_agg(res_id)
+    model_ids, field_ids, menu_ids = [], [], []
+    cr.execute("""SELECT model, res_id
                     FROM ir_model_data d
                    WHERE NOT EXISTS (SELECT 1
                                        FROM ir_model_data
@@ -735,24 +735,19 @@ def remove_module(cr, module):
                                         AND module != d.module)
                      AND module=%s
                      AND model != 'ir.module.module'
-                GROUP BY model
+                ORDER BY id DESC
                """, (module,))
-    for model, res_ids in cr.fetchall():
+    for model, res_id in cr.fetchall():
         if model == 'ir.model':
-            model_ids = tuple(res_ids)
+            model_ids.append(res_id)
         elif model == 'ir.model.fields':
-            field_ids = tuple(res_ids)
-        elif model == 'ir.ui.view':
-            view_ids = tuple(res_ids)
+            field_ids.append(res_id)
         elif model == 'ir.ui.menu':
-            menu_ids = tuple(res_ids)
+            menu_ids.append(res_id)
+        elif model == 'ir.ui.view':
+            remove_view(cr, view_id=res_id, deactivate_custom=True, silent=True)
         else:
-            table = table_of_model(cr, model)
-            if table_exists(cr, table):
-                cr.execute('DELETE FROM "%s" WHERE id IN %%s' % table, [tuple(res_ids)])
-
-    for view_id in view_ids:
-        remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
+            remove_record(cr, (model, res_id))
 
     if menu_ids:
         remove_menus(cr, menu_ids)
@@ -770,12 +765,12 @@ def remove_module(cr, module):
             cr.execute('DROP TABLE "%s" CASCADE' % (rel,))
 
     if model_ids:
-        cr.execute("SELECT model FROM ir_model WHERE id IN %s", [model_ids])
+        cr.execute("SELECT model FROM ir_model WHERE id IN %s", [tuple(model_ids)])
         for model, in cr.fetchall():
             delete_model(cr, model)
 
     if field_ids:
-        cr.execute("SELECT model, name FROM ir_model_fields WHERE id IN %s", [field_ids])
+        cr.execute("SELECT model, name FROM ir_model_fields WHERE id IN %s", [tuple(field_ids)])
         for model, name in cr.fetchall():
             remove_field(cr, model, name)
 
