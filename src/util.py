@@ -73,6 +73,7 @@ class MigrationError(Exception):
     pass
 
 def version_gte(version):
+    assert "-" not in version
     return parse_version(release.series) >= parse_version(version)
 
 def main(func, version=None):
