@@ -72,8 +72,12 @@ except NameError:
 class MigrationError(Exception):
     pass
 
+class SleepyDeveloperError(ValueError):
+    pass
+
 def version_gte(version):
-    assert "-" not in version
+    if "-" in version:
+        raise SleepyDeveloperError("version cannot contains dash")
     return parse_version(release.series) >= parse_version(version)
 
 def main(func, version=None):
@@ -1007,6 +1011,8 @@ def column_exists(cr, table, column):
     return column_type(cr, table, column) is not None
 
 def column_type(cr, table, column):
+    if "." in table:
+        raise SleepyDeveloperError("table name cannot contains dot")
     cr.execute("""SELECT udt_name
                     FROM information_schema.columns
                    WHERE table_name = %s
@@ -1032,6 +1038,8 @@ def remove_column(cr, table, column, cascade=False):
         cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"{2}'.format(table, column, drop_cascade))
 
 def table_exists(cr, table):
+    if "." in table:
+        raise SleepyDeveloperError("table name cannot contains dot")
     cr.execute("""SELECT 1
                     FROM information_schema.tables
                    WHERE table_name = %s
@@ -1040,6 +1048,8 @@ def table_exists(cr, table):
     return cr.fetchone() is not None
 
 def view_exists(cr, view):
+    if "." in view:
+        raise SleepyDeveloperError("view name cannot contains dot")
     cr.execute("SELECT 1 FROM information_schema.views WHERE table_name=%s", [view])
     return bool(cr.rowcount)
 
@@ -1051,6 +1061,8 @@ def get_fk(cr, table):
         Foreign key deletion action code:
             a = no action, r = restrict, c = cascade, n = set null, d = set default
     """
+    if "." in table:
+        raise SleepyDeveloperError("table name cannot contains dot")
     q = """SELECT quote_ident(cl1.relname) as table,
                   quote_ident(att1.attname) as column,
                   quote_ident(con.conname) as conname,
@@ -1076,6 +1088,8 @@ def get_index_on(cr, table, *columns):
     """
         return a tuple (index_name, unique, pk)
     """
+    if "." in table:
+        raise SleepyDeveloperError("table name cannot contains dot")
     cr.execute("""
         select name, indisunique, indisprimary
           from (select quote_ident(i.relname) as name,
@@ -1104,6 +1118,8 @@ def disabled_index_on(cr, table_name):
     with disabled_index_on(cr, 'my_big_table'):
         my_big_operation()
     """
+    if "." in table_name:
+        raise SleepyDeveloperError("table name cannot contains dot")
     cr.execute("""
         UPDATE pg_index
         SET indisready=false
@@ -1127,6 +1143,8 @@ def disabled_index_on(cr, table_name):
 
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
+    if "." in table:
+        raise SleepyDeveloperError("table name cannot contains dot")
     q = """
         SELECT distinct quote_ident(dependee.relname)
         FROM pg_depend
@@ -1148,6 +1166,8 @@ def get_columns(cr, table, ignore=('id',), extra_prefixes=None):
         can also returns the list multiple times with different prefixes.
         This can be used to duplicating records (INSERT SELECT from the same table)
     """
+    if "." in table:
+        raise SleepyDeveloperError("table name cannot contains dot")
     select = 'quote_ident(column_name)'
     params = []
     if extra_prefixes:
