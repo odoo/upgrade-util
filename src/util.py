@@ -1348,6 +1348,10 @@ def remove_field(cr, model, fieldname, cascade=False):
           AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
     """, ['%s,%s' % (model, fieldname)])
 
+    # if field was a binary field stored as attachment, clean them...
+    if column_exists(cr, "ir_attachment", "res_field"):
+        cr.execute("DELETE FROM ir_attachment WHERE res_model = %s AND res_field = %s", [model, fieldname])
+
     table = table_of_model(cr, model)
     # NOTE table_exists is needed to avoid altering views
     if table_exists(cr, table) and column_exists(cr, table, fieldname):
@@ -1390,6 +1394,14 @@ def rename_field(cr, model, old, new, update_references=True):
         WHERE name=%s
           AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
     """, ['%s,%s' % (model, new), '%s,%s' % (model, old)])
+
+    if column_exists(cr, "ir_attachment", "res_field"):
+        cr.execute("""
+            UPDATE ir_attachment
+               SET res_field = %s
+             WHERE res_model = %s
+               AND res_field = %s
+        """, [new, model, old])
 
     table = table_of_model(cr, model)
     # NOTE table_exists is needed to avoid altering views
