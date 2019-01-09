@@ -746,13 +746,7 @@ def modules_installed(cr, *modules):
 def module_installed(cr, module):
     return modules_installed(cr, module)
 
-def remove_module(cr, module):
-    """ Uninstall the module and delete references to it
-       Ensure to reassign records before calling this method
-    """
-    # NOTE: we cannot use the uninstall of module because the given
-    # module need to be currenctly installed and running as deletions
-    # are made using orm.
+def uninstall_module(cr, module):
 
     cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (module,))
     mod_id, = cr.fetchone() or [None]
@@ -830,9 +824,20 @@ def remove_module(cr, module):
 
     cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
+    cr.execute("DELETE FROM ir_translation WHERE module=%s", [module])
+    cr.execute("UPDATE ir_module_module SET state='uninstalled' WHERE name=%s", (module,))
+
+def remove_module(cr, module):
+    """ Uninstall the module and delete references to it
+        Ensure to reassign records before calling this method
+    """
+    # NOTE: we cannot use the uninstall of module because the given
+    # module need to be currently installed and running as deletions
+    # are made using orm.
+
+    uninstall_module(cr, module)
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
-    cr.execute("DELETE FROM ir_translation WHERE module=%s", [module])
 
 
 def _update_view_key(cr, old, new):
