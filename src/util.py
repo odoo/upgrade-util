@@ -412,11 +412,6 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(ir.table, ir.model_filter(), ir.res_id)
             cr.execute(query, [model, res_id])
 
-def remove_record_if_unchanged(cr, xmlid, interval='1 minute'):
-    # Sometimes, some records are in noupdate=1 (in xml) but needs to be updated anyway.
-    # Remove the record if it hasn't been modified in `interval`
-    # Most of the time, it's for mail templates...
-    if_unchanged(cr, xmlid, remove_record, interval)
 
 def if_unchanged(cr, xmlid, callback, interval='1 minute'):
     assert '.' in xmlid
