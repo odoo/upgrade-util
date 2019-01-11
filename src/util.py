@@ -414,6 +414,9 @@ def remove_record_if_unchanged(cr, xmlid, interval='1 minute'):
     # Sometimes, some records are in noupdate=1 (in xml) but needs to be updated anyway.
     # Remove the record if it hasn't been modified in `interval`
     # Most of the time, it's for mail templates...
+    if_unchanged(cr, xmlid, remove_record, interval)
+
+def if_unchanged(cr, xmlid, callback, interval='1 minute'):
     assert '.' in xmlid
     module, _, name = xmlid.partition('.')
     cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
@@ -430,7 +433,7 @@ def remove_record_if_unchanged(cr, xmlid, interval='1 minute'):
            AND write_date - create_date > interval %s
     """.format(table), [res_id, interval])
     if not cr.rowcount:
-        remove_record(cr, (model, res_id))
+        callback(cr, xmlid)
 
 
 def remove_menus(cr, menu_ids):
