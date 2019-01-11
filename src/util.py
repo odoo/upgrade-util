@@ -32,15 +32,17 @@ except ImportError:
         from odoo.addons.base.module.module import MyWriter
     except ImportError:
         from openerp.addons.base.module.module import MyWriter
-from openerp.modules.module import get_module_path
+from openerp.modules.module import get_module_path, load_information_from_description_file
 try:
     from openerp.modules.registry import RegistryManager
 except ImportError:
     # from saas~16, we use the Registry class directly.
     from odoo.modules.registry import Registry as RegistryManager
 from openerp.sql_db import db_connect
+from openerp.tools.convert import xml_import
 from openerp.tools.func import frame_codeinfo
 from openerp.tools.mail import html_sanitize
+from openerp.tools.misc import file_open
 from openerp.tools import UnquoteEvalContext
 from openerp.tools.parse_version import parse_version
 
@@ -565,6 +567,55 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
                    """, (module, name, model, res_id, True))
 
     return res_id
+
+
+def update_record_from_xml(cr, xmlid, reset_write_metadata=True):
+    # Force update of a record from xml file to bypass the noupdate flag
+    if '.' not in xmlid:
+        raise ValueError('Please use fully qualified name <module>.<name>')
+
+    module, _, name = xmlid.partition('.')
+
+    cr.execute("""
+        UPDATE ir_model_data d
+           SET noupdate = false
+          FROM ir_model_data o
+         WHERE o.id = d.id
+           AND d.module = %s
+           AND d.name = %s
+     RETURNING d.model, d.res_id, o.noupdate
+    """, [module, name])
+    if not cr.rowcount:
+        return
+    model, res_id, noupdate = cr.fetchone()
+
+    write_data = None
+    table = table_of_model(cr, model)
+    if reset_write_metadata:
+        cr.execute("SELECT write_uid, write_date, id FROM {} WHERE id=%s".format(table), [res_id])
+        write_data = cr.fetchone()
+
+    xpath = "//*[@id='{module}.{name}' or @id='{name}']".format(module=module, name=name)
+    # use a data tag inside openerp tag to be compatible with all supported versions
+    new_root = lxml.etree.fromstring("<openerp><data/></openerp>")
+
+    manifest = load_information_from_description_file(module)
+    for f in manifest.get('data', []):
+        if not f.endswith('.xml'):
+            continue
+        with file_open(os.path.join(module, f)) as fp:
+            doc = lxml.etree.parse(fp)
+            for node in doc.xpath(xpath):
+                new_root[0].append(node)
+
+    importer = xml_import(cr, module, idref={}, mode='update')
+    kw = dict(mode="update") if version_gte("8.0") else {}
+    importer.parse(new_root, **kw)
+
+    if noupdate:
+        force_noupdate(cr, xmlid, True)
+    if reset_write_metadata and write_data:
+        cr.execute("UPDATE {} SET write_uid=%s, write_date=%s WHERE id=%s".format(table), write_data)
 
 def fix_wrong_m2o(cr, table, column, target, value=None):
     cr.execute("""
