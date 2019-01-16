@@ -927,8 +927,11 @@ def merge_module(cr, old, into, tolerant=False):
                              AND o.name=%s)
     """, [into, old, into])
 
-    cr.execute("DELETE FROM ir_module_module WHERE name=%s", [old])
+    cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING state", [old])
+    [state] = cr.fetchone()
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", [old])
+    if state in _INSTALLED_MODULE_STATES:
+        force_install_module(cr, into)
 
 def force_install_module(cr, module, if_installed=None):
     subquery = ""
