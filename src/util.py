@@ -964,8 +964,32 @@ def force_install_module(cr, module, if_installed=None):
      RETURNING m.name, m.state
     """.format(subquery), (module,) + subparams)
 
-    state = dict(cr.fetchall()).get(module)
-    return state
+    states = dict(cr.fetchall())
+    # auto_install modules...
+    toinstall = [m for m in states if states[m] == 'to install']
+    if toinstall:
+        # Same algo as ir.module.module.button_install(): https://git.io/fhCKd
+        cr.execute("""
+            SELECT on_me.name,
+                   -- are all dependencies are (to be) installed?
+                   array_agg(its_deps.state)::text[] <@ %s
+              FROM ir_module_module_dependency d
+              JOIN ir_module_module on_me ON on_me.id = d.module_id
+              JOIN ir_module_module_dependency e ON e.module_id = on_me.id
+              JOIN ir_module_module its_deps ON its_deps.name = e.name
+             WHERE d.name = ANY(%s)
+               AND on_me.state = 'uninstalled'
+               AND on_me.auto_install = TRUE
+          GROUP BY d.name, on_me.id
+        """, [list(_INSTALLED_MODULE_STATES), toinstall])
+        for mod, must_install in cr.fetchall():
+            if must_install:
+                _logger.debug("auto install module %r due to module %r being force installed", mod, module)
+                force_install_module(cr, mod)
+
+    # TODO handle module exclusions
+
+    return states.get(module)
 
 def new_module_dep(cr, module, new_dep):
     # One new dep at a time
