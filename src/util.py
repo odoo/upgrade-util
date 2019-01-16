@@ -1016,10 +1016,10 @@ def new_module(cr, module, deps=(), auto_install=False):
         state = 'uninstalled'
     cr.execute("""\
         INSERT INTO ir_module_module (
-            name, state, demo
+            name, state, auto_install, demo
         ) VALUES (
-            %s, %s, (select demo from ir_module_module where name='base'))
-        RETURNING id""", (module, state))
+            %s, %s, %s, (select demo from ir_module_module where name='base'))
+        RETURNING id""", (module, state, auto_install))
     new_id, = cr.fetchone()
 
     cr.execute("""\
