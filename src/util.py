@@ -1190,6 +1190,23 @@ def disabled_index_on(cr, table_name):
     """, [table_name])
     cr.execute('REINDEX TABLE "%s"' % table_name)
 
+def create_index(cr, name, table_name, *columns):
+    # create index if table and columns exists and index don't already exists
+    if "." in table_name:
+        raise SleepyDeveloperError("table name cannot contains dot")
+    if (
+        columns
+        and all(column_exists(cr, table_name, c) for c in columns)
+        and get_index_on(cr, table_name, columns) is None
+    ):
+        cr.execute(
+            "CREATE INDEX {index_name} ON {table_name}({columns})".format(
+                index_name=name, table_name=table_name, columns=",".join(columns)
+            )
+        )
+        return True
+    return False
+
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
     if "." in table:
