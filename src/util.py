@@ -991,7 +991,18 @@ def force_install_module(cr, module, if_installed=None):
 
     return states.get(module)
 
+def _assert_modules_exists(cr, *modules):
+    assert modules
+    cr.execute("SELECT name FROM ir_module_module WHERE name IN %s", [modules])
+    existing_modules = {m[0] for m in cr.fetchall()}
+    unexisting_modules = set(modules) - existing_modules
+    if unexisting_modules:
+        raise AssertionError("Unexisting modules: {}".format(", ".join(unexisting_modules)))
+
+
 def new_module_dep(cr, module, new_dep):
+    assert isinstance(new_dep, basestring)
+    _assert_modules_exists(cr, module, new_dep)
     # One new dep at a time
     cr.execute("""INSERT INTO ir_module_module_dependency(name, module_id)
                        SELECT %s, id
@@ -1015,6 +1026,8 @@ def new_module_dep(cr, module, new_dep):
 def remove_module_deps(cr, module, old_deps):
     assert isinstance(old_deps, (collections.Sequence, collections.Set)) \
         and not isinstance(old_deps, basestring)
+    # As the goal is to have dependencies removed, the objective is reached even when they don't exist.
+    # Therefore, we don't need to assert their existence (at the cost of missing typos).
     cr.execute("""DELETE FROM ir_module_module_dependency
                         WHERE module_id = (SELECT id
                                              FROM ir_module_module
@@ -1030,6 +1043,9 @@ def module_deps_diff(cr, module, plus=(), minus=()):
         remove_module_deps(cr, module, tuple(minus))
 
 def new_module(cr, module, deps=(), auto_install=False):
+    if deps:
+        _assert_modules_exists(cr, *deps)
+
     cr.execute("SELECT count(1) FROM ir_module_module WHERE name = %s", [module])
     if cr.fetchone()[0]:
         # Avoid duplicate entries for module which is already installed,
