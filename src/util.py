@@ -1662,7 +1662,7 @@ def remove_model(cr, model, drop_table=True):
 
     # remove references
     for ir in indirect_references(cr):
-        if ir.table == 'ir_model':
+        if ir.table in ("ir_model", "ir_model_fields"):
             continue
         query = 'DELETE FROM "{0}" WHERE {1} RETURNING id'.format(ir.table, ir.model_filter())
         cr.execute(query, [model])
