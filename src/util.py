@@ -2067,11 +2067,12 @@ def update_field_references(cr, old, new, only_models=None):
         cr.execute(q, p)
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
+    Model = env(cr)[model] if isinstance(model, basestring) else model
+    model = Model._name
     if ids is None:
         cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
         ids = tuple(map(itemgetter(0), cr.fetchall()))
 
-    Model = env(cr)[model]
     size = (len(ids) + chunk_size - 1) / chunk_size
     qual = '%s %d-bucket' % (model, chunk_size) if chunk_size != 1 else model
     for subids in log_progress(chunks(ids, chunk_size, list), qualifier=qual, logger=logger, size=size):
