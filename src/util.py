@@ -903,6 +903,7 @@ def merge_module(cr, old, into):
                   FROM ir_model_data
                  WHERE module=%s
                    AND model NOT LIKE 'ir.model%%'
+                   AND model NOT LIKE 'ir.module.module%%'
               GROUP BY model
             """, [old])
             for model, res_ids in cr.fetchall():
