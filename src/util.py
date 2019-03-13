@@ -272,6 +272,8 @@ def model_of_table(cr, table):
 
         'ir_config_parameter':  'ir.config_parameter',
 
+        'documents_request_wizard': 'documents.request_wizard',
+
         'survey_user_input': 'survey.user_input',
         'survey_user_input_line': 'survey.user_input_line',
 
