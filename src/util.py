@@ -1696,8 +1696,8 @@ def remove_model(cr, model, drop_table=True):
             continue
         query = 'DELETE FROM "{0}" WHERE {1} RETURNING id'.format(ir.table, ir.model_filter())
         cr.execute(query, [model])
-        ids = tuple(map(itemgetter(0), cr.fetchall()))
-        _rm_refs(cr, model_of_table(cr, ir.table), ids)
+        for ids in log_progress(chunks(map(itemgetter(0), cr.fetchall()), 1000, fmt=tuple), qualifier=ir.table, size=cr.rowcount):
+            _rm_refs(cr, model_of_table(cr, ir.table), ids)
 
     _rm_refs(cr, model)
 
