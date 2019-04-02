@@ -959,7 +959,7 @@ def rename_module(cr, old, new):
                      AND model = %s
                """, (mod_new, mod_old, 'base', 'ir.module.module'))
 
-def merge_module(cr, old, into):
+def merge_module(cr, old, into, without_deps=False):
     """Move all references of module `old` into module `into`
     """
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
@@ -1011,16 +1011,17 @@ def merge_module(cr, old, into):
     cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [into, old])
 
     # update dependencies
-    cr.execute("""
-        INSERT INTO ir_module_module_dependency(module_id, name)
-        SELECT module_id, %s
-          FROM ir_module_module_dependency d
-         WHERE name=%s
-           AND NOT EXISTS(SELECT 1
-                            FROM ir_module_module_dependency o
-                           WHERE o.module_id = d.module_id
-                             AND o.name=%s)
-    """, [into, old, into])
+    if not without_deps:
+        cr.execute("""
+            INSERT INTO ir_module_module_dependency(module_id, name)
+            SELECT module_id, %s
+              FROM ir_module_module_dependency d
+             WHERE name=%s
+               AND NOT EXISTS(SELECT 1
+                                FROM ir_module_module_dependency o
+                               WHERE o.module_id = d.module_id
+                                 AND o.name=%s)
+        """, [into, old, into])
 
     cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING state", [old])
     [state] = cr.fetchone()
