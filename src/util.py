@@ -626,7 +626,7 @@ def update_record_from_xml(cr, xmlid, reset_write_metadata=True):
                 new_root[0].append(node)
 
     importer = xml_import(cr, module, idref={}, mode='update')
-    kw = dict(mode="update") if version_gte("8.0") else {}
+    kw = dict(mode="update") if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
     importer.parse(new_root, **kw)
 
     if noupdate:
