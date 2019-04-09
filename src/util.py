@@ -1446,6 +1446,13 @@ def remove_field(cr, model, fieldname, cascade=False):
                 WHERE   id = %s
                 """, [lxml.etree.tostring(arch, encoding='unicode'), id])
 
+    cr.execute("""
+        DELETE FROM ir_server_object_lines
+              WHERE col1 IN (SELECT id
+                               FROM ir_model_fields
+                              WHERE model = %s
+                                AND name = %s)
+    """, [model, fieldname])
     cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
     fids = tuple(map(itemgetter(0), cr.fetchall()))
     if fids:
