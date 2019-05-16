@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Utility functions for migration scripts
 
+import base64
 import collections
 import datetime
 import imp
@@ -1635,6 +1636,32 @@ def convert_field_to_property(cr, model, field, type,
                        """, (module, xid, 'ir.property', prop_id, True))
 
     remove_column(cr, table, field, cascade=True)
+
+def convert_binary_field_to_attachment(cr, model, field, encoded=True):
+    table = table_of_model(cr, model)
+    if not column_exists(cr, table, field):
+        return
+    att_name = "%s(%%s).%s" % (model.title().replace(".", ""), field)
+    A = env(cr)["ir.attachment"]
+    cr.execute("SELECT id, {field} FROM {table} WHERE {field} IS NOT NULL".format(**locals()))
+    for rid, data in cr.fetchall():
+        # we can't save create the attachment with res_model & res_id as it will fail computing
+        # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
+        if not encoded:
+            data = base64.b64encode(data)
+        att = A.create({"name": att_name % rid, "datas": data, "type": "binary"})
+        cr.execute(
+            """UPDATE ir_attachment
+                  SET res_model = %s,
+                      res_id = %s,
+                      res_field = %s
+                WHERE id = %s
+            """,
+            [model, rid, field, att.id],
+        )
+
+    # free PG space
+    remove_column(cr, table, field)
 
 def is_field_anonymized(cr, model, field):
     if not module_installed(cr, 'anonymization'):
