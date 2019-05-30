@@ -1647,6 +1647,7 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True):
     for rid, data in cr.fetchall():
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
+        data = bytes(data)
         if not encoded:
             data = base64.b64encode(data)
         att = A.create({"name": att_name % rid, "datas": data, "type": "binary"})
