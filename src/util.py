@@ -2312,8 +2312,8 @@ def announce(cr, version, msg, format='rst',
 
     if pluses_for_enterprise is None:
         # default value depend on format and version
-        major = int(version[0])
-        pluses_for_enterprise = major >= 9 and format == 'md'
+        major = version[0]
+        pluses_for_enterprise = (major == "s" or int(major) >= 9) and format == 'md'
 
     if pluses_for_enterprise:
         plus_re = r'^(\s*)\+ (.+)\n'
