@@ -1092,9 +1092,13 @@ def force_install_module(cr, module, if_installed=None):
     toinstall = [m for m in states if states[m] == 'to install']
     if toinstall:
         # Same algo as ir.module.module.button_install(): https://git.io/fhCKd
+        dep_match = ""
+        if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
+            dep_match = "AND d.auto_install_required = TRUE AND e.auto_install_required = TRUE"
+
         cr.execute("""
             SELECT on_me.name,
-                   -- are all dependencies are (to be) installed?
+                   -- are all dependencies (to be) installed?
                    array_agg(its_deps.state)::text[] <@ %s
               FROM ir_module_module_dependency d
               JOIN ir_module_module on_me ON on_me.id = d.module_id
@@ -1103,8 +1107,9 @@ def force_install_module(cr, module, if_installed=None):
              WHERE d.name = ANY(%s)
                AND on_me.state = 'uninstalled'
                AND on_me.auto_install = TRUE
+               {}
           GROUP BY d.name, on_me.id
-        """, [list(_INSTALLED_MODULE_STATES), toinstall])
+        """.format(dep_match), [list(_INSTALLED_MODULE_STATES), toinstall])
         for mod, must_install in cr.fetchall():
             if must_install:
                 _logger.debug("auto install module %r due to module %r being force installed", mod, module)
@@ -1165,6 +1170,33 @@ def module_deps_diff(cr, module, plus=(), minus=()):
     if minus:
         remove_module_deps(cr, module, tuple(minus))
 
+def module_auto_install(cr, module, auto_install):
+    if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
+        params = []
+        if auto_install is True:
+            value = "TRUE"
+        elif auto_install:
+            value = "(name = ANY(%s))"
+            params = [list(auto_install)]
+        else:
+            value = "FALSE"
+
+        cr.execute(
+            """
+            UPDATE ir_module_module_dependency
+               SET auto_install_required = {}
+             WHERE module_id = (SELECT id
+                                  FROM ir_module_module
+                                 WHERE name = %s)
+        """.format(
+                value
+            ),
+            params + [module],
+        )
+
+    cr.execute("UPDATE ir_module_module SET auto_install = %s WHERE name = %s",
+               [auto_install is not False, module])
+
 def new_module(cr, module, deps=(), auto_install=False):
     if deps:
         _assert_modules_exists(cr, *deps)
@@ -1177,15 +1209,16 @@ def new_module(cr, module, deps=(), auto_install=False):
         return
 
     if deps and auto_install:
-        state = 'to install' if modules_installed(cr, *deps) else 'uninstalled'
+        to_check = deps if auto_install is True else auto_install
+        state = 'to install' if modules_installed(cr, *to_check) else 'uninstalled'
     else:
         state = 'uninstalled'
     cr.execute("""\
         INSERT INTO ir_module_module (
-            name, state, auto_install, demo
+            name, state, demo
         ) VALUES (
-            %s, %s, %s, (select demo from ir_module_module where name='base'))
-        RETURNING id""", (module, state, auto_install))
+            %s, %s, (select demo from ir_module_module where name='base'))
+        RETURNING id""", (module, state))
     new_id, = cr.fetchone()
 
     cr.execute("""\
@@ -1197,6 +1230,8 @@ def new_module(cr, module, deps=(), auto_install=False):
 
     for dep in deps:
         new_module_dep(cr, module, dep)
+
+    module_auto_install(cr, module, auto_install)
 
 def force_migration_of_fresh_module(cr, module, init=True):
     """It may appear that new (or forced installed) modules need a migration script to grab data
