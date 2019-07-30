@@ -2566,3 +2566,62 @@ def log_progress(it, qualifier='elements', logger=_logger, size=None):
             logger.info("[%.02f%%] %d/%d %s processed in %s (TOTAL estimated time: %s)",
                         (i / size * 100.0), i, size, qualifier, tdiff,
                         datetime.timedelta(seconds=tdiff.total_seconds() * size / i))
+
+
+class SelfPrint(object):
+    """Class that will return a self representing string. Used to evaluate domains."""
+
+    def __init__(self, name):
+        self.__name = name
+
+    def __getattr__(self, attr):
+        return SelfPrint("%r.%s" % (self, attr))
+
+    def __call__(self, *args, **kwargs):
+        s = []
+        for a in args:
+            s.append(repr(a))
+        for k, v in kwargs.items():
+            s.append("%s=%r" % (k, v))
+        return SelfPrint("%r(%s)" % (self, ", ".join(s)))
+
+    def __add__(self, other):
+        return SelfPrint("%r + %r" % (self, other))
+
+    def __radd__(self, other):
+        return SelfPrint("%r + %r" % (other, self))
+
+    def __sub__(self, other):
+        return SelfPrint("%r - %r" % (self, other))
+
+    def __rsub__(self, other):
+        return SelfPrint("%r - %r" % (other, self))
+
+    def __mul__(self, other):
+        return SelfPrint("%r * %r" % (self, other))
+
+    def __rmul__(self, other):
+        return SelfPrint("%r * %r" % (other, self))
+
+    def __div__(self, other):
+        return SelfPrint("%r / %r" % (self, other))
+
+    def __rdiv__(self, other):
+        return SelfPrint("%r / %r" % (other, self))
+
+    def __floordiv__(self, other):
+        return SelfPrint("%r // %r" % (self, other))
+
+    def __rfloordiv__(self, other):
+        return SelfPrint("%r // %r" % (other, self))
+
+    def __mod__(self, other):
+        return SelfPrint("%r % %r" % (self, other))
+
+    def __rmod__(self, other):
+        return SelfPrint("%r % %r" % (other, self))
+
+    def __repr__(self):
+        return self.__name
+
+    __str__ = __repr__
