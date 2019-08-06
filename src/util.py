@@ -282,6 +282,13 @@ def model_of_table(cr, table):
 
 
 def env(cr):
+    """
+    Creates a new environment from cursor.
+
+    ATTENTION: This function does NOT empty the cache maintained on the cursor
+    for superuser with and empty environment. A call to invalidate_cache will
+    most probably be necessary every time you directly modify something in database
+    """
     try:
         from openerp.api import Environment
     except ImportError:
