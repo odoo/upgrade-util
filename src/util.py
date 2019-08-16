@@ -700,24 +700,6 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     if not table_exists(cr, m2m):
         return
 
-    def target_of(cr, table, column):
-        cr.execute("""
-            SELECT con.conname, cl2.relname, att2.attname
-            FROM pg_constraint con
-            JOIN pg_class cl1 ON (con.conrelid = cl1.oid)
-            JOIN pg_attribute att1 ON (    array_lower(con.conkey, 1) = 1
-                                        AND con.conkey[1] = att1.attnum
-                                        AND att1.attrelid = cl1.oid)
-            JOIN pg_class cl2 ON (con.confrelid = cl2.oid)
-            JOIN pg_attribute att2 ON (    array_lower(con.confkey, 1) = 1
-                                        AND con.confkey[1] = att2.attnum
-                                        AND att2.attrelid = cl2.oid)
-            WHERE cl1.relname = %s
-            AND att1.attname = %s
-            AND con.contype = 'f'
-        """, [table, column])
-        return cr.fetchone()
-
     # cleanup
     cr.execute("""
         DELETE FROM {m2m} t
@@ -750,8 +732,8 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 
     # create  missing or bad fk
     target = target_of(cr, m2m, col1)
-    if target and target[1:] != [fk1, 'id']:
-        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[0]))
+    if target and target[:2] != [fk1, 'id']:
+        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col1)s -> %(fk1)s", locals())
@@ -759,8 +741,8 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
                    .format(**locals()))
 
     target = target_of(cr, m2m, col2)
-    if target and target[1:] != [fk2, 'id']:
-        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[0]))
+    if target and target[:2] != [fk2, 'id']:
+        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col2)s -> %(fk2)s", locals())
@@ -1333,6 +1315,31 @@ def get_fk(cr, table):
     """
     cr.execute(q, (table,))
     return cr.fetchall()
+
+def target_of(cr, table, column):
+    """
+        Return the target of a foreign key.
+        Returns None if there is not foreign key on given column.
+        returns a 3-tuple (foreign_table, foreign_column, constraint_name)
+    """
+    cr.execute("""
+        SELECT quote_ident(cl2.relname) as table,
+               quote_ident(att2.attname) as column,
+               quote_ident(con.conname) as conname
+        FROM pg_constraint con
+        JOIN pg_class cl1 ON (con.conrelid = cl1.oid)
+        JOIN pg_attribute att1 ON (    array_lower(con.conkey, 1) = 1
+                                    AND con.conkey[1] = att1.attnum
+                                    AND att1.attrelid = cl1.oid)
+        JOIN pg_class cl2 ON (con.confrelid = cl2.oid)
+        JOIN pg_attribute att2 ON (    array_lower(con.confkey, 1) = 1
+                                    AND con.confkey[1] = att2.attnum
+                                    AND att2.attrelid = cl2.oid)
+        WHERE cl1.relname = %s
+        AND att1.attname = %s
+        AND con.contype = 'f'
+    """, [table, column])
+    return cr.fetchone()
 
 def get_index_on(cr, table, *columns):
     """
