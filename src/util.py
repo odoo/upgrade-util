@@ -75,8 +75,10 @@ except NameError:
 class MigrationError(Exception):
     pass
 
+
 class SleepyDeveloperError(ValueError):
     pass
+
 
 def version_gte(version):
     if "-" in version:
@@ -152,6 +154,18 @@ def savepoint(cr):
     except Exception:
         cr.execute('ROLLBACK TO SAVEPOINT %s' % (name,))
         raise
+
+@contextmanager
+def disable_triggers(cr, *tables):
+    if any("." in table for table in tables):
+        raise SleepyDeveloperError("table name cannot contains dot")
+    for table in tables:
+        cr.execute("ALTER TABLE %s DISABLE TRIGGER ALL" % table)
+
+    yield
+
+    for table in reversed(tables):
+        cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
 
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
