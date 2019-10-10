@@ -2299,11 +2299,14 @@ def rst2html(rst):
     return html_sanitize(html, silent=False)
 
 def md2html(md):
+    mdversion = markdown.__version_info__ if hasattr(markdown, "__version_info__") else markdown.version_info
     extensions = [
-        'markdown.extensions.smart_strong',
-        'markdown.extensions.nl2br',
-        'markdown.extensions.sane_lists',
+        "markdown.extensions.nl2br",
+        "markdown.extensions.sane_lists",
     ]
+    if mdversion[0] < 3:
+        extensions.append("markdown.extensions.smart_strong")
+
     return markdown.markdown(md, extensions=extensions)
 
 
