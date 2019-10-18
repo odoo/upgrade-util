@@ -276,6 +276,10 @@ def table_of_model(cr, model):
         workflow.triggers   wkf_triggers
         workflow.workitem   wkf_workitem
 
+        # mass_mailing
+        mail.mass_mailing.list_contact_rel mail_mass_mailing_contact_list_rel
+        mailing.contact.subscription       mailing_contact_list_rel
+
         # `mail.notification` was a "normal" model in versions <9.0
         # and a named m2m in >=saas~13
         {gte_saas13} mail.notification mail_message_res_partner_needaction_rel
@@ -316,6 +320,8 @@ def model_of_table(cr, table):
         survey_user_input survey.user_input
         survey_user_input_line survey.user_input_line
 
+        mail_mass_mailing_contact_list_rel mail.mass_mailing.list_contact_rel
+        mailing_contact_list_rel           mailing.contact.subscription
         # Not a real model until saas~13
         {gte_saas13} mail_message_res_partner_needaction_rel mail.notification
 
