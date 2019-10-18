@@ -1537,6 +1537,16 @@ def rename_field(cr, model, old, new, update_references=True):
                AND key = 'default'
         """, [new, model, old])
 
+    if column_exists(cr, "mail_tracking_value", "field"):
+        cr.execute("""
+            UPDATE mail_tracking_value v
+               SET field = %s
+              FROM mail_message m
+             WHERE v.mail_message_id = m.id
+               AND m.model = %s
+               AND v.field = %s
+          """, [new, model, old])
+
     table = table_of_model(cr, model)
     # NOTE table_exists is needed to avoid altering views
     if table_exists(cr, table) and column_exists(cr, table, old):
