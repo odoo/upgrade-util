@@ -2092,6 +2092,25 @@ def rename_model(cr, old, new, rename_table=True):
                code=regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g')
     """.format(col_prefix=col_prefix, old=old.replace('.', r'\.'), new=new))
 
+def remove_mixin_from_model(cr, model, mixin, keep=()):
+    assert env(cr)[mixin]._abstract
+    cr.execute("""
+        SELECT name, ttype, relation, store
+          FROM ir_model_fields
+         WHERE model = %s
+           AND name NOT IN ('id', 'create_uid', 'write_uid', 'create_date', 'write_date', '__last_update')
+           AND name != ALL(%s)
+    """, [mixin, list(keep)])
+    for field, ftype, relation, store in cr.fetchall():
+        if ftype.endswith("2many") and store:
+            # for mixin, x2many are filtered by their model.
+            table = table_of_model(cr, relation)
+            irs = [ir for ir in indirect_references(cr) if ir.table == table]
+            assert irs  # something goes wrong...
+            for ir in irs:
+                query = 'DELETE FROM "{}" WHERE {}'.format(ir.table, ir.model_filter())
+                cr.execute(query, [model])
+        remove_field(cr, model, field)
 
 def replace_record_references(cr, old, new, replace_xmlid=True):
     """replace all (in)direct references of a record by another"""
