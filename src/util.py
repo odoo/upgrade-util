@@ -75,8 +75,10 @@ except NameError:
 class MigrationError(Exception):
     pass
 
+
 class SleepyDeveloperError(ValueError):
     pass
+
 
 def version_gte(version):
     if "-" in version:
@@ -152,6 +154,18 @@ def savepoint(cr):
     except Exception:
         cr.execute('ROLLBACK TO SAVEPOINT %s' % (name,))
         raise
+
+@contextmanager
+def disable_triggers(cr, *tables):
+    if any("." in table for table in tables):
+        raise SleepyDeveloperError("table name cannot contains dot")
+    for table in tables:
+        cr.execute("ALTER TABLE %s DISABLE TRIGGER ALL" % table)
+
+    yield
+
+    for table in reversed(tables):
+        cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
 
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
@@ -700,24 +714,6 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     if not table_exists(cr, m2m):
         return
 
-    def target_of(cr, table, column):
-        cr.execute("""
-            SELECT con.conname, cl2.relname, att2.attname
-            FROM pg_constraint con
-            JOIN pg_class cl1 ON (con.conrelid = cl1.oid)
-            JOIN pg_attribute att1 ON (    array_lower(con.conkey, 1) = 1
-                                        AND con.conkey[1] = att1.attnum
-                                        AND att1.attrelid = cl1.oid)
-            JOIN pg_class cl2 ON (con.confrelid = cl2.oid)
-            JOIN pg_attribute att2 ON (    array_lower(con.confkey, 1) = 1
-                                        AND con.confkey[1] = att2.attnum
-                                        AND att2.attrelid = cl2.oid)
-            WHERE cl1.relname = %s
-            AND att1.attname = %s
-            AND con.contype = 'f'
-        """, [table, column])
-        return cr.fetchone()
-
     # cleanup
     cr.execute("""
         DELETE FROM {m2m} t
@@ -750,8 +746,8 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 
     # create  missing or bad fk
     target = target_of(cr, m2m, col1)
-    if target and target[1:] != [fk1, 'id']:
-        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[0]))
+    if target and target[:2] != [fk1, 'id']:
+        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col1)s -> %(fk1)s", locals())
@@ -759,8 +755,8 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
                    .format(**locals()))
 
     target = target_of(cr, m2m, col2)
-    if target and target[1:] != [fk2, 'id']:
-        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[0]))
+    if target and target[:2] != [fk2, 'id']:
+        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col2)s -> %(fk2)s", locals())
@@ -1092,9 +1088,13 @@ def force_install_module(cr, module, if_installed=None):
     toinstall = [m for m in states if states[m] == 'to install']
     if toinstall:
         # Same algo as ir.module.module.button_install(): https://git.io/fhCKd
+        dep_match = ""
+        if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
+            dep_match = "AND d.auto_install_required = TRUE AND e.auto_install_required = TRUE"
+
         cr.execute("""
             SELECT on_me.name,
-                   -- are all dependencies are (to be) installed?
+                   -- are all dependencies (to be) installed?
                    array_agg(its_deps.state)::text[] <@ %s
               FROM ir_module_module_dependency d
               JOIN ir_module_module on_me ON on_me.id = d.module_id
@@ -1103,8 +1103,9 @@ def force_install_module(cr, module, if_installed=None):
              WHERE d.name = ANY(%s)
                AND on_me.state = 'uninstalled'
                AND on_me.auto_install = TRUE
+               {}
           GROUP BY d.name, on_me.id
-        """, [list(_INSTALLED_MODULE_STATES), toinstall])
+        """.format(dep_match), [list(_INSTALLED_MODULE_STATES), toinstall])
         for mod, must_install in cr.fetchall():
             if must_install:
                 _logger.debug("auto install module %r due to module %r being force installed", mod, module)
@@ -1165,6 +1166,33 @@ def module_deps_diff(cr, module, plus=(), minus=()):
     if minus:
         remove_module_deps(cr, module, tuple(minus))
 
+def module_auto_install(cr, module, auto_install):
+    if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
+        params = []
+        if auto_install is True:
+            value = "TRUE"
+        elif auto_install:
+            value = "(name = ANY(%s))"
+            params = [list(auto_install)]
+        else:
+            value = "FALSE"
+
+        cr.execute(
+            """
+            UPDATE ir_module_module_dependency
+               SET auto_install_required = {}
+             WHERE module_id = (SELECT id
+                                  FROM ir_module_module
+                                 WHERE name = %s)
+        """.format(
+                value
+            ),
+            params + [module],
+        )
+
+    cr.execute("UPDATE ir_module_module SET auto_install = %s WHERE name = %s",
+               [auto_install is not False, module])
+
 def new_module(cr, module, deps=(), auto_install=False):
     if deps:
         _assert_modules_exists(cr, *deps)
@@ -1177,15 +1205,16 @@ def new_module(cr, module, deps=(), auto_install=False):
         return
 
     if deps and auto_install:
-        state = 'to install' if modules_installed(cr, *deps) else 'uninstalled'
+        to_check = deps if auto_install is True else auto_install
+        state = 'to install' if modules_installed(cr, *to_check) else 'uninstalled'
     else:
         state = 'uninstalled'
     cr.execute("""\
         INSERT INTO ir_module_module (
-            name, state, auto_install, demo
+            name, state, demo
         ) VALUES (
-            %s, %s, %s, (select demo from ir_module_module where name='base'))
-        RETURNING id""", (module, state, auto_install))
+            %s, %s, (select demo from ir_module_module where name='base'))
+        RETURNING id""", (module, state))
     new_id, = cr.fetchone()
 
     cr.execute("""\
@@ -1197,6 +1226,8 @@ def new_module(cr, module, deps=(), auto_install=False):
 
     for dep in deps:
         new_module_dep(cr, module, dep)
+
+    module_auto_install(cr, module, auto_install)
 
 def force_migration_of_fresh_module(cr, module, init=True):
     """It may appear that new (or forced installed) modules need a migration script to grab data
@@ -1298,6 +1329,31 @@ def get_fk(cr, table):
     """
     cr.execute(q, (table,))
     return cr.fetchall()
+
+def target_of(cr, table, column):
+    """
+        Return the target of a foreign key.
+        Returns None if there is not foreign key on given column.
+        returns a 3-tuple (foreign_table, foreign_column, constraint_name)
+    """
+    cr.execute("""
+        SELECT quote_ident(cl2.relname) as table,
+               quote_ident(att2.attname) as column,
+               quote_ident(con.conname) as conname
+        FROM pg_constraint con
+        JOIN pg_class cl1 ON (con.conrelid = cl1.oid)
+        JOIN pg_attribute att1 ON (    array_lower(con.conkey, 1) = 1
+                                    AND con.conkey[1] = att1.attnum
+                                    AND att1.attrelid = cl1.oid)
+        JOIN pg_class cl2 ON (con.confrelid = cl2.oid)
+        JOIN pg_attribute att2 ON (    array_lower(con.confkey, 1) = 1
+                                    AND con.confkey[1] = att2.attnum
+                                    AND att2.attrelid = cl2.oid)
+        WHERE cl1.relname = %s
+        AND att1.attname = %s
+        AND con.contype = 'f'
+    """, [table, column])
+    return cr.fetchone()
 
 def get_index_on(cr, table, *columns):
     """
@@ -2537,3 +2593,62 @@ def log_progress(it, qualifier='elements', logger=_logger, size=None):
             logger.info("[%.02f%%] %d/%d %s processed in %s (TOTAL estimated time: %s)",
                         (i / size * 100.0), i, size, qualifier, tdiff,
                         datetime.timedelta(seconds=tdiff.total_seconds() * size / i))
+
+
+class SelfPrint(object):
+    """Class that will return a self representing string. Used to evaluate domains."""
+
+    def __init__(self, name):
+        self.__name = name
+
+    def __getattr__(self, attr):
+        return SelfPrint("%r.%s" % (self, attr))
+
+    def __call__(self, *args, **kwargs):
+        s = []
+        for a in args:
+            s.append(repr(a))
+        for k, v in kwargs.items():
+            s.append("%s=%r" % (k, v))
+        return SelfPrint("%r(%s)" % (self, ", ".join(s)))
+
+    def __add__(self, other):
+        return SelfPrint("%r + %r" % (self, other))
+
+    def __radd__(self, other):
+        return SelfPrint("%r + %r" % (other, self))
+
+    def __sub__(self, other):
+        return SelfPrint("%r - %r" % (self, other))
+
+    def __rsub__(self, other):
+        return SelfPrint("%r - %r" % (other, self))
+
+    def __mul__(self, other):
+        return SelfPrint("%r * %r" % (self, other))
+
+    def __rmul__(self, other):
+        return SelfPrint("%r * %r" % (other, self))
+
+    def __div__(self, other):
+        return SelfPrint("%r / %r" % (self, other))
+
+    def __rdiv__(self, other):
+        return SelfPrint("%r / %r" % (other, self))
+
+    def __floordiv__(self, other):
+        return SelfPrint("%r // %r" % (self, other))
+
+    def __rfloordiv__(self, other):
+        return SelfPrint("%r // %r" % (other, self))
+
+    def __mod__(self, other):
+        return SelfPrint("%r % %r" % (self, other))
+
+    def __rmod__(self, other):
+        return SelfPrint("%r % %r" % (other, self))
+
+    def __repr__(self):
+        return self.__name
+
+    __str__ = __repr__
