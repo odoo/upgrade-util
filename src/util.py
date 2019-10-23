@@ -1966,25 +1966,43 @@ def move_model(cr, model, from_module, to_module, move_data=False, delete=False)
         delete_model(cr, model)
         return
 
-    model_u = model.replace('.', '_')
-    cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s AND model=%s AND name=%s",
-               (to_module, from_module, 'ir.model', 'model_%s' % model_u))
+    def update_imd(model, name=None, from_module=from_module, to_module=to_module):
+        where = "true"
+        if name:
+            where = "d.name {} %(name)s".format("LIKE" if "%" in name else "=")
 
-    cr.execute("""UPDATE ir_model_data
-                     SET module=%s
-                   WHERE module=%s
-                     AND model='ir.model.fields'
-                     AND name LIKE %s
-               """, [to_module, from_module,
-                     (IMD_FIELD_PATTERN % (model_u, '%')).replace('_', r'\_')])
+        query = """
+            WITH dups AS (
+                SELECT d.id
+                  FROM ir_model_data d, ir_model_data t
+                 WHERE d.name = t.name
+                   AND d.module = %(from_module)s
+                   AND t.module = %(to_module)s
+                   AND d.model = %(model)s
+                   AND {}
+            )
+            DELETE FROM ir_model_data d
+                  USING dups
+                 WHERE dups.id = d.id
+        """
+        cr.execute(query.format(where), locals())
 
+        query = """
+            UPDATE ir_model_data d
+               SET module = %(to_module)s
+             WHERE module = %(from_module)s
+               AND model = %(model)s
+               AND {}
+        """
+        cr.execute(query.format(where), locals())
+
+    model_u = model.replace(".", "_")
+
+    update_imd("ir.model", "model_%s" % model_u)
+    update_imd("ir.model.fields", (IMD_FIELD_PATTERN % (model_u, "%")).replace("_", r"\_"))
     if move_data:
-        cr.execute("""UPDATE ir_model_data
-                         SET module=%s
-                       WHERE module=%s
-                         AND model=%s
-                   """, (to_module, from_module, model))
-
+        update_imd(model)
+    return
 
 def rename_model(cr, old, new, rename_table=True):
     if rename_table:
