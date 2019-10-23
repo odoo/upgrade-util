@@ -1957,12 +1957,12 @@ def remove_model(cr, model, drop_table=True):
 # compat layer...
 delete_model = remove_model
 
-def move_model(cr, model, from_module, to_module, move_data=False, delete=False):
+def move_model(cr, model, from_module, to_module, move_data=False):
     """
         move model `model` from `from_module` to `to_module`.
-        if `delete` is set and `to_module` is not installed, delete the model.
+        if `to_module` is not installed, delete the model.
     """
-    if delete and not module_installed(cr, to_module):
+    if not module_installed(cr, to_module):
         delete_model(cr, model)
         return
 
