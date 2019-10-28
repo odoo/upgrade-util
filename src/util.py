@@ -238,61 +238,86 @@ def dispatch_by_dbuuid(cr, version, callbacks):
         _logger.info('calling dbuuid-specific function `%s`', func.__name__)
         func(cr, version)
 
+
+IMD_FIELD_PATTERN = "field_%s__%s" if version_gte("saas~11.2") else "field_%s_%s"
+
+
 def table_of_model(cr, model):
-    return {
-        'ir.actions.actions':          'ir_actions',
-        'ir.actions.act_url':          'ir_act_url',
-        'ir.actions.act_window':       'ir_act_window',
-        'ir.actions.act_window_close': 'ir_actions',
-        'ir.actions.act_window.view':  'ir_act_window_view',
-        'ir.actions.client':           'ir_act_client',
-        'ir.actions.report.xml':       'ir_act_report_xml',
-        'ir.actions.report':           'ir_act_report_xml',
-        'ir.actions.server':           'ir_act_server',
-        'ir.actions.wizard':           'ir_act_wizard',
+    exceptions = dict(
+        l.split()
+        for l in splitlines(
+            """
+        ir.actions.actions          ir_actions
+        ir.actions.act_url          ir_act_url
+        ir.actions.act_window       ir_act_window
+        ir.actions.act_window_close ir_actions
+        ir.actions.act_window.view  ir_act_window_view
+        ir.actions.client           ir_act_client
+        ir.actions.report.xml       ir_act_report_xml
+        ir.actions.report           ir_act_report_xml
+        ir.actions.server           ir_act_server
+        ir.actions.wizard           ir_act_wizard
 
-        'stock.picking.in':  'stock_picking',
-        'stock.picking.out': 'stock_picking',
+        stock.picking.in  stock_picking
+        stock.picking.out stock_picking
 
-        'workflow':            'wkf',
-        'workflow.activity':   'wkf_activity',
-        'workflow.instance':   'wkf_instance',
-        'workflow.transition': 'wkf_transition',
-        'workflow.triggers':   'wkf_triggers',
-        'workflow.workitem':   'wkf_workitem',
-    }.get(model, model.replace('.', '_'))
+        workflow            wkf
+        workflow.activity   wkf_activity
+        workflow.instance   wkf_instance
+        workflow.transition wkf_transition
+        workflow.triggers   wkf_triggers
+        workflow.workitem   wkf_workitem
 
+        # `mail.notification` was a "normal" model in versions <9.0
+        # and a named m2m in >=saas~13
+        {gte_saas13} mail.notification mail_message_res_partner_needaction_rel
+    """.format(
+                gte_saas13="" if version_gte("9.saas~13") else "#"
+            )
+        )
+    )
+    return exceptions.get(model, model.replace(".", "_"))
 
-_ACTION_REPORT_MODEL = 'ir.actions.report' if version_gte('10.saas~17') else 'ir.actions.report.xml'
-IMD_FIELD_PATTERN = 'field_%s__%s' if version_gte('saas~11.2') else 'field_%s_%s'
 
 def model_of_table(cr, table):
-    return {
-        # can also be act_window_close, but there are chance it wont be usefull for anyone...
-        'ir_actions':         'ir.actions.actions',
-        'ir_act_url':         'ir.actions.act_url',
-        'ir_act_window':      'ir.actions.act_window',
-        'ir_act_window_view': 'ir.actions.act_window.view',
-        'ir_act_client':      'ir.actions.client',
-        'ir_act_report_xml':  _ACTION_REPORT_MODEL,
-        'ir_act_server':      'ir.actions.server',
-        'ir_act_wizard':      'ir.actions.wizard',
+    exceptions = dict(
+        l.split()
+        for l in splitlines(
+            """
+        # can also be act_window_close, but there are chances it wont be usefull for anyone...
+        ir_actions         ir.actions.actions
+        ir_act_url         ir.actions.act_url
+        ir_act_window      ir.actions.act_window
+        ir_act_window_view ir.actions.act_window.view
+        ir_act_client      ir.actions.client
+        ir_act_report_xml  {action_report_model}
+        ir_act_server      ir.actions.server
+        ir_act_wizard      ir.actions.wizard
 
-        'wkf':            'workflow',
-        'wkf_activity':   'workflow.activity',
-        'wkf_instance':   'workflow.instance',
-        'wkf_transition': 'workflow.transition',
-        'wkf_triggers':   'workflow.triggers',
-        'wkf_workitem':   'workflow.workitem',
+        wkf            workflow
+        wkf_activity   workflow.activity
+        wkf_instance   workflow.instance
+        wkf_transition workflow.transition
+        wkf_triggers   workflow.triggers
+        wkf_workitem   workflow.workitem
 
-        'ir_config_parameter':  'ir.config_parameter',
+        ir_config_parameter  ir.config_parameter
 
-        'documents_request_wizard': 'documents.request_wizard',
+        documents_request_wizard documents.request_wizard
 
-        'survey_user_input': 'survey.user_input',
-        'survey_user_input_line': 'survey.user_input_line',
+        survey_user_input survey.user_input
+        survey_user_input_line survey.user_input_line
 
-    }.get(table, table.replace('_', '.'))
+        # Not a real model until saas~13
+        {gte_saas13} mail_message_res_partner_needaction_rel mail.notification
+
+    """.format(
+                action_report_model="ir.actions.report" if version_gte("10.saas~17") else "ir.actions.report.xml",
+                gte_saas13="" if version_gte("9.saas~13") else "#",
+            )
+        )
+    )
+    return exceptions.get(table, table.replace("_", "."))
 
 
 def env(cr):
