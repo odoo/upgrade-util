@@ -465,8 +465,7 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             raise ValueError('Please use a 2-tuple (<model>, <res_id>)')
         model, res_id = name
     else:
-        raise ValueError('Either use a fully qualified xmlid string ' +
-                         '<module>.<name> or a 2-tuple (<model>, <res_id>)')
+        raise ValueError("Either use a fully qualified xmlid string <module>.<name> or a 2-tuple (<model>, <res_id>)")
 
     table = table_of_model(cr, model)
     try:
@@ -2283,11 +2282,11 @@ def update_field_references(cr, old, new, only_models=None):
             - mail.mass_mailing
     """
     p = {
-        'old': '\y%s\y' % (old,),
-        'new': new,
-        'def_old': '\ydefault_%s\y' % (old,),
-        'def_new': 'default_%s' % (new,),
-        'models': tuple(only_models) if only_models else (),
+        "old": r"\y%s\y" % (old,),
+        "new": new,
+        "def_old": r"\ydefault_%s\y" % (old,),
+        "def_new": "default_%s" % (new,),
+        "models": tuple(only_models) if only_models else (),
     }
 
     q = """
