@@ -477,12 +477,20 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
         if not data:
             return
         model, res_id = data
+        if model == "ir.ui.view":
+            # NOTE: only done when a xmlid is given to avoid infinite recursion
+            _logger.warning("Removing view %r", name)
+            return remove_view(cr, view_id=res_id)
     elif isinstance(name, tuple):
         if len(name) != 2:
             raise ValueError('Please use a 2-tuple (<model>, <res_id>)')
         model, res_id = name
     else:
         raise ValueError("Either use a fully qualified xmlid string <module>.<name> or a 2-tuple (<model>, <res_id>)")
+
+    if model == "ir.ui.menu":
+        _logger.warning("Removing menu %r", name)
+        return remove_menus(cr, [res_id])
 
     table = table_of_model(cr, model)
     try:
