@@ -2507,8 +2507,13 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     qual = '%s %d-bucket' % (model, chunk_size) if chunk_size != 1 else model
     for subids in log_progress(chunks(ids, chunk_size, list), qualifier=qual, logger=logger, size=size):
         records = Model.browse(subids)
-        for field in fields:
-            records._recompute_todo(records._fields[field])
+        for field_name in fields:
+            field = records._fields[field_name]
+            if hasattr(records, "_recompute_todo"):
+                # < 13.0
+                records._recompute_todo(field)
+            else:
+                Model.env.add_to_compute(field, records)
         records.recompute()
         records.invalidate_cache()
 
