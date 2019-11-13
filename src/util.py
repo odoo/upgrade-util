@@ -1295,7 +1295,8 @@ def column_type(cr, table, column):
 def create_column(cr, table, column, definition):
     curtype = column_type(cr, table, column)
     if curtype:
-        # TODO compare with definition
+        if curtype != definition:
+            _logger.error("%s.%s already exists but is %r instead of %r", table, column, curtype, definition)
         return False
     else:
         cr.execute("""ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition))
