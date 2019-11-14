@@ -2035,6 +2035,10 @@ def rename_model(cr, old, new, rename_table=True):
         new_table = table_of_model(cr, new)
         cr.execute('ALTER TABLE "{0}" RENAME TO "{1}"'.format(old_table, new_table))
         cr.execute('ALTER SEQUENCE "{0}_id_seq" RENAME TO "{1}_id_seq"'.format(old_table, new_table))
+
+        # update moved0 references
+        ENVIRON["moved0"] = {(new_table if t == old_table else t, c) for t, c in ENVIRON.get("moved0", ())}
+
         # find & rename primary key, may still use an old name from a former migration
         cr.execute("""
             SELECT  conname
