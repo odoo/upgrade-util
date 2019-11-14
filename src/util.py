@@ -480,6 +480,15 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
             query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(ir.table, ir.model_filter(), ir.res_id)
             cr.execute(query, [model, res_id])
 
+    if model == "res.groups":
+        # A group is gone, the auto-generated view `base.user_groups_view` is outdated.
+        # Create a shim. It will be re-generated later by creating/updating groups or
+        # explicitly in `base/0.0.0/end-user_groups_view.py`.
+        arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+        cr.execute(
+            "UPDATE ir_ui_view SET {} = '<form/>' WHERE id = %s".format(arch_col), [ref(cr, "base.user_groups_view")]
+        )
+
 
 def if_unchanged(cr, xmlid, callback, interval='1 minute'):
     assert '.' in xmlid
