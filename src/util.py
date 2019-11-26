@@ -9,6 +9,7 @@ import json
 import logging
 import lxml
 import os
+from multiprocessing import cpu_count
 import re
 import sys
 import time
@@ -174,6 +175,58 @@ def disable_triggers(cr, *tables):
 
     for table in reversed(tables):
         cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
+
+
+if sys.version_info[0] == 2:
+    def parallel_execute(cr, queries):
+        for query in queries:
+            cr.execute(query)
+else:
+    def parallel_execute(cr, queries):
+        """
+            Execute queries in parallel
+            Use a maximum of 8 workers (but not more than the number of CPUs)
+            Side effect: the given cursor is commited.
+
+            As example, on `**REDACTED**` (using 8 workers), the following gains are:
+
+                +---------------------------------------------+-------------+-------------+
+                | File                                        | Sequential  | Parallel    |
+                +---------------------------------------------+-------------+-------------+
+                | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
+                | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
+                | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
+                +---------------------------------------------+-------------+-------------+
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        max_workers = min(8, len(queries), cpu_count())
+        reg = env(cr).registry
+
+        def execute(query):
+            with reg.cursor() as cr:
+                cr.execute(query)
+                cr.commit()
+
+        cr.commit()
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            executor.map(execute, queries)
+
+def explode_query(cr, query, prefix=""):
+    """
+        Explode a query to multiple queries that can be executed in parallel
+    """
+    if "{parallel_filter}" not in query:
+        sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
+        query += sep_kw + "{parallel_filter}"
+
+    how_much = min(8, cpu_count())
+    parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
+    return [
+        cr.mogrify(query.format(parallel_filter=parallel_filter), [how_much, index]).decode()
+        for index in range(how_much)
+    ]
 
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
@@ -1621,7 +1674,15 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
 
     # if field was a binary field stored as attachment, clean them...
     if column_exists(cr, "ir_attachment", "res_field"):
-        cr.execute("DELETE FROM ir_attachment WHERE res_model = %s AND res_field = %s", [model, fieldname])
+        parallel_execute(
+            cr,
+            explode_query(
+                cr,
+                cr.mogrify(
+                    "DELETE FROM ir_attachment WHERE res_model = %s AND res_field = %s", [model, fieldname]
+                ).decode(),
+            ),
+        )
 
     table = table_of_model(cr, model)
     # NOTE table_exists is needed to avoid altering views
