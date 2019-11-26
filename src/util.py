@@ -1304,7 +1304,8 @@ def column_type(cr, table, column):
 def create_column(cr, table, column, definition):
     curtype = column_type(cr, table, column)
     if curtype:
-        if curtype != definition:
+        aliases = {"bool": "boolean"}
+        if aliases.get(curtype, curtype) != definition:
             _logger.error("%s.%s already exists but is %r instead of %r", table, column, curtype, definition)
         return False
     else:
