@@ -1946,10 +1946,15 @@ def remove_model(cr, model, drop_table=True):
     for ir in indirect_references(cr):
         if ir.table in ("ir_model", "ir_model_fields"):
             continue
-        query = 'DELETE FROM "{0}" WHERE {1} RETURNING id'.format(ir.table, ir.model_filter())
-        cr.execute(query, [model])
-        for ids in log_progress(chunks(map(itemgetter(0), cr.fetchall()), 1000, fmt=tuple), qualifier=ir.table, size=cr.rowcount):
-            _rm_refs(cr, model_of_table(cr, ir.table), ids)
+        if ir.table == "ir_ui_view":
+            cr.execute("SELECT id FROM ir_ui_view WHERE {}".format(ir.model_filter()), [model])
+            for view_id, in cr.fetchall():
+                remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
+        else:
+            query = 'DELETE FROM "{0}" WHERE {1} RETURNING id'.format(ir.table, ir.model_filter())
+            cr.execute(query, [model])
+            for ids in log_progress(chunks(map(itemgetter(0), cr.fetchall()), 1000, fmt=tuple), qualifier=ir.table, size=cr.rowcount):
+                _rm_refs(cr, model_of_table(cr, ir.table), ids)
 
     _rm_refs(cr, model)
 
