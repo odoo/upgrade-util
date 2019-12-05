@@ -1960,7 +1960,9 @@ def indirect_references(cr, bound_only=False):
         IR('mail_compose_message', 'model', 'res_id'),
         IR('mail_wizard_invite', 'res_model', 'res_id'),
         IR('mail_mail_statistics', 'model', 'res_id'),
-        IR('mail_mass_mailing', 'mailing_model', None),
+        IR("mailing_trace", "model", "res_id"),
+        IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id"),
+        IR("mailing_mailing", None, None, "mailing_model_id"),
         IR('project_project', 'alias_model', None),
         IR('rating_rating', 'res_model', 'res_id', 'res_model_id'),
         IR('rating_rating', 'parent_res_model', 'parent_res_id', 'parent_res_model_id'),
@@ -2518,13 +2520,14 @@ def update_field_references(cr, old, new, only_models=None):
     cr.execute(q, p)
 
     # mass mailing
-    if column_exists(cr, 'mail_mass_mailing', 'mailing_domain'):
+    ml_table = "mailing_mailing" if table_exists(cr, "mailing_mailing") else "mail_mass_mailing"
+    if column_exists(cr, ml_table, "mailing_domain"):
         q = """
-            UPDATE mail_mass_mailing u
+            UPDATE {} u
                SET mailing_domain = regexp_replace(u.mailing_domain, %(old)s, %(new)s, 'g')
         """
         if only_models:
-            if column_exists(cr, 'mail_mass_mailing', 'mailing_model_id'):
+            if column_exists(cr, ml_table, "mailing_model_id"):
                 q += """
                   FROM ir_model m
                  WHERE m.id = u.mailing_model_id
@@ -2536,7 +2539,7 @@ def update_field_references(cr, old, new, only_models=None):
         else:
             q += "WHERE "
         q += "u.mailing_domain ~ %(old)s"
-        cr.execute(q, p)
+        cr.execute(q.format(ml_table), p)
 
     # mail.alias
     if column_exists(cr, "mail_alias", "alias_defaults"):
