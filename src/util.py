@@ -155,14 +155,11 @@ def skippable_cm():
 
 @contextmanager
 def savepoint(cr):
-    name = hex(int(time.time() * 1000))[1:]
-    cr.execute("SAVEPOINT %s" % (name,))
-    try:
+    # NOTE: the `savepoint` method on Cursor only appear in `saas-3`, which mean this function
+    #       can't be called when upgrading to saas~1 or saas~2.
+    #       I take the bet it won't be problematic...
+    with cr.savepoint():
         yield
-        cr.execute('RELEASE SAVEPOINT %s' % (name,))
-    except Exception:
-        cr.execute('ROLLBACK TO SAVEPOINT %s' % (name,))
-        raise
 
 @contextmanager
 def disable_triggers(cr, *tables):
