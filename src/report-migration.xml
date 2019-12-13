@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<t t-name="mail.report_migration">
+  <h1>Upgrade report</h1>
+  <t t-foreach="messages" t-as="category">
+    <h3><t t-esc="category"/></h3>
+    <ul>
+      <t t-if="category in ['Disabled views', 'Overridden views', 'Deleted views']">
+        <t t-set="view_message_types" t-value="{
+          'Overridden views': ['The below standard views have been overriden with their original content during the migration,
+          because the changes made in them were no longer valid.', '%(xml_id)s'],
+          'Disabled views': ['The below custom views have been disabled during the migration,
+          because they were no longer valid.', '%(name)s'],
+          'Deleted views': ['The below custom views have been deleted during the migration,
+          because they were no longer valid and they came from custom modules
+          You can restore them by doing an upgrade of your custom module', '%(name)s'],
+        }"/>
+        <t t-set="view_action_link" t-value="'web?debug#view_type=form&amp;model=ir.ui.view&amp;action=%s&amp;id=%%s' % action_view_id"/>
+        <t t-set="message_type" t-value="view_message_types[category]"/>
+        <div t-if="messages[category]">
+          <t t-esc="message_type[0]"/>
+          <t t-foreach="messages[category]" t-as="view">
+            <li>
+              <t t-if="view.get('copy_id')">
+                <t t-esc="message_type[1] % view"/>
+                &amp;nbsp;
+                <a t-att-href="view_action_link % view['id']" target="_blank">Original</a>
+                &amp;nbsp;
+                <a t-att-href="view_action_link % view['copy_id']" target="_blank">Copy</a>
+              </t>
+              <t t-if="not view.get('copy_id')">
+                <a t-att-href="view_action_link % view['id']" target="_blank"><t t-esc="message_type[1] % view"/></a>
+              </t>
+            </li>
+          </t>
+        </div>
+      </t>
+      <t t-else="">
+        <t t-foreach="messages[category]" t-as="message">
+          <li><t t-esc="message" /></li>
+        </t>
+      </t>
+    </ul>
+  </t>
+</t>

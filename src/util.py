@@ -13,6 +13,7 @@ import re
 import sys
 import time
 
+from collections import defaultdict
 from contextlib import contextmanager
 from docutils.core import publish_string
 from inspect import currentframe
@@ -70,6 +71,14 @@ try:
     basestring
 except NameError:
     basestring = unicode = str
+
+migration_reports = {}
+
+def add_to_migration_reports(message, category=None):
+    if not category:
+        category = "Other"
+    migration_reports[category] = migration_reports.get(category, [])
+    migration_reports[category].append(message)
 
 
 class MigrationError(Exception):
@@ -2508,7 +2517,11 @@ def announce(cr, version, msg, format='rst',
 
     if recipient:
         try:
-            poster = ref(recipient).message_post
+            if isinstance(recipient, str):
+                recipient = ref(recipient)
+            else:
+                recipient = recipient.with_context(**ctx)
+            poster = recipient.message_post
         except (ValueError, AttributeError):
             # Cannot find record, post the message on the wall of the admin
             pass
@@ -2522,12 +2535,56 @@ def announce(cr, version, msg, format='rst',
     _logger.debug(message)
 
     type_field = ['type', 'message_type'][version_gte('9.0')]
-    kw = {type_field: 'notification'}
+    # From 12.0, system notificatications are sent by email,
+    # and do not increment the upper right notification counter.
+    # While comments, in a mail.channel, do.
+    # We want the notification counter to appear for announcements, so we force the comment type from 12.0.
+    type_value = ['notification', 'comment'][version_gte('12.0')]
+    kw = {type_field: type_value}
 
     try:
         poster(body=message, partner_ids=[user.partner_id.id], subtype='mail.mt_comment', **kw)
     except Exception:
         _logger.warning('Cannot announce message', exc_info=True)
+
+
+def announce_migration_report(cr):
+    filepath = os.path.join(os.path.dirname(__file__), 'report-migration.xml')
+    with open(filepath, 'r') as fp:
+        report = lxml.etree.fromstring(fp.read())
+    e = env(cr)
+    values = {'action_view_id': e.ref('base.action_ui_view').id, 'messages': migration_reports}
+    print(migration_reports)
+    message = e['ir.qweb'].render(report, values=values).decode()
+    if message.strip():
+        kw = {}
+        # If possible, post the migration report message to administrators only.
+        admin_channel = get_admin_channel(cr)
+        if admin_channel:
+            kw['recipient'] = admin_channel
+        announce(cr, release.major_version, message, format='html', header=None, footer=None, **kw)
+
+
+def get_admin_channel(cr):
+    e = env(cr)
+    admin_channel = None
+    if 'mail.channel' in e:
+        admin_group = e.ref('base.group_system', raise_if_not_found=False)
+        if admin_group:
+            admin_channel = e['mail.channel'].search([
+                ('public', '=', 'groups'),
+                ('group_public_id', '=', admin_group.id),
+                ('group_ids', 'in', admin_group.id),
+            ])
+            if not admin_channel:
+                admin_channel = e['mail.channel'].create({
+                    'name': 'Administrators',
+                    'public': 'groups',
+                    'group_public_id': admin_group.id,
+                    'group_ids': [(6, 0, [admin_group.id])],
+                })
+    return admin_channel
+
 
 def guess_admin_id(cr):
     """guess the admin user id of `cr` database"""
