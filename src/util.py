@@ -163,15 +163,21 @@ def savepoint(cr):
 
 @contextmanager
 def disable_triggers(cr, *tables):
+    # NOTE only super user (at pg level) can disable all the triggers. noop if this is not the case.
     if any("." in table for table in tables):
         raise SleepyDeveloperError("table name cannot contains dot")
-    for table in tables:
-        cr.execute("ALTER TABLE %s DISABLE TRIGGER ALL" % table)
+
+    cr.execute("SELECT usesuper FROM pg_user WHERE usename = CURRENT_USER")
+    is_su = cr.fetchone()[0]
+
+    if is_su:
+        for table in tables:
+            cr.execute("ALTER TABLE %s DISABLE TRIGGER ALL" % table)
 
     yield
-
-    for table in reversed(tables):
-        cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
+    if is_su:
+        for table in reversed(tables):
+            cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
 
 
 if sys.version_info[0] == 2:
