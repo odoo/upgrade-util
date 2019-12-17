@@ -1518,7 +1518,7 @@ def drop_depending_views(cr, table, column):
     for v in get_depending_views(cr, table, column):
         cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
 
-def remove_field(cr, model, fieldname, cascade=False):
+def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
     if fieldname == 'id':
         # called by `remove_module`. May happen when a model defined in a removed module was
         # overwritten by another module in previous version.
@@ -1579,7 +1579,7 @@ def remove_field(cr, model, fieldname, cascade=False):
 
     table = table_of_model(cr, model)
     # NOTE table_exists is needed to avoid altering views
-    if table_exists(cr, table) and column_exists(cr, table, fieldname):
+    if drop_column and table_exists(cr, table) and column_exists(cr, table, fieldname):
         remove_column(cr, table, fieldname, cascade=cascade)
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
