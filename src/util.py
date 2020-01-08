@@ -1760,7 +1760,7 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True):
         return
     att_name = "%s(%%s).%s" % (model.title().replace(".", ""), field)
     A = env(cr)["ir.attachment"]
-    cr.execute("SELECT id, {field} FROM {table} WHERE {field} IS NOT NULL".format(**locals()))
+    cr.execute('SELECT id, "{field}" FROM {table} WHERE "{field}" IS NOT NULL'.format(**locals()))
     for rid, data in cr.fetchall():
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
