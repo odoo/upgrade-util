@@ -1135,9 +1135,7 @@ def force_install_module(cr, module, if_installed=None):
             dep_match = "AND d.auto_install_required = TRUE AND e.auto_install_required = TRUE"
 
         cr.execute("""
-            SELECT on_me.name,
-                   -- are all dependencies (to be) installed?
-                   array_agg(its_deps.state)::text[] <@ %s
+            SELECT on_me.name
               FROM ir_module_module_dependency d
               JOIN ir_module_module on_me ON on_me.id = d.module_id
               JOIN ir_module_module_dependency e ON e.module_id = on_me.id
@@ -1146,12 +1144,14 @@ def force_install_module(cr, module, if_installed=None):
                AND on_me.state = 'uninstalled'
                AND on_me.auto_install = TRUE
                {}
-          GROUP BY d.name, on_me.id
-        """.format(dep_match), [list(_INSTALLED_MODULE_STATES), toinstall])
-        for mod, must_install in cr.fetchall():
-            if must_install:
-                _logger.debug("auto install module %r due to module %r being force installed", mod, module)
-                force_install_module(cr, mod)
+          GROUP BY on_me.name
+            HAVING
+                   -- are all dependencies (to be) installed?
+                   array_agg(its_deps.state)::text[] <@ %s
+        """.format(dep_match), [toinstall, list(_INSTALLED_MODULE_STATES)])
+        for mod, in cr.fetchall():
+            _logger.debug("auto install module %r due to module %r being force installed", mod, module)
+            force_install_module(cr, mod)
 
     # TODO handle module exclusions
 
