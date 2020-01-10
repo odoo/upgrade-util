@@ -2322,20 +2322,31 @@ def update_field_references(cr, old, new, only_models=None):
         "models": tuple(only_models) if only_models else (),
     }
 
+    col_prefix = ""
+    if not column_exists(cr, "ir_filters", "sort"):
+        col_prefix = "--"  # sql comment the line
     q = """
         UPDATE ir_filters
-           SET domain = regexp_replace(domain, %(old)s, %(new)s, 'g'),
+           SET {col_prefix} sort = regexp_replace(sort, %(old)s, %(new)s, 'g'),
+               domain = regexp_replace(domain, %(old)s, %(new)s, 'g'),
                context = regexp_replace(regexp_replace(context,
                                                        %(old)s, %(new)s, 'g'),
                                                        %(def_old)s, %(def_new)s, 'g')
     """
-    if column_exists(cr, 'ir_filters', 'sort'):
-        q += ", sort = regexp_replace(sort, %(old)s, %(new)s, 'g')"
 
     if only_models:
-        q += " WHERE model_id IN %(models)s"
-
-    cr.execute(q, p)
+        q += " WHERE model_id IN %(models)s AND "
+    else:
+        q += " WHERE "
+    q += """
+        (
+            domain ~ %(old)s
+            OR context ~ %(old)s
+            OR context ~ %(def_old)s
+            {col_prefix} OR sort ~ %(old)s
+        )
+    """
+    cr.execute(q.format(col_prefix=col_prefix), p)
 
     # ir.exports.line
     q = """
@@ -2347,7 +2358,11 @@ def update_field_references(cr, old, new, only_models=None):
           FROM ir_exports e
          WHERE e.id = l.export_id
            AND e.resource IN %(models)s
-    """
+           AND
+        """
+    else:
+        q += "WHERE "
+    q += "l.name ~ %(old)s"
     cr.execute(q, p)
 
     # ir.action.server
@@ -2358,7 +2373,7 @@ def update_field_references(cr, old, new, only_models=None):
         UPDATE ir_act_server s
            SET {col_prefix} condition = regexp_replace(condition, %(old)s, %(new)s, 'g'),
                code = regexp_replace(code, %(old)s, %(new)s, 'g')
-    """.format(col_prefix=col_prefix)
+    """
     if only_models:
         q += """
           FROM ir_model m
@@ -2369,8 +2384,13 @@ def update_field_references(cr, old, new, only_models=None):
     else:
         q += " WHERE "
 
-    q += "s.state = 'code'"
-    cr.execute(q, p)
+    q += """s.state = 'code'
+           AND (
+              s.code ~ %(old)s
+              {col_prefix} OR s.condition ~ %(old)s
+           )
+    """
+    cr.execute(q.format(col_prefix=col_prefix), p)
 
     # ir.rule
     q = """
@@ -2382,7 +2402,11 @@ def update_field_references(cr, old, new, only_models=None):
           FROM ir_model m
          WHERE m.id = r.model_id
            AND m.model IN %(models)s
+           AND
         """
+    else:
+        q += "WHERE "
+    q += "r.domain_force ~ %(old)s"
     cr.execute(q, p)
 
     # mass mailing
@@ -2397,9 +2421,13 @@ def update_field_references(cr, old, new, only_models=None):
                   FROM ir_model m
                  WHERE m.id = u.mailing_model_id
                    AND m.model IN %(models)s
+                   AND
                 """
             else:
-                q += "WHERE u.mailing_model IN %(models)s"
+                q += "WHERE u.mailing_model IN %(models)s AND "
+        else:
+            q += "WHERE "
+        q += "u.mailing_domain ~ %(old)s"
         cr.execute(q, p)
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
