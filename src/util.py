@@ -60,7 +60,7 @@ _logger = logging.getLogger(__name__)
 
 _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 
-DROP_DEPRECATED_CUSTOM = os.getenv('OE_DROP_DEPRECATED_CUSTOM')
+DROP_DEPRECATED_CUSTOM = os.getenv("OE_DROP_DEPRECATED_CUSTOM", True)
 
 # migration environ, used to share data between scripts
 ENVIRON = {}
@@ -373,12 +373,12 @@ def remove_view(cr, xml_id=None, view_id=None, deactivate_custom=DROP_DEPRECATED
             xml_id = '?'
 
     cr.execute("""
-        SELECT v.id, x.module || '.' || x.name
+        SELECT v.id, x.module || '.' || x.name, v.name
         FROM ir_ui_view v LEFT JOIN
            ir_model_data x ON (v.id = x.res_id AND x.model = 'ir.ui.view' AND x.module !~ '^_')
         WHERE v.inherit_id = %s;
     """, [view_id])
-    for child_id, child_xml_id in cr.fetchall():
+    for child_id, child_xml_id, child_name in cr.fetchall():
         if child_xml_id:
             if not silent:
                 _logger.info('Dropping deprecated built-in view %s (ID %s), '
@@ -407,6 +407,9 @@ def remove_view(cr, xml_id=None, view_id=None, deactivate_custom=DROP_DEPRECATED
 
                 disable_view_query = disable_view_query % extra_set_sql
                 cr.execute(disable_view_query, (xml_id, child_id))
+                add_to_migration_reports(
+                    {"id": child_id, "name": child_name}, "Disabled views",
+                )
             else:
                 raise MigrationError('Deprecated custom view with ID %s needs migration, '
                                      'as parent %s (ID %s) is going to be removed' %
@@ -2582,7 +2585,6 @@ def announce_migration_report(cr):
         report = lxml.etree.fromstring(fp.read())
     e = env(cr)
     values = {'action_view_id': e.ref('base.action_ui_view').id, 'messages': migration_reports}
-    print(migration_reports)
     message = e['ir.qweb'].render(report, values=values).decode()
     if message.strip():
         kw = {}

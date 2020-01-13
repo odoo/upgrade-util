@@ -6,10 +6,8 @@
     <ul>
       <t t-if="category in ['Disabled views', 'Overridden views']">
         <t t-set="view_message_types" t-value="{
-          'Overridden views': ['The below standard views have been overriden with their original content during the migration,
-          because the changes made in them were no longer valid.', '%(xml_id)s'],
-          'Disabled views': ['The below custom views have been disabled during the migration,
-          because they were no longer valid.', '%(name)s'],
+          'Overridden views': ['The below standard views have been overriden with their original content during the migration because the changes made in them were no longer valid.', '%(xml_id)s'],
+          'Disabled views': ['The below custom views have been disabled during the migration because they were no longer valid.', '%(name)s'],
         }"/>
         <t t-set="view_action_link" t-value="'web?debug#view_type=form&amp;model=ir.ui.view&amp;action=%s&amp;id=%%s' % action_view_id"/>
         <t t-set="message_type" t-value="view_message_types[category]"/>
