@@ -60,8 +60,6 @@ _logger = logging.getLogger(__name__)
 
 _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 
-DROP_DEPRECATED_CUSTOM = os.getenv("OE_DROP_DEPRECATED_CUSTOM", True)
-
 # migration environ, used to share data between scripts
 ENVIRON = {}
 
@@ -344,7 +342,7 @@ def env(cr):
         raise MigrationError('Hold on! There is not yet `Environment` in %s' % v)
     return Environment(cr, SUPERUSER_ID, {})
 
-def remove_view(cr, xml_id=None, view_id=None, deactivate_custom=DROP_DEPRECATED_CUSTOM, silent=False):
+def remove_view(cr, xml_id=None, view_id=None, silent=False):
     """
     Recursively delete the given view and its inherited views, as long as they
     are part of a module. Will crash as soon as a custom view exists anywhere
@@ -363,7 +361,7 @@ def remove_view(cr, xml_id=None, view_id=None, deactivate_custom=DROP_DEPRECATED
         [model] = cr.fetchone()
         if model != 'ir.ui.view':
             raise ValueError("%r should point to a 'ir.ui.view', not a %r" % (xml_id, model))
-    elif not silent or deactivate_custom:
+    elif not silent:
         # search matching xmlid for logging or renaming of custom views
         cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s",
                    [view_id])
@@ -381,43 +379,43 @@ def remove_view(cr, xml_id=None, view_id=None, deactivate_custom=DROP_DEPRECATED
     for child_id, child_xml_id, child_name in cr.fetchall():
         if child_xml_id:
             if not silent:
-                _logger.info('Dropping deprecated built-in view %s (ID %s), '
-                             'as parent %s (ID %s) is going to be removed',
-                             child_xml_id, child_id, xml_id, view_id)
-            remove_view(cr, child_xml_id, deactivate_custom=deactivate_custom,
-                        silent=True)
-        else:
-            if deactivate_custom:
-                if not silent:
-                    _logger.warning('Deactivating deprecated custom view with ID %s, '
-                                    'as parent %s (ID %s) was removed',
-                                    child_id, xml_id, view_id)
-                disable_view_query = """
-                    UPDATE ir_ui_view
-                    SET name = (name || ' - old view, inherited from ' || %%s),
-                        model = (model || '.disabled'),
-                        inherit_id = NULL
-                        %s
-                        WHERE id = %%s
-                """
-                # In 8.0, disabling requires setting mode to 'primary'
-                extra_set_sql = ''
-                if column_exists(cr, 'ir_ui_view', 'mode'):
-                    extra_set_sql = ",  mode = 'primary'  "
-
-                disable_view_query = disable_view_query % extra_set_sql
-                cr.execute(disable_view_query, (xml_id, child_id))
-                add_to_migration_reports(
-                    {"id": child_id, "name": child_name}, "Disabled views",
+                _logger.info(
+                    "remove deprecated built-in view %s (ID %s) as parent view %s (ID %s) is going to be removed",
+                    child_xml_id,
+                    child_id,
+                    xml_id,
+                    view_id,
                 )
-            else:
-                raise MigrationError('Deprecated custom view with ID %s needs migration, '
-                                     'as parent %s (ID %s) is going to be removed' %
-                                     (child_id, xml_id, view_id))
+            remove_view(cr, child_xml_id, silent=True)
+        else:
+            if not silent:
+                _logger.warning(
+                    "deactivate deprecated custom view with ID %s as parent view %s (ID %s) is going to be removed",
+                    child_id,
+                    xml_id,
+                    view_id,
+                )
+            disable_view_query = """
+                UPDATE ir_ui_view
+                SET name = (name || ' - old view, inherited from ' || %%s),
+                    model = (model || '.disabled'),
+                    inherit_id = NULL
+                    %s
+                    WHERE id = %%s
+            """
+            # In 8.0, disabling requires setting mode to 'primary'
+            extra_set_sql = ""
+            if column_exists(cr, "ir_ui_view", "mode"):
+                extra_set_sql = ",  mode = 'primary' "
+
+            disable_view_query = disable_view_query % extra_set_sql
+            cr.execute(disable_view_query, (xml_id, child_id))
+            add_to_migration_reports(
+                {"id": child_id, "name": child_name}, "Disabled views",
+            )
     if not silent:
-        _logger.info('Dropping deprecated built-in view %s (ID %s).',
-                     xml_id, view_id)
-    remove_record(cr, ('ir.ui.view', view_id))
+        _logger.info("remove deprecated built-in view %s (ID %s)", xml_id, view_id)
+    remove_record(cr, ("ir.ui.view", view_id))
 
 
 @contextmanager
@@ -950,7 +948,7 @@ def uninstall_module(cr, module):
         elif model == 'ir.ui.menu':
             menu_ids.append(res_id)
         elif model == 'ir.ui.view':
-            remove_view(cr, view_id=res_id, deactivate_custom=True, silent=True)
+            remove_view(cr, view_id=res_id, silent=True)
         else:
             remove_record(cr, (model, res_id))
 
@@ -1063,7 +1061,7 @@ def merge_module(cr, old, into, without_deps=False):
             for model, res_ids in cr.fetchall():
                 if model == 'ir.ui.view':
                     for v in res_ids:
-                        remove_view(cr, view_id=v, deactivate_custom=True, silent=True)
+                        remove_view(cr, view_id=v, silent=True)
                 elif model == 'ir.ui.menu':
                     remove_menus(cr, tuple(res_ids))
                 else:
@@ -1930,7 +1928,7 @@ def _rm_refs(cr, model, ids=None):
             if ref_model == 'ir.ui.view':
                 cr.execute('SELECT id' + query_tail, [needle])
                 for view_id, in cr.fetchall():
-                    remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
+                    remove_view(cr, view_id=view_id, silent=True)
             elif ref_model == 'ir.ui.menu':
                 cr.execute('SELECT id' + query_tail, [needle])
                 menu_ids = tuple(m[0] for m in cr.fetchall())
@@ -1961,7 +1959,7 @@ def remove_model(cr, model, drop_table=True):
         if ir.table == "ir_ui_view":
             cr.execute("SELECT id FROM ir_ui_view WHERE {}".format(ir.model_filter()), [model])
             for view_id, in cr.fetchall():
-                remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
+                remove_view(cr, view_id=view_id, silent=True)
         else:
             query = 'DELETE FROM "{0}" WHERE {1} RETURNING id'.format(ir.table, ir.model_filter())
             cr.execute(query, [model])
