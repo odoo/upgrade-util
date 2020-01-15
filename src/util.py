@@ -2313,7 +2313,8 @@ def update_field_references(cr, old, new, only_models=None):
             - ir_exports_line
             - ir_act_server
             - ir_rule
-            - mail.mass_mailing
+            - mail_mass_mailing
+            - mail_alias
     """
     p = {
         "old": r"\y%s\y" % (old,),
@@ -2430,6 +2431,25 @@ def update_field_references(cr, old, new, only_models=None):
             q += "WHERE "
         q += "u.mailing_domain ~ %(old)s"
         cr.execute(q, p)
+
+    # mail.alias
+    if column_exists(cr, "mail_alias", "alias_defaults"):
+        q = """
+            UPDATE mail_alias a
+               SET alias_defaults = regexp_replace(a.alias_defaults, %(old)s, %(new)s, 'g')
+        """
+        if only_models:
+            q += """
+              FROM ir_model m
+             WHERE m.id = a.alias_model_id
+               AND m.model IN %(models)s
+               AND
+            """
+        else:
+            q += "WHERE "
+        q += "a.alias_defaults ~ %(old)s"
+        cr.execute(q, p)
+
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
     Model = env(cr)[model] if isinstance(model, basestring) else model
