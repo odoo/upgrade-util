@@ -47,6 +47,7 @@ from openerp.tools.mail import html_sanitize
 from openerp.tools.misc import file_open
 from openerp.tools import UnquoteEvalContext
 from openerp.tools.parse_version import parse_version
+from openerp.tools.safe_eval import safe_eval
 
 try:
     from openerp.api import Environment
@@ -1573,6 +1574,23 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
         WHERE name=%s
           AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
     """, ['%s,%s' % (model, fieldname)])
+
+    # remove default values set for aliases
+    if column_exists(cr, "mail_alias", "alias_defaults"):
+        cr.execute("""
+            SELECT a.id, a.alias_defaults
+              FROM mail_alias a
+              JOIN ir_model m ON m.id = a.alias_model_id
+             WHERE m.model = %s
+               AND a.alias_defaults ~ %s
+        """, [model, r"\y%s\y" % (fieldname,)])
+        for alias_id, defaults in cr.fetchall():
+            try:
+                defaults = dict(safe_eval(defaults))  # XXX literal_eval should works.
+            except Exception:
+                continue
+            defaults.pop(fieldname, None)
+            cr.execute("UPDATE mail_alias SET alias_defaults = %s WHERE id = %s", [repr(defaults), alias_id])
 
     # if field was a binary field stored as attachment, clean them...
     if column_exists(cr, "ir_attachment", "res_field"):
