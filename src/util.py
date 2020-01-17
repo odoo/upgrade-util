@@ -362,7 +362,7 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False):
         [model] = cr.fetchone()
         if model != 'ir.ui.view':
             raise ValueError("%r should point to a 'ir.ui.view', not a %r" % (xml_id, model))
-    elif not silent:
+    else:
         # search matching xmlid for logging or renaming of custom views
         cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s",
                    [view_id])
