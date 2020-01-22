@@ -2620,7 +2620,12 @@ def announce_migration_report(cr):
     with open(filepath, 'r') as fp:
         report = lxml.etree.fromstring(fp.read())
     e = env(cr)
-    values = {'action_view_id': e.ref('base.action_ui_view').id, 'messages': migration_reports}
+    values = {
+        'action_view_id': e.ref('base.action_ui_view').id,
+        'major_version': release.major_version,
+        'messages': migration_reports
+    }
+    _logger.info(migration_reports)
     message = e['ir.qweb'].render(report, values=values).decode()
     if message.strip():
         kw = {}

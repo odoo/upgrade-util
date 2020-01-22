@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <t t-name="mail.report_migration">
-  <h1>Upgrade report</h1>
+  <h2> Upgrade report: <t t-esc="major_version" /> </h2>
   <t t-foreach="messages" t-as="category">
     <h3><t t-esc="category"/></h3>
     <ul>
