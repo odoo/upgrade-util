@@ -65,6 +65,7 @@ _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 # migration environ, used to share data between scripts
 ENVIRON = {}
 
+NEARLYWARN = 25  # (between and info, appear on runbot build page)
 
 # python3 shims
 try:
@@ -535,7 +536,7 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
         model, res_id = data
         if model == "ir.ui.view":
             # NOTE: only done when a xmlid is given to avoid infinite recursion
-            _logger.warning("Removing view %r", name)
+            _logger.log(NEARLYWARN, "Removing view %r", name)
             return remove_view(cr, view_id=res_id)
     elif isinstance(name, tuple):
         if len(name) != 2:
@@ -545,7 +546,7 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
         raise ValueError("Either use a fully qualified xmlid string <module>.<name> or a 2-tuple (<model>, <res_id>)")
 
     if model == "ir.ui.menu":
-        _logger.warning("Removing menu %r", name)
+        _logger.log(NEARLYWARN, "Removing menu %r", name)
         return remove_menus(cr, [res_id])
 
     table = table_of_model(cr, model)
@@ -1106,7 +1107,7 @@ def merge_module(cr, old, into, without_deps=False):
         # this can happen in case of temp modules added after a release if the database does not
         # know about this module, i.e: account_full_reconcile in 9.0
         # `into` should be know. Let it crash if not
-        _logger.warning('Unknow module %s. Skip merge into %s.', old, into)
+        _logger.log(NEARLYWARN, 'Unknow module %s. Skip merge into %s.', old, into)
         return
 
     def _up(table, old, new):
