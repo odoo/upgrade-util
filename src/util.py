@@ -26,8 +26,13 @@ from textwrap import dedent
 import markdown
 import psycopg2
 
-import openerp
-from openerp import release, SUPERUSER_ID
+try:
+    import odoo
+    from odoo import release, SUPERUSER_ID
+except:
+    import openerp as odoo
+    from openerp import release, SUPERUSER_ID
+
 try:
     from odoo.addons.base.models.ir_module import MyWriter  # > 11.0
 except ImportError:
@@ -35,28 +40,39 @@ except ImportError:
         from odoo.addons.base.module.module import MyWriter
     except ImportError:
         from openerp.addons.base.module.module import MyWriter
-from openerp.modules.module import get_module_path, load_information_from_description_file
-try:
-    from openerp.modules.registry import RegistryManager
-except ImportError:
-    # from saas~16, we use the Registry class directly.
-    from odoo.modules.registry import Registry as RegistryManager
-from openerp.sql_db import db_connect
-from openerp.tools.convert import xml_import
-from openerp.tools.func import frame_codeinfo
-from openerp.tools.mail import html_sanitize
-from openerp.tools.misc import file_open
-from openerp.tools import UnquoteEvalContext
-from openerp.tools.parse_version import parse_version
-from openerp.tools.safe_eval import safe_eval
 
 try:
-    from openerp.api import Environment
+    from odoo.modules.module import get_module_path, load_information_from_description_file
+    from odoo.sql_db import db_connect
+    from odoo.tools.convert import xml_import
+    from odoo.tools.func import frame_codeinfo
+    from odoo.tools.mail import html_sanitize
+    from odoo.tools.misc import file_open
+    from odoo.tools import UnquoteEvalContext
+    from odoo.tools.parse_version import parse_version
+    from odoo.tools.safe_eval import safe_eval
+except ImportError:
+    from openerp.modules.module import get_module_path, load_information_from_description_file
+    from openerp.sql_db import db_connect
+    from openerp.tools.convert import xml_import
+    from openerp.tools.func import frame_codeinfo
+    from openerp.tools.mail import html_sanitize
+    from openerp.tools.misc import file_open
+    from openerp.tools import UnquoteEvalContext
+    from openerp.tools.parse_version import parse_version
+    from openerp.tools.safe_eval import safe_eval
+
+try:
+    from odoo.api import Environment
     manage_env = Environment.manage
 except ImportError:
-    @contextmanager
-    def manage_env():
-        yield
+    try:
+        from openerp.api import Environment
+        manage_env = Environment.manage
+    except ImportError:
+        @contextmanager
+        def manage_env():
+            yield
 
 _logger = logging.getLogger(__name__)
 
@@ -400,10 +416,13 @@ def env(cr):
     most probably be necessary every time you directly modify something in database
     """
     try:
-        from openerp.api import Environment
+        from odoo.api import Environment
     except ImportError:
-        v = release.major_version
-        raise MigrationError('Hold on! There is not yet `Environment` in %s' % v)
+        try:
+            from openerp.api import Environment
+        except ImportError:
+            v = release.major_version
+            raise MigrationError('Hold on! There is not yet `Environment` in %s' % v)
     return Environment(cr, SUPERUSER_ID, {})
 
 def remove_view(cr, xml_id=None, view_id=None, silent=False):
@@ -1367,7 +1386,7 @@ def force_migration_of_fresh_module(cr, module, init=True):
     if init and cr.rowcount:
         # Force module in `init` mode beside its state is forced to `to upgrade`
         # See http://git.io/vnF7O
-        openerp.tools.config['init'][module] = "oh yeah!"
+        odoo.tools.config['init'][module] = "oh yeah!"
 
 def column_exists(cr, table, column):
     return column_type(cr, table, column) is not None
@@ -2672,6 +2691,10 @@ def announce(cr, version, msg, format='rst',
             return registry.ref(xid).with_context(ctx)
 
     except MigrationError:
+        try:
+            from openerp.modules.registry import RegistryManager
+        except ImportError:
+            from openerp.modules.registry import Registry as RegistryManager
         registry = RegistryManager.get(cr.dbname)
         user = registry['res.users'].browse(cr, SUPERUSER_ID, uid, context=ctx)
 
