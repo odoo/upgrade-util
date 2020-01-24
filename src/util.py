@@ -1314,10 +1314,22 @@ def column_type(cr, table, column):
     return r[0] if r else None
 
 def create_column(cr, table, column, definition):
+    aliases = {
+        "boolean": "bool",
+        "smallint": "int2",
+        "integer": "int4",
+        "bigint": "int8",
+        "real": "float4",
+        "double precision": "float8",
+        "character varying": "varchar",
+        "timestamp with time zone": "timestamptz",
+        "timestamp without time zone": "timestamp",
+    }
+    definition = aliases.get(definition.lower(), definition)
+
     curtype = column_type(cr, table, column)
     if curtype:
-        aliases = {"bool": "boolean"}
-        if aliases.get(curtype, curtype) != definition:
+        if curtype != definition:
             _logger.error("%s.%s already exists but is %r instead of %r", table, column, curtype, definition)
         return False
     else:
