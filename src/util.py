@@ -1093,6 +1093,7 @@ def merge_module(cr, old, into, without_deps=False):
     cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING state", [old])
     [state] = cr.fetchone()
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", [old])
+    cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_ids[old]])
     if state in _INSTALLED_MODULE_STATES:
         force_install_module(cr, into)
 
