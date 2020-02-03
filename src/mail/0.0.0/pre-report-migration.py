@@ -1,6 +1,15 @@
 # -*- coding: utf-8 -*-
-from openerp import api, models
-from openerp.addons.base.maintenance.migrations import util
+from odoo import models
+
+try:
+    from odoo.api import model_cr
+except ImportError:
+    # v13 shim
+    def model_cr(f):
+        return f
+
+
+from odoo.addons.base.maintenance.migrations import util
 
 
 def migrate(cr, version):
@@ -8,10 +17,10 @@ def migrate(cr, version):
 
 
 class MailMessage(models.Model):
-    _inherit = 'ir.ui.view'
-    _module = 'mail'
+    _inherit = "ir.ui.view"
+    _module = "mail"
 
-    @api.model_cr
+    @model_cr
     def _register_hook(self):
         if len(util.migration_reports):
             util.announce_migration_report(self.env.cr)

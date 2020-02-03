@@ -9,6 +9,7 @@ import json
 import logging
 import lxml
 import os
+from multiprocessing import cpu_count
 import re
 import sys
 import time
@@ -25,8 +26,13 @@ from textwrap import dedent
 import markdown
 import psycopg2
 
-import openerp
-from openerp import release, SUPERUSER_ID
+try:
+    import odoo
+    from odoo import release, SUPERUSER_ID
+except:
+    import openerp as odoo
+    from openerp import release, SUPERUSER_ID
+
 try:
     from odoo.addons.base.models.ir_module import MyWriter  # > 11.0
 except ImportError:
@@ -34,28 +40,39 @@ except ImportError:
         from odoo.addons.base.module.module import MyWriter
     except ImportError:
         from openerp.addons.base.module.module import MyWriter
-from openerp.modules.module import get_module_path, load_information_from_description_file
-try:
-    from openerp.modules.registry import RegistryManager
-except ImportError:
-    # from saas~16, we use the Registry class directly.
-    from odoo.modules.registry import Registry as RegistryManager
-from openerp.sql_db import db_connect
-from openerp.tools.convert import xml_import
-from openerp.tools.func import frame_codeinfo
-from openerp.tools.mail import html_sanitize
-from openerp.tools.misc import file_open
-from openerp.tools import UnquoteEvalContext
-from openerp.tools.parse_version import parse_version
-from openerp.tools.safe_eval import safe_eval
 
 try:
-    from openerp.api import Environment
+    from odoo.modules.module import get_module_path, load_information_from_description_file
+    from odoo.sql_db import db_connect
+    from odoo.tools.convert import xml_import
+    from odoo.tools.func import frame_codeinfo
+    from odoo.tools.mail import html_sanitize
+    from odoo.tools.misc import file_open
+    from odoo.tools import UnquoteEvalContext
+    from odoo.tools.parse_version import parse_version
+    from odoo.tools.safe_eval import safe_eval
+except ImportError:
+    from openerp.modules.module import get_module_path, load_information_from_description_file
+    from openerp.sql_db import db_connect
+    from openerp.tools.convert import xml_import
+    from openerp.tools.func import frame_codeinfo
+    from openerp.tools.mail import html_sanitize
+    from openerp.tools.misc import file_open
+    from openerp.tools import UnquoteEvalContext
+    from openerp.tools.parse_version import parse_version
+    from openerp.tools.safe_eval import safe_eval
+
+try:
+    from odoo.api import Environment
     manage_env = Environment.manage
 except ImportError:
-    @contextmanager
-    def manage_env():
-        yield
+    try:
+        from openerp.api import Environment
+        manage_env = Environment.manage
+    except ImportError:
+        @contextmanager
+        def manage_env():
+            yield
 
 _logger = logging.getLogger(__name__)
 
@@ -64,6 +81,7 @@ _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 # migration environ, used to share data between scripts
 ENVIRON = {}
 
+NEARLYWARN = 25  # (between and info, appear on runbot build page)
 
 # python3 shims
 try:
@@ -154,26 +172,81 @@ def skippable_cm():
 
 @contextmanager
 def savepoint(cr):
-    name = hex(int(time.time() * 1000))[1:]
-    cr.execute("SAVEPOINT %s" % (name,))
-    try:
+    # NOTE: the `savepoint` method on Cursor only appear in `saas-3`, which mean this function
+    #       can't be called when upgrading to saas~1 or saas~2.
+    #       I take the bet it won't be problematic...
+    with cr.savepoint():
         yield
-        cr.execute('RELEASE SAVEPOINT %s' % (name,))
-    except Exception:
-        cr.execute('ROLLBACK TO SAVEPOINT %s' % (name,))
-        raise
 
 @contextmanager
 def disable_triggers(cr, *tables):
+    # NOTE only super user (at pg level) can disable all the triggers. noop if this is not the case.
     if any("." in table for table in tables):
         raise SleepyDeveloperError("table name cannot contains dot")
-    for table in tables:
-        cr.execute("ALTER TABLE %s DISABLE TRIGGER ALL" % table)
+
+    cr.execute("SELECT usesuper FROM pg_user WHERE usename = CURRENT_USER")
+    is_su = cr.fetchone()[0]
+
+    if is_su:
+        for table in tables:
+            cr.execute("ALTER TABLE %s DISABLE TRIGGER ALL" % table)
 
     yield
+    if is_su:
+        for table in reversed(tables):
+            cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
 
-    for table in reversed(tables):
-        cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
+
+if sys.version_info[0] == 2:
+    def parallel_execute(cr, queries):
+        for query in queries:
+            cr.execute(query)
+else:
+    def parallel_execute(cr, queries):
+        """
+            Execute queries in parallel
+            Use a maximum of 8 workers (but not more than the number of CPUs)
+            Side effect: the given cursor is commited.
+
+            As example, on `**REDACTED**` (using 8 workers), the following gains are:
+
+                +---------------------------------------------+-------------+-------------+
+                | File                                        | Sequential  | Parallel    |
+                +---------------------------------------------+-------------+-------------+
+                | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
+                | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
+                | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
+                +---------------------------------------------+-------------+-------------+
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        max_workers = min(8, len(queries), cpu_count())
+        reg = env(cr).registry
+
+        def execute(query):
+            with reg.cursor() as cr:
+                cr.execute(query)
+                cr.commit()
+
+        cr.commit()
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            executor.map(execute, queries)
+
+def explode_query(cr, query, prefix=""):
+    """
+        Explode a query to multiple queries that can be executed in parallel
+    """
+    if "{parallel_filter}" not in query:
+        sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
+        query += sep_kw + "{parallel_filter}"
+
+    how_much = min(8, cpu_count())
+    parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
+    return [
+        cr.mogrify(query.format(parallel_filter=parallel_filter), [how_much, index]).decode()
+        for index in range(how_much)
+    ]
 
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
@@ -276,6 +349,10 @@ def table_of_model(cr, model):
         workflow.triggers   wkf_triggers
         workflow.workitem   wkf_workitem
 
+        # mass_mailing
+        mail.mass_mailing.list_contact_rel mail_mass_mailing_contact_list_rel
+        mailing.contact.subscription       mailing_contact_list_rel
+
         # `mail.notification` was a "normal" model in versions <9.0
         # and a named m2m in >=saas~13
         {gte_saas13} mail.notification mail_message_res_partner_needaction_rel
@@ -316,6 +393,8 @@ def model_of_table(cr, table):
         survey_user_input survey.user_input
         survey_user_input_line survey.user_input_line
 
+        mail_mass_mailing_contact_list_rel mail.mass_mailing.list_contact_rel
+        mailing_contact_list_rel           mailing.contact.subscription
         # Not a real model until saas~13
         {gte_saas13} mail_message_res_partner_needaction_rel mail.notification
 
@@ -337,10 +416,13 @@ def env(cr):
     most probably be necessary every time you directly modify something in database
     """
     try:
-        from openerp.api import Environment
+        from odoo.api import Environment
     except ImportError:
-        v = release.major_version
-        raise MigrationError('Hold on! There is not yet `Environment` in %s' % v)
+        try:
+            from openerp.api import Environment
+        except ImportError:
+            v = release.major_version
+            raise MigrationError('Hold on! There is not yet `Environment` in %s' % v)
     return Environment(cr, SUPERUSER_ID, {})
 
 def remove_view(cr, xml_id=None, view_id=None, silent=False):
@@ -471,12 +553,20 @@ def remove_record(cr, name, deactivate=False, active_field='active'):
         if not data:
             return
         model, res_id = data
+        if model == "ir.ui.view":
+            # NOTE: only done when a xmlid is given to avoid infinite recursion
+            _logger.log(NEARLYWARN, "Removing view %r", name)
+            return remove_view(cr, view_id=res_id)
     elif isinstance(name, tuple):
         if len(name) != 2:
             raise ValueError('Please use a 2-tuple (<model>, <res_id>)')
         model, res_id = name
     else:
         raise ValueError("Either use a fully qualified xmlid string <module>.<name> or a 2-tuple (<model>, <res_id>)")
+
+    if model == "ir.ui.menu":
+        _logger.log(NEARLYWARN, "Removing menu %r", name)
+        return remove_menus(cr, [res_id])
 
     table = table_of_model(cr, model)
     try:
@@ -1036,7 +1126,7 @@ def merge_module(cr, old, into, without_deps=False):
         # this can happen in case of temp modules added after a release if the database does not
         # know about this module, i.e: account_full_reconcile in 9.0
         # `into` should be know. Let it crash if not
-        _logger.warning('Unknow module %s. Skip merge into %s.', old, into)
+        _logger.log(NEARLYWARN, 'Unknow module %s. Skip merge into %s.', old, into)
         return
 
     def _up(table, old, new):
@@ -1296,7 +1386,7 @@ def force_migration_of_fresh_module(cr, module, init=True):
     if init and cr.rowcount:
         # Force module in `init` mode beside its state is forced to `to upgrade`
         # See http://git.io/vnF7O
-        openerp.tools.config['init'][module] = "oh yeah!"
+        odoo.tools.config['init'][module] = "oh yeah!"
 
 def column_exists(cr, table, column):
     return column_type(cr, table, column) is not None
@@ -1607,7 +1697,15 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
 
     # if field was a binary field stored as attachment, clean them...
     if column_exists(cr, "ir_attachment", "res_field"):
-        cr.execute("DELETE FROM ir_attachment WHERE res_model = %s AND res_field = %s", [model, fieldname])
+        parallel_execute(
+            cr,
+            explode_query(
+                cr,
+                cr.mogrify(
+                    "DELETE FROM ir_attachment WHERE res_model = %s AND res_field = %s", [model, fieldname]
+                ).decode(),
+            ),
+        )
 
     table = table_of_model(cr, model)
     # NOTE table_exists is needed to avoid altering views
@@ -1885,7 +1983,9 @@ def indirect_references(cr, bound_only=False):
         IR('mail_compose_message', 'model', 'res_id'),
         IR('mail_wizard_invite', 'res_model', 'res_id'),
         IR('mail_mail_statistics', 'model', 'res_id'),
-        IR('mail_mass_mailing', 'mailing_model', None),
+        IR("mailing_trace", "model", "res_id"),
+        IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id"),
+        IR("mailing_mailing", None, None, "mailing_model_id"),
         IR('project_project', 'alias_model', None),
         IR('rating_rating', 'res_model', 'res_id', 'res_model_id'),
         IR('rating_rating', 'parent_res_model', 'parent_res_id', 'parent_res_model_id'),
@@ -2443,13 +2543,14 @@ def update_field_references(cr, old, new, only_models=None):
     cr.execute(q, p)
 
     # mass mailing
-    if column_exists(cr, 'mail_mass_mailing', 'mailing_domain'):
+    ml_table = "mailing_mailing" if table_exists(cr, "mailing_mailing") else "mail_mass_mailing"
+    if column_exists(cr, ml_table, "mailing_domain"):
         q = """
-            UPDATE mail_mass_mailing u
+            UPDATE {} u
                SET mailing_domain = regexp_replace(u.mailing_domain, %(old)s, %(new)s, 'g')
         """
         if only_models:
-            if column_exists(cr, 'mail_mass_mailing', 'mailing_model_id'):
+            if column_exists(cr, ml_table, "mailing_model_id"):
                 q += """
                   FROM ir_model m
                  WHERE m.id = u.mailing_model_id
@@ -2461,7 +2562,7 @@ def update_field_references(cr, old, new, only_models=None):
         else:
             q += "WHERE "
         q += "u.mailing_domain ~ %(old)s"
-        cr.execute(q, p)
+        cr.execute(q.format(ml_table), p)
 
     # mail.alias
     if column_exists(cr, "mail_alias", "alias_defaults"):
@@ -2493,8 +2594,13 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     qual = '%s %d-bucket' % (model, chunk_size) if chunk_size != 1 else model
     for subids in log_progress(chunks(ids, chunk_size, list), qualifier=qual, logger=logger, size=size):
         records = Model.browse(subids)
-        for field in fields:
-            records._recompute_todo(records._fields[field])
+        for field_name in fields:
+            field = records._fields[field_name]
+            if hasattr(records, "_recompute_todo"):
+                # < 13.0
+                records._recompute_todo(field)
+            else:
+                Model.env.add_to_compute(field, records)
         records.recompute()
         records.invalidate_cache()
 
@@ -2585,6 +2691,10 @@ def announce(cr, version, msg, format='rst',
             return registry.ref(xid).with_context(ctx)
 
     except MigrationError:
+        try:
+            from openerp.modules.registry import RegistryManager
+        except ImportError:
+            from openerp.modules.registry import Registry as RegistryManager
         registry = RegistryManager.get(cr.dbname)
         user = registry['res.users'].browse(cr, SUPERUSER_ID, uid, context=ctx)
 
