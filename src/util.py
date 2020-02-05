@@ -539,6 +539,28 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
                        [lxml.etree.tostring(arch, encoding='unicode'), view_id])
 
 
+def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=16):
+    inherit_id = False
+    if inherit_xml_id:
+        inherit_id = ref(cr, inherit_xml_id)
+        if not inherit_id:
+            raise ValueError("Unable to add view '%s' because its inherited view '%s' cannot be found!" %
+                             (name, inherit_xml_id))
+    arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+    cr.execute("""
+        INSERT INTO ir_ui_view(name, "type",  model, inherit_id, mode, active, priority, %s)
+        VALUES(%%(name)s, %%(view_type)s, %%(model)s, %%(inherit_id)s, %%(mode)s, 't', %%(priority)s, %%(arch_db)s)
+    """ % arch_col, {
+        'name': name,
+        'view_type': view_type,
+        'model': model,
+        'inherit_id': inherit_id,
+        'mode': 'extension' if inherit_id else 'primary',
+        'priority': priority,
+        'arch_db': arch_db,
+    })
+
+
 def remove_record(cr, name, deactivate=False, active_field='active'):
     if isinstance(name, basestring):
         if '.' not in name:
@@ -1617,6 +1639,16 @@ def get_columns(cr, table, ignore=('id',), extra_prefixes=None):
                     AND column_name NOT IN %s
                """.format(select=select), params + [table, ignore])
     return list(zip(*cr.fetchall()))
+
+
+def find_new_table_column_name(cr, table, name):
+    columns = get_columns(cr, table)
+    i = 0
+    while name in columns:
+        i += 1
+        name = name + '_' + i
+    return name
+
 
 def drop_depending_views(cr, table, column):
     """drop views depending on a field to allow the ORM to resize it in-place"""
