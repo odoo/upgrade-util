@@ -4,7 +4,6 @@
 import base64
 import collections
 import datetime
-import imp
 import json
 import logging
 import lxml
@@ -12,9 +11,7 @@ import os
 from multiprocessing import cpu_count
 import re
 import sys
-import time
 
-from collections import defaultdict
 from contextlib import contextmanager
 from docutils.core import publish_string
 from inspect import currentframe
@@ -29,7 +26,7 @@ import psycopg2
 try:
     import odoo
     from odoo import release, SUPERUSER_ID
-except:
+except ImportError:
     import openerp as odoo
     from openerp import release, SUPERUSER_ID
 
@@ -144,11 +141,29 @@ def expand_braces(s):
         raise ValueError("Multiple expansion braces found")
     return [first, second]
 
-def import_script(path):
-    name, _ = os.path.splitext(os.path.basename(path))
-    full_path = os.path.join(os.path.dirname(__file__), path)
-    with open(full_path) as fp:
-        return imp.load_source(name, full_path, fp)
+
+try:
+    import importlib.util
+
+    def import_script(path):
+        name, _ = os.path.splitext(os.path.basename(path))
+        full_path = os.path.join(os.path.dirname(__file__), path)
+        spec = importlib.util.spec_from_file_location(name, full_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+
+except ImportError:
+    # python2 version
+    import imp
+
+    def import_script(path):
+        name, _ = os.path.splitext(os.path.basename(path))
+        full_path = os.path.join(os.path.dirname(__file__), path)
+        with open(full_path) as fp:
+            return imp.load_source(name, full_path, fp)
+
 
 @contextmanager
 def skippable_cm():
