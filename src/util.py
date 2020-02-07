@@ -145,8 +145,9 @@ def expand_braces(s):
 try:
     import importlib.util
 
-    def import_script(path):
-        name, _ = os.path.splitext(os.path.basename(path))
+    def import_script(path, name=None):
+        if not name:
+            name, _ = os.path.splitext(os.path.basename(path))
         full_path = os.path.join(os.path.dirname(__file__), path)
         spec = importlib.util.spec_from_file_location(name, full_path)
         module = importlib.util.module_from_spec(spec)
@@ -158,8 +159,9 @@ except ImportError:
     # python2 version
     import imp
 
-    def import_script(path):
-        name, _ = os.path.splitext(os.path.basename(path))
+    def import_script(path, name=None):
+        if not name:
+            name, _ = os.path.splitext(os.path.basename(path))
         full_path = os.path.join(os.path.dirname(__file__), path)
         with open(full_path) as fp:
             return imp.load_source(name, full_path, fp)
