@@ -248,7 +248,7 @@ else:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             executor.map(execute, queries)
 
-def explode_query(cr, query, prefix=""):
+def explode_query(cr, query, num_buckets=8, prefix=""):
     """
         Explode a query to multiple queries that can be executed in parallel
     """
@@ -256,11 +256,10 @@ def explode_query(cr, query, prefix=""):
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
 
-    how_much = min(8, cpu_count())
     parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
     return [
-        cr.mogrify(query.format(parallel_filter=parallel_filter), [how_much, index]).decode()
-        for index in range(how_much)
+        cr.mogrify(query.format(parallel_filter=parallel_filter), [num_buckets, index]).decode()
+        for index in range(num_buckets)
     ]
 
 def pg_array_uniq(a, drop_null=False):
