@@ -1815,7 +1815,8 @@ def rename_field(cr, model, old, new, update_references=True):
                AND key = 'default'
         """, [new, model, old])
 
-    if column_exists(cr, "mail_tracking_value", "field"):
+    if column_type(cr, "mail_tracking_value", "field") == "varchar":
+        # From saas~13.1, column `field` is a m2o to the `ir.model.fields`
         cr.execute("""
             UPDATE mail_tracking_value v
                SET field = %s
@@ -2778,10 +2779,12 @@ def announce(cr, version, msg, format='rst',
     # While comments, in a mail.channel, do.
     # We want the notification counter to appear for announcements, so we force the comment type from 12.0.
     type_value = ['notification', 'comment'][version_gte('12.0')]
-    kw = {type_field: type_value}
+    subtype_key = ["subtype", "subtype_xmlid"][version_gte("saas~13.1")]
+
+    kw = {type_field: type_value, subtype_key: "mail.mt_comment"}
 
     try:
-        poster(body=message, partner_ids=[user.partner_id.id], subtype='mail.mt_comment', **kw)
+        poster(body=message, partner_ids=[user.partner_id.id], **kw)
     except Exception:
         _logger.warning('Cannot announce message', exc_info=True)
 
