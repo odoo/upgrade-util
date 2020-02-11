@@ -11,6 +11,7 @@ import os
 from multiprocessing import cpu_count
 import re
 import sys
+import time
 
 from contextlib import contextmanager
 from docutils.core import publish_string
@@ -1615,6 +1616,17 @@ def create_index(cr, name, table_name, *columns):
         )
         return True
     return False
+
+@contextmanager
+def temp_index(cr, table, *columns):
+    # create a temporary index that will be removed at the end of the contextmanager
+    assert columns
+    name = "_".join(("_upg", table) + columns + (hex(int(time.time() * 1000))[2:],))
+    create_index(cr, name, table, *columns)
+    try:
+        yield
+    finally:
+        cr.execute('DROP INDEX IF EXISTS "{}"'.format(name))
 
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
