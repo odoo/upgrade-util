@@ -1606,7 +1606,7 @@ def create_index(cr, name, table_name, *columns):
     if (
         columns
         and all(column_exists(cr, table_name, c) for c in columns)
-        and get_index_on(cr, table_name, columns) is None
+        and get_index_on(cr, table_name, *columns) is None
     ):
         cr.execute(
             "CREATE INDEX {index_name} ON {table_name}({columns})".format(
