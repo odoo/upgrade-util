@@ -872,10 +872,9 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         CREATE TABLE {m2m}(
             {col1} integer NOT NULL REFERENCES {fk1}(id) ON DELETE CASCADE,
             {col2} integer NOT NULL REFERENCES {fk2}(id) ON DELETE CASCADE,
-            UNIQUE ({col1}, {col2})
+            PRIMARY KEY ({col1}, {col2})
         );
-        CREATE INDEX ON {m2m}({col1});
-        CREATE INDEX ON {m2m}({col2});
+        CREATE INDEX ON {m2m}({col2}, {col1});
     """.format(**locals()))
 
 def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
@@ -937,14 +936,35 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
                    .format(**locals()))
 
     # create indexes
-    idx = get_index_on(cr, m2m, col1, col2)
-    if not idx or not idx[1]:
-        cr.execute("CREATE UNIQUE INDEX ON %s (%s, %s)" % (m2m, col1, col2))
+    idx1 = get_index_on(cr, m2m, col1, col2)
+    idx2 = get_index_on(cr, m2m, col2, col1)
 
-    if not get_index_on(cr, m2m, col1):
-        cr.execute('CREATE INDEX ON "%s" ("%s")' % (m2m, col1))
-    if not get_index_on(cr, m2m, col2):
-        cr.execute('CREATE INDEX ON "%s" ("%s")' % (m2m, col2))
+    if not idx1 and not idx2:
+        # No index at all
+        cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
+        cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % (m2m, col2, col1))
+    elif idx1 and idx2:
+        if not idx1[1] and not idx2[1]:
+            # if both are not unique, create a PK
+            cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
+    else:
+        # only 1 index exist, create the second one
+        # determine which one is missing
+        fmt = (m2m, col2, col1) if idx1 else (m2m, col1, col2)
+        if (idx1 or idx2)[1]:
+            # the existing index is unique, create a normal index
+            cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % fmt)
+        else:
+            # create a PK (unqiue index)
+            cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % fmt)
+
+    # remove indexes on 1 column only
+    idx = get_index_on(cr, m2m, col1)
+    if idx:
+        cr.execute("DROP INDEX %s" % idx[0])
+    idx = get_index_on(cr, m2m, col2)
+    if idx:
+        cr.execute("DROP INDEX %s" % idx[0])
 
 def uniq_tags(cr, model, uniq_column='name', order='id'):
     """
