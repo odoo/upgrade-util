@@ -1545,15 +1545,21 @@ def target_of(cr, table, column):
 
 def get_index_on(cr, table, *columns):
     """
-        return a tuple (index_name, unique, pk)
+        return an optional tuple (index_name, unique, pk)
+        NOTE: column order is respected
     """
     if "." in table:
         raise SleepyDeveloperError("table name cannot contains dot")
+    if cr._cnx.server_version >= 90500:
+        position = "array_position(x.indkey, x.unnest_indkey)"
+    else:
+        # array_position does not exists prior postgresql 9.5
+        position = "strpos(array_to_string(x.indkey::int4[] || 0, ','), x.unnest_indkey::varchar || ',')"
     cr.execute("""
         select name, indisunique, indisprimary
           from (select quote_ident(i.relname) as name,
                        x.indisunique, x.indisprimary,
-                       array_agg(a.attname::text order by a.attname) as attrs
+                       array_agg(a.attname::text order by {}) as attrs
                   FROM (select *, unnest(indkey) as unnest_indkey from pg_index) x
                   JOIN pg_class c ON c.oid = x.indrelid
                   JOIN pg_class i ON i.oid = x.indexrelid
@@ -1564,7 +1570,7 @@ def get_index_on(cr, table, *columns):
               group by 1, 2, 3
           ) idx
          where attrs = %s
-    """, [table, sorted(columns)])
+    """.format(position), [table, list(columns)])
     return cr.fetchone()
 
 @contextmanager
