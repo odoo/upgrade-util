@@ -77,7 +77,9 @@ _logger = logging.getLogger(__name__)
 _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
 
 # migration environ, used to share data between scripts
-ENVIRON = {}
+ENVIRON = {
+    "__renamed_fields": collections.defaultdict(set),
+}
 
 NEARLYWARN = 25  # (between and info, appear on runbot build page)
 
@@ -1715,6 +1717,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
         # overwritten by another module in previous version.
         return remove_model(cr, model)
 
+    ENVIRON["__renamed_fields"][model].add(fieldname)
+
     # clean dashboards' `group_by`
     cr.execute("""
         SELECT      array_agg(f.name), array_agg(aw.id)
@@ -1808,6 +1812,11 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module):
                """, (new_module, 'ir.model.fields', name, old_module))
 
 def rename_field(cr, model, old, new, update_references=True):
+    rf = ENVIRON["__renamed_fields"].get(model)
+    if rf:
+        rf.difference_update({old})
+        rf.intersection_update({new})
+
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
     [fid] = cr.fetchone() or [None]
     if fid:
@@ -2277,6 +2286,8 @@ def move_model(cr, model, from_module, to_module, move_data=False):
     return
 
 def rename_model(cr, old, new, rename_table=True):
+    if old in ENVIRON["__renamed_fields"]:
+        ENVIRON["__renamed_fields"][new] = ENVIRON["__renamed_fields"].pop(old)
     if rename_table:
         old_table = table_of_model(cr, old)
         new_table = table_of_model(cr, new)
