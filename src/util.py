@@ -1814,8 +1814,8 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module):
 def rename_field(cr, model, old, new, update_references=True):
     rf = ENVIRON["__renamed_fields"].get(model)
     if rf:
-        rf.difference_update({old})
-        rf.intersection_update({new})
+        rf.discard(old)
+        rf.add(new)
 
     cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
     [fid] = cr.fetchone() or [None]
