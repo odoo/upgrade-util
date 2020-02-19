@@ -4,7 +4,7 @@ from psycopg2.extras import execute_values
 
 from odoo.addons.base.maintenance.migrations import util
 
-_logger = logging.getLogger("odoo.addons.base.maintenance.base.000.no_respawn")
+_logger = logging.getLogger("odoo.addons.base.maintenance.migrations.base.000.no_respawn")
 
 
 def migrate(cr, version):
