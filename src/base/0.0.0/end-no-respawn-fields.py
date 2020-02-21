@@ -28,15 +28,24 @@ def migrate(cr, version):
     )
     cr.execute(
         """
-        SELECT m.model, f.name
+        SELECT m.model, f.name, m.transient
           FROM ir_model_fields f
           JOIN ir_model m ON m.id = f.model_id
           JOIN no_respawn r ON (m.model = r.model AND f.name = r.field)
+      ORDER BY m.model, f.name
     """
     )
-    respawn = ["%s/%s" % r for r in cr.fetchall()]
-    for r in respawn:
-        _logger.warning("field %s has respawn!", r)
+
+    respawn = []
+    for model, field, transient in cr.fetchall():
+        name = "%s/%s" % (model, field)
+        if transient:
+            lvl = util.NEARLYWARN
+        else:
+            lvl = logging.WARNING
+            respawn.append(name)
+
+        _logger.log(lvl, "field %s has respawn!", name)
 
     # XXX temporarily let the upgrade pass
     # if respawn:
