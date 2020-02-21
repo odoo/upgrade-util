@@ -2403,7 +2403,10 @@ def remove_mixin_from_model(cr, model, mixin, keep=()):
         SELECT name, ttype, relation, store
           FROM ir_model_fields
          WHERE model = %s
-           AND name NOT IN ('id', 'create_uid', 'write_uid', 'create_date', 'write_date', '__last_update')
+           AND name NOT IN ('id',
+                            'create_uid', 'write_uid',
+                            'create_date', 'write_date',
+                            '__last_update', 'display_name')
            AND name != ALL(%s)
     """, [mixin, list(keep)])
     for field, ftype, relation, store in cr.fetchall():
