@@ -1019,7 +1019,7 @@ def uniq_tags(cr, model, uniq_column='name', order='id'):
     cr.execute(query, [model])
 
 
-def delete_unused(cr, table, xmlids, set_noupdate=True):
+def delete_unused(cr, *xmlids):
     select_xids = " UNION ".join(
         [
             cr.mogrify("SELECT %s as module, %s as name", [module, name]).decode()
