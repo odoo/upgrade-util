@@ -234,6 +234,13 @@ def disable_triggers(cr, *tables):
             cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
 
 
+def get_max_workers():
+    force_max_worker = os.getenv("MAX_WORKER")
+    if force_max_worker:
+        return force_max_worker
+    return min(8, cpu_count())
+
+
 if ThreadPoolExecutor is None:
 
     def parallel_execute(cr, queries):
@@ -261,7 +268,7 @@ else:
         """
         if not queries:
             return
-        max_workers = min(8, len(queries), cpu_count())
+        max_workers = min(get_max_workers(), len(queries))
         reg = env(cr).registry
 
         def execute(query):
