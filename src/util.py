@@ -1019,26 +1019,65 @@ def uniq_tags(cr, model, uniq_column='name', order='id'):
     cr.execute(query, [model])
 
 
-def delete_unused(cr, table, xmlids, set_noupdate=True):
-    sub = ' UNION '.join(['SELECT 1 FROM "{}" x WHERE x."{}"=t.id'.format(f[0], f[1])
-                          for f in get_fk(cr, table)])
-    idmap = {ref(cr, x): x for x in xmlids}
-    idmap.pop(None, None)
-    if not sub or not idmap:
-        return
-    cr.execute("""
-        SELECT id
-          FROM "{}" t
-         WHERE id=ANY(%s)
-           AND NOT EXISTS({})
-    """.format(table, sub), [list(idmap)])
+def delete_unused(cr, *xmlids):
+    select_xids = " UNION ".join(
+        [
+            cr.mogrify("SELECT %s as module, %s as name", [module, name]).decode()
+            for xmlid in xmlids
+            for module, _, name in [xmlid.partition(".")]
+        ]
+    )
 
-    for tid, in cr.fetchall():
-        remove_record(cr, idmap.pop(tid))
+    cr.execute(
+        """
+       WITH xids AS (
+         {}
+       ),
+       _upd AS (
+            UPDATE ir_model_data d
+               SET noupdate = true
+              FROM xids x
+             WHERE d.module = x.module
+               AND d.name = x.name
+         RETURNING d.model, d.res_id
+       )
+       SELECT model, array_agg(res_id)
+         FROM _upd
+     GROUP BY model
+    """.format(
+            select_xids
+        )
+    )
 
-    if set_noupdate:
-        for xid in idmap.values():
-            force_noupdate(cr, xid, True)
+    for model, ids in cr.fetchall():
+        table = table_of_model(cr, model)
+
+        sub = " UNION ".join(
+            [
+                'SELECT 1 FROM "{}" x WHERE x."{}" = t.id'.format(fk_tbl, fk_col)
+                for fk_tbl, fk_col, _, fk_act in get_fk(cr, table)
+                # ignore "on delete cascade" fk (they are indirect dependencies (lines or m2m))
+                if fk_act != "c"
+                # ignore children records unless the deletion is restricted
+                if not (fk_tbl == table and fk_act != "r")
+            ]
+        )
+
+        cr.execute(
+            """
+            SELECT id
+              FROM "{}" t
+             WHERE id = ANY(%s)
+               AND NOT EXISTS({})
+        """.format(
+                table, sub
+            ),
+            [list(ids)],
+        )
+
+        for (tid,) in cr.fetchall():
+            remove_record(cr, (model, tid))
+
 
 def modules_installed(cr, *modules):
     """return True if all `modules` are (about to be) installed"""
@@ -1509,7 +1548,7 @@ def view_exists(cr, view):
     cr.execute("SELECT 1 FROM information_schema.views WHERE table_name=%s", [view])
     return bool(cr.rowcount)
 
-def get_fk(cr, table):
+def get_fk(cr, table, quote_ident=True):
     """return the list of foreign keys pointing to `table`
 
         returns a 4 tuple: (foreign_table, foreign_column, constraint_name, on_delete_action)
@@ -1519,9 +1558,10 @@ def get_fk(cr, table):
     """
     if "." in table:
         raise SleepyDeveloperError("table name cannot contains dot")
-    q = """SELECT quote_ident(cl1.relname) as table,
-                  quote_ident(att1.attname) as column,
-                  quote_ident(con.conname) as conname,
+    funk = "quote_ident" if quote_ident else "concat"
+    q = """SELECT {funk}(cl1.relname) as table,
+                  {funk}(att1.attname) as column,
+                  {funk}(con.conname) as conname,
                   con.confdeltype
              FROM pg_constraint as con, pg_class as cl1, pg_class as cl2,
                   pg_attribute as att1, pg_attribute as att2
@@ -1536,7 +1576,7 @@ def get_fk(cr, table):
               AND con.confkey[1] = att2.attnum
               AND att2.attrelid = cl2.oid
               AND con.contype = 'f'
-    """
+    """.format(funk=funk)
     cr.execute(q, (table,))
     return cr.fetchall()
 
