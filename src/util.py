@@ -1058,6 +1058,8 @@ def delete_unused(cr, table, xmlids, set_noupdate=True):
                 for fk_tbl, fk_col, _, fk_act in get_fk(cr, table)
                 # ignore "on delete cascade" fk (they are indirect dependencies (lines or m2m))
                 if fk_act != "c"
+                # ignore children records unless the deletion is restricted
+                if not (fk_tbl == table and fk_act != "r")
             ]
         )
 
