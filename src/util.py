@@ -1062,20 +1062,21 @@ def delete_unused(cr, *xmlids):
                 if not (fk_tbl == table and fk_act != "r")
             ]
         )
+        if sub:
+            cr.execute(
+                """
+                SELECT id
+                  FROM "{}" t
+                 WHERE id = ANY(%s)
+                   AND NOT EXISTS({})
+            """.format(
+                    table, sub
+                ),
+                [list(ids)],
+            )
+            ids = map(itemgetter(0), cr.fetchall())
 
-        cr.execute(
-            """
-            SELECT id
-              FROM "{}" t
-             WHERE id = ANY(%s)
-               AND NOT EXISTS({})
-        """.format(
-                table, sub
-            ),
-            [list(ids)],
-        )
-
-        for (tid,) in cr.fetchall():
+        for tid in ids:
             remove_record(cr, (model, tid))
 
 
