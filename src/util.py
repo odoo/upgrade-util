@@ -920,7 +920,7 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 
     # create  missing or bad fk
     target = target_of(cr, m2m, col1)
-    if target and target[:2] != [fk1, 'id']:
+    if target and target[:2] != (fk1, "id"):
         cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
         target = None
     if not target:
@@ -929,7 +929,7 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
                    .format(**locals()))
 
     target = target_of(cr, m2m, col2)
-    if target and target[:2] != [fk2, 'id']:
+    if target and target[:2] != (fk2, "id"):
         cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
         target = None
     if not target:
