@@ -1055,7 +1055,7 @@ def delete_unused(cr, *xmlids):
         sub = " UNION ".join(
             [
                 'SELECT 1 FROM "{}" x WHERE x."{}" = t.id'.format(fk_tbl, fk_col)
-                for fk_tbl, fk_col, _, fk_act in get_fk(cr, table)
+                for fk_tbl, fk_col, _, fk_act in get_fk(cr, table, quote_ident=False)
                 # ignore "on delete cascade" fk (they are indirect dependencies (lines or m2m))
                 if fk_act != "c"
                 # ignore children records unless the deletion is restricted
