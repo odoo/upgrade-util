@@ -686,6 +686,7 @@ def remove_record(cr, name, deactivate=False, active_field="active"):
         for ir in indirect_references(cr, bound_only=True):
             query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(ir.table, ir.model_filter(), ir.res_id)
             cr.execute(query, [model, res_id])
+        _rm_refs(cr, model, [res_id])
 
     if model == "res.groups":
         # A group is gone, the auto-generated view `base.user_groups_view` is outdated.
@@ -2532,8 +2533,9 @@ def _rm_refs(cr, model, ids=None):
                 menu_ids = tuple(m[0] for m in cr.fetchall())
                 remove_menus(cr, menu_ids)
             else:
-                cr.execute("DELETE" + query_tail, [needle])
-                # TODO make it recursive?
+                cr.execute("SELECT id" + query_tail, [needle])
+                for record_id, in cr.fetchall():
+                    remove_record(cr, (ref_model, record_id))
 
     if table_exists(cr, "ir_values"):
         column, _ = _ir_values_value(cr)
