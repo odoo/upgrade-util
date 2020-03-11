@@ -1844,13 +1844,24 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
         remove_column(cr, table, fieldname, cascade=cascade)
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
-    name = IMD_FIELD_PATTERN % (model.replace('.', '_'), fieldname)
-    cr.execute("""UPDATE ir_model_data
-                     SET module=%s
-                   WHERE model=%s
-                     AND name=%s
-                     AND module=%s
-               """, (new_module, 'ir.model.fields', name, old_module))
+    name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
+    try:
+        with savepoint(cr):
+            cr.execute(
+                """UPDATE ir_model_data
+                      SET module = %s
+                    WHERE model = 'ir.model.fields'
+                      AND name = %s
+                      AND module = %s
+            """,
+                [new_module, name, old_module],
+            )
+    except psycopg2.IntegrityError:
+        cr.execute(
+            "DELETE FROM ir_model_data WHERE model = 'ir.model.fields' AND name = %s AND module = %s",
+            [name, old_module],
+        )
+
 
 def rename_field(cr, model, old, new, update_references=True):
     rf = ENVIRON["__renamed_fields"].get(model)
