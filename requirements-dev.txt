@@ -1,0 +1,6 @@
+# Code Formatting
+black
+
+# Code Quality
+flake8-bugbear
+flake8-logging-format
