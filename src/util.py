@@ -72,6 +72,11 @@ except ImportError:
         def manage_env():
             yield
 
+try:
+    from concurrent.futures import ThreadPoolExecutor
+except ImportError:
+    ThreadPoolExecutor = None
+
 _logger = logging.getLogger(__name__)
 
 _INSTALLED_MODULE_STATES = ('installed', 'to install', 'to upgrade')
@@ -217,7 +222,7 @@ def disable_triggers(cr, *tables):
             cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
 
 
-if sys.version_info[0] == 2:
+if ThreadPoolExecutor is None:
     def parallel_execute(cr, queries):
         for query in queries:
             cr.execute(query)
@@ -238,7 +243,6 @@ else:
                 | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
                 +---------------------------------------------+-------------+-------------+
         """
-        from concurrent.futures import ThreadPoolExecutor
 
         max_workers = min(8, len(queries), cpu_count())
         reg = env(cr).registry
@@ -251,7 +255,8 @@ else:
         cr.commit()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            executor.map(execute, queries)
+            for _ in executor.map(execute, queries):
+                pass
 
 def explode_query(cr, query, num_buckets=8, prefix=""):
     """
