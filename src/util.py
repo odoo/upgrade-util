@@ -2765,6 +2765,75 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         records.recompute()
         records.invalidate_cache()
 
+def check_company_fields(cr, model_name, field_name, logger=_logger, model_company_field='company_id', comodel_company_field='company_id'):
+    cr.execute('''
+        SELECT * 
+        FROM ir_model_fields 
+        WHERE name = %s 
+        AND model = %s 
+        AND store IS TRUE 
+        AND ttype IN ('many2one', 'many2many')
+    ''', (field_name, model_name))
+
+    field_values = cr.dictfetchone()
+
+    if not field_values:
+        _logger.warning("Field %s not found on model %s." % (field_name, model_name))
+        return
+
+    table_model_1 = table_of_model(cr, model_name)
+    table_model_2 = table_of_model(cr, field_values['relation'])
+    if field_values['ttype'] == 'many2one':
+        cr.execute('''
+            SELECT
+                record1.id                                  AS id_1,
+                record1.%(comp_field_1)s                    AS comp_1,
+                record2.id                                  AS id_2,
+                record2.%(comp_field_2)s                    AS comp_2
+            FROM %(table_model)s record1
+            JOIN %(table_relation)s record2 ON record2.id = record1.%(cofield_name)s
+            WHERE record1.%(comp_field_1)s IS NOT NULL
+            AND record2.%(comp_field_2)s IS NOT NULL
+            AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
+        ''' % {
+            'comp_field_1': model_company_field,
+            'comp_field_2': comodel_company_field,
+            'table_model': table_model_1,
+            'table_relation': table_model_2,
+            'cofield_name': field_values['name'],
+        })
+    else: # if field_values['ttype'] == 'many2many'
+        cr.execute('''
+            SELECT
+                record1.id                                  AS id_1,
+                record1.%(comp_field_1)s                    AS comp_1,
+                record2.id                                  AS id_2,
+                record2.%(comp_field_2)s                    AS comp_2
+            FROM %(table_rel)s rel
+            JOIN %(table_model)s record1 ON record1.id = rel.%(column1)s
+            JOIN %(table_relation)s record2 ON record2.id = rel.%(column2)s
+            WHERE record1.%(comp_field_1)s IS NOT NULL
+            AND record2.%(comp_field_2)s IS NOT NULL
+            AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
+        ''' % {
+            'comp_field_1': comodel_company_field,
+            'comp_field_2': model_company_field,
+            'table_rel': field_values['relation_table'],
+            'table_model': table_model_1,
+            'table_relation': table_model_2,
+            'column1': field_values['column1'],
+            'column2': field_values['column2'],
+        })
+
+    for res in cr.fetchall():
+        logger.warning(
+            "Company fields are not consistent on models %s (id=%s, company_id=%s) and %s (id=%s, company_id=%s) "
+            "through relation %s (%s)" % (
+                table_model_1, res[0], res[1],
+                table_model_2, res[2], res[3],
+                field_values['name'], field_values['ttype'],
+            ))
+
 def split_group(cr, from_groups, to_group):
     """Users have all `from_groups` will be added into `to_group`"""
 
