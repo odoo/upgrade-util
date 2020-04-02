@@ -259,7 +259,8 @@ else:
                 | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
                 +---------------------------------------------+-------------+-------------+
         """
-
+        if not queries:
+            return
         max_workers = min(8, len(queries), cpu_count())
         reg = env(cr).registry
 
