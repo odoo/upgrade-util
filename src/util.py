@@ -243,21 +243,19 @@ def get_max_workers():
 
 if ThreadPoolExecutor is None:
 
-    def parallel_execute(cr, queries):
-        for query in queries:
+    def parallel_execute(cr, queries, logger=_logger):
+        for query in log_progress(queries, qualifier="queries", logger=logger, size=len(queries)):
             cr.execute(query)
 
 
 else:
 
-    def parallel_execute(cr, queries):
+    def parallel_execute(cr, queries, logger=_logger):
         """
             Execute queries in parallel
             Use a maximum of 8 workers (but not more than the number of CPUs)
             Side effect: the given cursor is commited.
-
             As example, on `**REDACTED**` (using 8 workers), the following gains are:
-
                 +---------------------------------------------+-------------+-------------+
                 | File                                        | Sequential  | Parallel    |
                 +---------------------------------------------+-------------+-------------+
@@ -279,7 +277,9 @@ else:
         cr.commit()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for _ in executor.map(execute, queries):
+            for _ in log_progress(
+                executor.map(execute, queries), qualifier="queries", logger=logger, size=len(queries)
+            ):
                 pass
 
 
