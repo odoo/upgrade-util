@@ -3171,7 +3171,7 @@ def check_company_fields(
     field_values = cr.dictfetchone()
 
     if not field_values:
-        _logger.warning("Field %s not found on model %s." % (field_name, model_name))
+        _logger.warning("Field %s not found on model %s.", field_name, model_name)
         return
 
     table_model_1 = table_of_model(cr, model_name)
@@ -3226,18 +3226,17 @@ def check_company_fields(
 
     for res in cr.fetchall():
         logger.warning(
-            "Company fields are not consistent on models %s (id=%s, company_id=%s) and %s (id=%s, company_id=%s) "
-            "through relation %s (%s)"
-            % (
-                table_model_1,
-                res[0],
-                res[1],
-                table_model_2,
-                res[2],
-                res[3],
-                field_values["name"],
-                field_values["ttype"],
-            )
+            "Company fields are not consistent on models %s "
+            "(id=%s, company_id=%s) and %s (id=%s, company_id=%s) "
+            "through relation %s (%s)",
+            table_model_1,
+            res[0],
+            res[1],
+            table_model_2,
+            res[2],
+            res[3],
+            field_values["name"],
+            field_values["ttype"],
         )
 
 
