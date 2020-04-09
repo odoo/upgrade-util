@@ -237,7 +237,9 @@ def disable_triggers(cr, *tables):
 def get_max_workers():
     force_max_worker = os.getenv("MAX_WORKER")
     if force_max_worker:
-        return force_max_worker
+        if not force_max_worker.isdigit():
+            raise MigrationError("wrong parameter: MAX_WORKER should be an integer")
+        return int(force_max_worker)
     return min(8, cpu_count())
 
 
