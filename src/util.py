@@ -2437,6 +2437,7 @@ def indirect_references(cr, bound_only=False):
         IR("ir_model_fields_anonymization_migration_fix", "model_name", None),
         IR("base_import_import", "res_model", None),
         IR("calendar_event", "res_model", "res_id"),  # new in saas~18
+        IR("documents_document", "res_model", "res_id"),
         IR("email_template", "model", None),  # stored related
         IR("mail_template", "model", None),  # model renamed in saas~6
         IR("mail_activity", "res_model", "res_id", "res_model_id"),
