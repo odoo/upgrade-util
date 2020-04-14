@@ -20,6 +20,7 @@ from itertools import chain, islice
 from functools import reduce
 from operator import itemgetter
 from textwrap import dedent
+from unittest.mock import patch
 
 import markdown
 import psycopg2
@@ -2394,6 +2395,141 @@ def register_unanonymization_query(cr, model, field, query, query_type="sql", se
     """,
         [release.major_version, sequence, query_type, model, field, query],
     )
+
+
+@contextmanager
+def custom_module_field_as_manual(env):
+    """
+        Helper to be used with a Python `with` statement,
+        to perform an operation with models and fields coming from Python modules acting as `manual` models/fields,
+        while restoring back the state of these models and fields once the operation done.
+        e.g.
+         - validating views coming from custom modules, with the fields loaded as the custom source code was there,
+         - crawling the menus as the models/fields coming from custom modules were available.
+    """
+
+    # 1. Convert models which are not in the registry to `manual` models
+    #    and list the models that were converted, to restore them back afterwards.
+    models = list(env.registry.models)
+    env.cr.execute(
+        """
+        UPDATE ir_model
+           SET state = 'manual'
+         WHERE state = 'base'
+           AND model not in %s
+     RETURNING id, model
+    """,
+        (tuple(models),),
+    )
+    updated_models = env.cr.fetchall()
+    updated_model_ids, custom_models = zip(*updated_models) if updated_models else [[], []]
+
+    # 2. Convert fields which are not in the registry to `manual` fields
+    #    and list the fields that were converted, to restore them back afterwards.
+    updated_field_ids = []
+
+    # 2.1 Convert fields not in the registry of models already in the registry.
+    # In the past, some models added the reserved word `env` as field (e.g. `payment.acquirer`)
+    # if the field was not correctly removed from the database during past upgrades, the field remains in the database.
+    reserved_words = ['env']
+    for model in models:
+        model_fields = tuple(list(env.registry[model]._fields) + reserved_words)
+        env.cr.execute(
+            """
+            UPDATE ir_model_fields
+               SET state = 'manual'
+             WHERE state = 'base'
+               AND model = %s
+               AND name not in %s
+         RETURNING id
+        """,
+            (model, model_fields,),
+        )
+        updated_field_ids += [r[0] for r in env.cr.fetchall()]
+
+    # 2.2 Convert fields of custom models, models that were just converted to `manual` models in the previous step.
+    for model in custom_models:
+        env.cr.execute(
+            """
+            UPDATE ir_model_fields
+               SET state = 'manual'
+             WHERE state = 'base'
+               AND model = %s
+               AND name not in %s
+         RETURNING id
+        """,
+            (model, tuple(reserved_words)),
+        )
+        updated_field_ids += [r[0] for r in env.cr.fetchall()]
+
+    # 3. Alter fields which won't work by just changing their `state` to `manual`,
+    #    because information from their Python source is missing.
+    #    List them and what was altered, to restore them back afterwards.
+
+    # 3.1. Loading of base selection fields which have been converted to manual,
+    #     for which we don't have the possible values.
+    updated_selection_fields = []
+    # For Odoo <= 12.0.
+    # From 13.0, there is a model `ir.model.fields.selection` holding the values,
+    # and `ir.model.fields.selection` becomes a computed field.
+    if not env.registry["ir.model.fields"]._fields["selection"].compute:
+        env.cr.execute(
+            """
+               UPDATE ir_model_fields
+                  SET selection = '[]'
+                WHERE state = 'manual'
+                  AND COALESCE(selection, '') = ''
+            RETURNING id, selection
+            """
+        )
+        updated_selection_fields += env.cr.fetchall()
+
+    # 3.2. Loading of base many2one fields converted to manual, set to `required` and `on_delete` to `set null` in db,
+    #     which is not accepted by the ORM:
+    #     https://github.com/odoo/odoo/blob/2a7e06663c1281f0cf75f72fc491bc2cc39ef81c/odoo/fields.py#L2404-L2405
+    env.cr.execute(
+        """
+           UPDATE ir_model_fields
+              SET on_delete = 'restrict'
+            WHERE state = 'manual'
+              AND ttype = 'many2one'
+              AND required
+              AND on_delete = 'set null'
+        RETURNING id, on_delete
+        """
+    )
+    updated_many2one_fields = env.cr.fetchall()
+
+    # 3.3. models `_rec_name` are not reloaded correctly.
+    #      If the model has no `_rec_name` and there is a manual field `name` or `x_name`,
+    #      the `_rec_name` becomes this name field. But then, when we convert back the manual fields to base field,
+    #      and we reload the registry, the `_rec_name` is not reset by the ORM,
+    #      and there is an assert raising in `models.py`: `assert cls._rec_name in cls._fields`.
+    rec_names = {key: model._rec_name for key, model in env.registry.models.items()}
+
+    # 3.4 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
+    # models that have been converted to manual have a too long name, and we dont have the `_table` info.
+    with patch("odoo.models.check_pg_name", lambda name: None):
+        # 4. Reload the registry with the models and fields converted to manual.
+        env.registry.setup_models(env.cr)
+
+    # 5. Do the operation.
+    yield
+
+    # 6. Restore back models and fields converted from `base` to `manual`.
+    if updated_model_ids:
+        env.cr.execute("UPDATE ir_model SET state = 'base' WHERE id IN %s", (tuple(updated_model_ids),))
+    if updated_field_ids:
+        env.cr.execute("UPDATE ir_model_fields SET state = 'base' WHERE id IN %s", (tuple(updated_field_ids),))
+    for field_id, selection in updated_selection_fields:
+        env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
+    for field_id, on_delete in updated_many2one_fields:
+        env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", (on_delete, field_id,))
+    for model, rec_name in rec_names.items():
+        env.registry[model]._rec_name = rec_name
+
+    # 7. Reload the registry as before
+    env.registry.setup_models(env.cr)
 
 
 class IndirectReference(collections.namedtuple("IndirectReference", "table res_model res_id res_model_id")):
