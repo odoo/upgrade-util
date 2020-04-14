@@ -10,6 +10,7 @@ except ImportError:
 
 
 from odoo.addons.base.maintenance.migrations import util
+from odoo.addons.mail.models.mail_message import Message  # noqa
 
 
 def migrate(cr, version):
@@ -17,7 +18,7 @@ def migrate(cr, version):
 
 
 class MailMessage(models.Model):
-    _inherit = "ir.ui.view"
+    _inherit = "mail.message"
     _module = "mail"
 
     @model_cr
