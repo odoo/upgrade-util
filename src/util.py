@@ -2623,6 +2623,37 @@ def indirect_references(cr, bound_only=False):
         yield ir
 
 
+def generate_indirect_reference_cleaning_queries(cr, ir):
+    """Generator that yield queries to clean an `IndirectReference`"""
+
+    if ir.res_model:
+        query = """
+            SELECT {ir.res_model}
+              FROM {ir.table}
+             WHERE {ir.res_model} IS NOT NULL
+          GROUP BY {ir.res_model}
+        """
+    else:
+        query = """
+            SELECT m.model
+              FROM {ir.table} t
+              JOIN ir_model m ON m.id = t.{ir.res_model_id}
+          GROUP BY m.model
+        """
+    cr.execute(query.format(ir=ir))
+    for (model,) in cr.fetchall():
+        res_table = table_of_model(cr, model)
+        if table_exists(cr, res_table):
+            cond = "NOT EXISTS (SELECT 1 FROM {res_table} r WHERE r.id = t.{ir.res_id})".format_map(locals())
+        else:
+            cond = "true"
+
+        model_filter = ir.model_filter()
+        yield cr.mogrify(
+            "DELETE FROM {ir.table} t WHERE {model_filter} AND {cond}".format_map(locals()), [model],
+        ).decode()
+
+
 def res_model_res_id(cr, filtered=True):
     for ir in indirect_references(cr):
         if ir.res_model:
