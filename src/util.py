@@ -2676,7 +2676,7 @@ def _rm_refs(cr, model, ids=None):
                 remove_menus(cr, menu_ids)
             else:
                 cr.execute("SELECT id" + query_tail, [needle])
-                for record_id, in cr.fetchall():
+                for (record_id,) in cr.fetchall():
                     remove_record(cr, (ref_model, record_id))
 
     if table_exists(cr, "ir_values"):
@@ -3273,6 +3273,91 @@ def update_field_references(cr, old, new, only_models=None):
             q += "WHERE "
         q += "a.alias_defaults ~ %(old)s"
         cr.execute(q, p)
+
+
+def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=None):
+    """
+    When some fields of `src_model` have ben copied to `dst_model` and/or have
+    been copied to fields with another name, some references have to be moved.
+
+    For server actions, this function starts by updating `ir_server_object_lines`
+    to refer to new fields. If no `fields_mapping` is provided, all references to
+    fields that exist in both models (source and destination) are moved. If no `dst_model`
+    is given, the `src_model` is used as `dst_model`.
+    Then, if `dst_model` is set, `ir_act_server` referred by modified `ir_server_object_lines`
+    are also updated. A chatter message informs the customer about this modification.
+    """
+    if dst_model is None and fields_mapping is None:
+        raise SleepyDeveloperError(
+            "at least dst_model or fields_mapping must be given to the move_field_references function."
+        )
+
+    _dst_model = dst_model if dst_model is not None else src_model
+
+    # update ir_server_object_lines to point to new fields
+    if fields_mapping is None:
+        cr.execute(
+            """
+            WITH field_ids AS (
+                SELECT mf1.id as old_field_id, mf2.id as new_field_id
+                  FROM ir_model_fields mf1
+                  JOIN ir_model_fields mf2 ON mf2.name = mf1.name
+                 WHERE mf1.model = %s
+                   AND mf2.model = %s
+            )
+               UPDATE ir_server_object_lines
+                  SET col1 = f.new_field_id
+                 FROM field_ids f
+                WHERE col1 = f.old_field_id
+            RETURNING server_id
+            """,
+            [src_model, _dst_model],
+        )
+    else:
+        psycopg2.extras.execute_values(
+            cr._obj,
+            """
+            WITH field_ids AS (
+                SELECT mf1.id as old_field_id, mf2.id as new_field_id
+                  FROM (VALUES %s) AS mapping(src_model, dst_model, old_name, new_name)
+                  JOIN ir_model_fields mf1 ON mf1.name = mapping.old_name AND mf1.model = mapping.src_model
+                  JOIN ir_model_fields mf2 ON mf2.name = mapping.new_name AND mf2.model = mapping.dst_model
+            )
+               UPDATE ir_server_object_lines
+                  SET col1 = f.new_field_id
+                 FROM field_ids f
+                WHERE col1 = f.old_field_id
+            RETURNING server_id
+            """,
+            [(src_model, _dst_model, fm[0], fm[1]) for fm in fields_mapping],
+        )
+
+    # update ir_act_server records to point to the right model if set
+    if dst_model is not None and src_model != dst_model and cr.rowcount > 0:
+        action_ids = tuple(set(cr.fetchall()))
+
+        cr.execute(
+            """
+               UPDATE ir_act_server
+                  SET model_name = %s, model_id = ir_model.id
+                 FROM ir_model
+                WHERE ir_model.model = %s
+                  AND ir_act_server.id IN (%s)
+            RETURNING ir_act_server.name
+            """,
+            [dst_model, dst_model, action_ids],
+        )
+
+        action_names = [row[0] for row in cr.fetchall()]
+
+        # inform the customer through the chatter about this modification
+        msg = (
+            "The following server actions have been updated due to moving "
+            "fields from '%(src_model)s' to '%(dst_model)s' model and need "
+            "a checking from your side: %(actions)s"
+        ) % {"src_model": src_model, "dst_model": dst_model, "actions": ", ".join(action_names)}
+
+        add_to_migration_reports(message=msg, category="Server Actions")
 
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
