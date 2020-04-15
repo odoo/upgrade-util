@@ -2388,10 +2388,14 @@ def convert_field_to_property(
     assert type in type2field
     value_field = type2field[type]
 
-    cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, field))
-    [fields_id] = cr.fetchone()
-
     table = table_of_model(cr, model)
+
+    cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, field))
+    if not cr.rowcount:
+        # no ir_model_fields, no ir_property
+        remove_column(cr, table, field, cascade=True)
+        return
+    [fields_id] = cr.fetchone()
 
     if default_value is None:
         where_clause = "{field} IS NOT NULL".format(field=field)
