@@ -78,6 +78,8 @@ class UpgradeCommon(BaseCase):
         )  # use to commit in upgrade_test_data, dont use it for anything else
         self.addCleanup(self._data_table_cr.close)
         self.cr = self.registry.cursor()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.addCleanup(self.cr.close)
         self.env = api.Environment(self.cr, odoo.SUPERUSER_ID, {})
 
