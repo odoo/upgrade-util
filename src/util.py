@@ -3823,14 +3823,24 @@ def check_company_fields(
 
     table_model_1 = table_of_model(cr, model_name)
     table_model_2 = table_of_model(cr, field_values["relation"])
+
+    debug = _logger.isEnabledFor(logging.DEBUG)
+    if debug:
+        select = "count(record1.id)"
+    else:
+        select = """
+            record1.id       AS id_1,
+            record1.{field1} AS comp_1,
+            record2.id       AS id_2,
+            record2.{field2} AS comp_2
+        """.format(
+            field1=model_company_field, field2=comodel_company_field
+        )
+
     if field_values["ttype"] == "many2one":
         cr.execute(
             """
-            SELECT
-                record1.id                                  AS id_1,
-                record1.%(comp_field_1)s                    AS comp_1,
-                record2.id                                  AS id_2,
-                record2.%(comp_field_2)s                    AS comp_2
+            SELECT %(select)s
             FROM %(table_model)s record1
             JOIN %(table_relation)s record2 ON record2.id = record1.%(cofield_name)s
             WHERE record1.%(comp_field_1)s IS NOT NULL
@@ -3838,6 +3848,7 @@ def check_company_fields(
             AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
         """
             % {
+                "select": select,
                 "comp_field_1": model_company_field,
                 "comp_field_2": comodel_company_field,
                 "table_model": table_model_1,
@@ -3848,11 +3859,7 @@ def check_company_fields(
     else:  # if field_values['ttype'] == 'many2many'
         cr.execute(
             """
-            SELECT
-                record1.id                                  AS id_1,
-                record1.%(comp_field_1)s                    AS comp_1,
-                record2.id                                  AS id_2,
-                record2.%(comp_field_2)s                    AS comp_2
+            SELECT %(select)s
             FROM %(table_rel)s rel
             JOIN %(table_model)s record1 ON record1.id = rel.%(column1)s
             JOIN %(table_relation)s record2 ON record2.id = rel.%(column2)s
@@ -3861,6 +3868,7 @@ def check_company_fields(
             AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
         """
             % {
+                "select": select,
                 "comp_field_1": comodel_company_field,
                 "comp_field_2": model_company_field,
                 "table_rel": field_values["relation_table"],
@@ -3871,8 +3879,25 @@ def check_company_fields(
             }
         )
 
-    for res in cr.fetchall():
+    if debug:
+        count = cr.fetchone()[0]
+        rows = []
+    else:
+        count = cr.rowcount
+        rows = cr.fetchall()
+    if count:
         logger.warning(
+            "Company field %s.%s is not consistent with %s.%s for %d records (through %s relation %s)",
+            table_model_1,
+            model_company_field,
+            table_model_2,
+            comodel_company_field,
+            count,
+            field_values["ttype"],
+            field_values["name"],
+        )
+    for res in rows:
+        logger.debug(
             "Company fields are not consistent on models %s "
             "(id=%s, company_id=%s) and %s (id=%s, company_id=%s) "
             "through relation %s (%s)",
