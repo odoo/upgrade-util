@@ -500,6 +500,7 @@ def model_of_table(cr, table):
 
         documents_request_wizard documents.request_wizard
 
+        hr_payslip_worked_days hr.payslip.worked_days
         stock_package_level stock.package_level
 
         survey_user_input survey.user_input
