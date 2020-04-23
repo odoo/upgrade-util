@@ -20,7 +20,10 @@ from itertools import chain, islice
 from functools import reduce
 from operator import itemgetter
 from textwrap import dedent
-from unittest.mock import patch
+try:
+    from unittest.mock import patch
+except ImportError:
+    from mock import patch
 
 import markdown
 import psycopg2
