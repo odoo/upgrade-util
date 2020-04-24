@@ -3552,6 +3552,8 @@ def announce_migration_report(cr):
         if admin_channel:
             kw["recipient"] = admin_channel
         announce(cr, release.major_version, message, format="html", header=None, footer=None, **kw)
+    # To avoid posting multiple time the same messages in case this method is called multiple times.
+    migration_reports.clear()
 
 
 def get_admin_channel(cr):
