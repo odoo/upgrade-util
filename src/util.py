@@ -26,6 +26,8 @@ try:
 except ImportError:
     from mock import patch
 
+from . import inherit
+
 import markdown
 import psycopg2
 
@@ -2023,7 +2025,19 @@ def drop_depending_views(cr, table, column):
         cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
 
 
-def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
+def _for_each_inherit(cr, model, skip):
+    if skip == "*":
+        return
+    base_version = ENVIRON["__base_version"]  # filled by `base/0.0.0/pre-base_version.py` (and symlinks)
+    for inh in inherit.inheritance_data.get(model, []):
+        if inh.model in skip:
+            continue
+        if inh.born <= base_version:
+            if inh.dead is None or base_version < inh.dead:
+                yield inh.model
+
+
+def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
     if fieldname == "id":
         # called by `remove_module`. May happen when a model defined in a removed module was
         # overwritten by another module in previous version.
@@ -2130,8 +2144,12 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
     if drop_column and table_exists(cr, table) and column_exists(cr, table, fieldname):
         remove_column(cr, table, fieldname, cascade=cascade)
 
+    # remove field on inherits
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        remove_field(cr, inh_model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
 
-def move_field_to_module(cr, model, fieldname, old_module, new_module):
+
+def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inherit=()):
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
     try:
         with savepoint(cr):
@@ -2150,9 +2168,12 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module):
             "DELETE FROM ir_model_data WHERE model = 'ir.model.fields' AND name = %s AND module = %s",
             [name, old_module],
         )
+    # move field on inherits
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        move_field_to_module(cr, inh_model, fieldname, old_module, new_module, skip_inherit=skip_inherit)
 
 
-def rename_field(cr, model, old, new, update_references=True):
+def rename_field(cr, model, old, new, update_references=True, skip_inherit=()):
     rf = ENVIRON["__renamed_fields"].get(model)
     if rf and old in rf:
         rf.discard(old)
@@ -2226,7 +2247,11 @@ def rename_field(cr, model, old, new, update_references=True):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
     if update_references:
-        update_field_references(cr, old, new, only_models=(model,))
+        update_field_references(cr, old, new, only_models=(model,), skip_inherit=skip_inherit)
+
+    # rename field on inherits
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        rename_field(cr, inh_model, old, new, update_references=update_references, skip_inherit=skip_inherit)
 
 
 def convert_field_to_property(
@@ -3187,7 +3212,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             )
 
 
-def update_field_references(cr, old, new, only_models=None):
+def update_field_references(cr, old, new, only_models=None, skip_inherit=()):
     """
         Replace all references to field `old` to `new` in:
             - ir_filters
@@ -3331,6 +3356,13 @@ def update_field_references(cr, old, new, only_models=None):
             q += "WHERE "
         q += "a.alias_defaults ~ %(old)s"
         cr.execute(q, p)
+
+    if only_models:
+        inherited_models = tuple(
+            inh_model for model in only_models for inh_model in _for_each_inherit(cr, model, skip_inherit)
+        )
+        if inherited_models:
+            update_field_references(cr, old, new, only_models=inherited_models, skip_inherit=skip_inherit)
 
 
 def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=None):
