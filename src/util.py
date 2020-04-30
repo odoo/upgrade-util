@@ -464,6 +464,8 @@ def model_of_table(cr, table):
 
         documents_request_wizard documents.request_wizard
 
+        stock_package_level stock.package_level
+
         survey_user_input survey.user_input
         survey_user_input_line survey.user_input_line
 
