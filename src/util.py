@@ -3044,8 +3044,7 @@ def rename_res_model_reference(cr, old, new, ignores=()):
         cr.execute(query, (new, old))
 
 
-def remove_mixin_from_model(cr, model, mixin, keep=()):
-    assert env(cr)[mixin]._abstract
+def remove_inherit_from_model(cr, model, inherit, keep=()):
     cr.execute(
         """
         SELECT name, ttype, relation, store
@@ -3057,14 +3056,15 @@ def remove_mixin_from_model(cr, model, mixin, keep=()):
                             '__last_update', 'display_name')
            AND name != ALL(%s)
     """,
-        [mixin, list(keep)],
+        [inherit, list(keep)],
     )
     for field, ftype, relation, store in cr.fetchall():
         if ftype.endswith("2many") and store:
             # for mixin, x2many are filtered by their model.
+            # for "classic" inheritance, the caller is responsible to drop the underlying m2m table
+            # (or keeping the field)
             table = table_of_model(cr, relation)
             irs = [ir for ir in indirect_references(cr) if ir.table == table]
-            assert irs  # something goes wrong...
             for ir in irs:
                 query = 'DELETE FROM "{}" WHERE {}'.format(ir.table, ir.model_filter())
                 cr.execute(query, [model])
