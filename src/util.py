@@ -3334,7 +3334,7 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
 
     # update ir_act_server records to point to the right model if set
     if dst_model is not None and src_model != dst_model and cr.rowcount > 0:
-        action_ids = tuple(set(cr.fetchall()))
+        action_ids = tuple(set([row[0] for row in cr.fetchall()]))
 
         cr.execute(
             """
