@@ -3342,7 +3342,7 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
                   SET model_name = %s, model_id = ir_model.id
                  FROM ir_model
                 WHERE ir_model.model = %s
-                  AND ir_act_server.id IN (%s)
+                  AND ir_act_server.id IN %s
             RETURNING ir_act_server.name
             """,
             [dst_model, dst_model, action_ids],
