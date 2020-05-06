@@ -285,7 +285,12 @@ else:
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for _ in log_progress(
-                executor.map(execute, queries), qualifier="queries", logger=logger, size=len(queries)
+                executor.map(execute, queries),
+                qualifier="queries",
+                logger=logger,
+                size=len(queries),
+                estimate=False,
+                log_hundred_percent=True,
             ):
                 pass
 
@@ -3834,25 +3839,24 @@ def iter_browse(model, *args, **kw):
     return chain(it, end())
 
 
-def log_progress(it, qualifier="elements", logger=_logger, size=None):
+def log_progress(it, qualifier="elements", logger=_logger, size=None, estimate=True, log_hundred_percent=False):
     if size is None:
         size = len(it)
-    size = float(size)
     t0 = t1 = datetime.datetime.now()
     for i, e in enumerate(it, 1):
         yield e
         t2 = datetime.datetime.now()
-        if (t2 - t1).total_seconds() > 60:
+        if (t2 - t1).total_seconds() > 60 or (log_hundred_percent and i == size and (t2 - t0).total_seconds() > 10):
             t1 = datetime.datetime.now()
             tdiff = t2 - t0
+            j = float(i)
+            if estimate:
+                tail = " (total estimated time: %s)" % (datetime.timedelta(seconds=tdiff.total_seconds() * size / j),)
+            else:
+                tail = ""
+
             logger.info(
-                "[%.02f%%] %d/%d %s processed in %s (TOTAL estimated time: %s)",
-                (i / size * 100.0),
-                i,
-                size,
-                qualifier,
-                tdiff,
-                datetime.timedelta(seconds=tdiff.total_seconds() * size / i),
+                "[%.02f%%] %d/%d %s processed in %s%s", (j / size * 100.0), i, size, qualifier, tdiff, tail,
             )
 
 
