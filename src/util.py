@@ -2563,6 +2563,7 @@ def indirect_references(cr, bound_only=False):
         IR("ir_act_window", "src_model", None),
         IR("ir_act_server", "wkf_model_name", None),
         IR("ir_act_server", "crud_model_name", None),
+        IR("ir_act_server", "model_name", None),
         IR("ir_act_client", "res_model", None),
         IR("ir_model", "model", None),
         IR("ir_model_fields", "model", None),
@@ -2866,13 +2867,7 @@ def rename_model(cr, old, new, rename_table=True):
             cr.execute("DELETE FROM ir_model_constraint WHERE name=%s", (const,))
             cr.execute('ALTER TABLE "{0}" DROP CONSTRAINT "{1}"'.format(new_table, const))
 
-    updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
-    updates += [r[:2] for r in res_model_res_id(cr)]
-
-    for model, column in updates:
-        table = table_of_model(cr, model)
-        query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column)
-        cr.execute(query, (new, old))
+    rename_res_model_reference(cr, old, new)
 
     # "model-comma" fields
     cr.execute(
@@ -2968,6 +2963,26 @@ def rename_model(cr, old, new, rename_table=True):
     )
 
 
+def merge_model(cr, source, target):
+    cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))
+    model_ids = dict(cr.fetchall())
+    mapping = {model_ids[source]: model_ids[target]}
+    ignores = ["ir.model", "ir.model.fields", "ir.model.constraint", "ir.model.relation"]
+    replace_record_references_batch(cr, mapping, "ir.model", replace_xmlid=False, ignores=ignores)
+    rename_res_model_reference(cr, source, target, ignores=ignores)
+    remove_model(cr, source)
+
+
+def rename_res_model_reference(cr, old, new, ignores=()):
+    updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
+    updates += [r[:2] for r in res_model_res_id(cr) if r[0] not in ignores]
+
+    for model, column in updates:
+        table = table_of_model(cr, model)
+        query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column)
+        cr.execute(query, (new, old))
+
+
 def remove_mixin_from_model(cr, model, mixin, keep=()):
     assert env(cr)[mixin]._abstract
     cr.execute(
@@ -3007,7 +3022,7 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
     return replace_record_references_batch(cr, {old[1]: new[1]}, old[0], new[0], replace_xmlid)
 
 
-def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, replace_xmlid=True):
+def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, replace_xmlid=True, ignores=()):
     assert id_mapping
     assert all(isinstance(v, int) and isinstance(k, int) for k, v in id_mapping.items())
 
@@ -3017,6 +3032,9 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     old = tuple(id_mapping.keys())
     new = tuple(id_mapping.values())
     jmap = json.dumps(id_mapping)
+    ignores = [table_of_model(cr, ignore) for ignore in ignores]
+    if not replace_xmlid:
+        ignores.append("ir_model_data")
 
     def genmap(fmt_k, fmt_v=None):
         # generate map using given format
@@ -3031,6 +3049,8 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         column_read, cast_write = _ir_values_value(cr)
 
         for table, fk, _, _ in get_fk(cr, table_of_model(cr, model_src)):
+            if table in ignores:
+                continue
             query = """
                 UPDATE {table} t
                    SET {fk} = ('{jmap}'::json->>{fk}::varchar)::int4
@@ -3091,7 +3111,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
 
     # indirect references
     for ir in indirect_references(cr, bound_only=True):
-        if ir.table == "ir_model_data" and not replace_xmlid:
+        if ir.table in ignores:
             continue
         upd = ""
         if ir.res_model:
@@ -3118,7 +3138,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype='reference'")
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
-        if column_exists(cr, table, column):
+        if table not in ignores and column_exists(cr, table, column):
             cr.execute(
                 """
                     UPDATE "{table}"
