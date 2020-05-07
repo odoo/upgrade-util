@@ -20,6 +20,7 @@ from itertools import chain, islice
 from functools import reduce
 from operator import itemgetter
 from textwrap import dedent
+
 try:
     from unittest.mock import patch
 except ImportError:
@@ -2434,8 +2435,8 @@ def custom_module_field_as_manual(env):
     # 2.1 Convert fields not in the registry of models already in the registry.
     # In the past, some models added the reserved word `env` as field (e.g. `payment.acquirer`)
     # if the field was not correctly removed from the database during past upgrades, the field remains in the database.
-    reserved_words = ['env']
-    ignores = {'ir.actions.server': ['condition']}
+    reserved_words = ["env"]
+    ignores = {"ir.actions.server": ["condition"]}
     for model in models:
         model_fields = tuple(list(env.registry[model]._fields) + reserved_words + ignores.get(model, []))
         env.cr.execute(
