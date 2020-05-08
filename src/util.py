@@ -2644,13 +2644,13 @@ def generate_indirect_reference_cleaning_queries(cr, ir):
     for (model,) in cr.fetchall():
         res_table = table_of_model(cr, model)
         if table_exists(cr, res_table):
-            cond = "NOT EXISTS (SELECT 1 FROM {res_table} r WHERE r.id = t.{ir.res_id})".format_map(locals())
+            cond = "NOT EXISTS (SELECT 1 FROM {res_table} r WHERE r.id = t.{ir.res_id})".format(**locals())
         else:
             cond = "true"
 
         model_filter = ir.model_filter()
         yield cr.mogrify(
-            "DELETE FROM {ir.table} t WHERE {model_filter} AND {cond}".format_map(locals()), [model],
+            "DELETE FROM {ir.table} t WHERE {model_filter} AND {cond}".format(**locals()), [model],
         ).decode()
 
 
