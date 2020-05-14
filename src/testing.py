@@ -70,16 +70,17 @@ class UpgradeCommon(BaseCase):
                 self._data_table_cr._cnx.commit()
             UpgradeCommon.__initialized = True
 
-    def setUp(self):
-        super().setUp()
+    def _setup_registry(self):
         self.registry = odoo.registry(get_db_name())
         self._data_table_cr = (
             self.registry.cursor()
         )  # use to commit in upgrade_test_data, dont use it for anything else
         self.addCleanup(self._data_table_cr.close)
+
+    def setUp(self):
+        super().setUp()
+        self._setup_registry()
         self.cr = self.registry.cursor()
-        self.registry.enter_test_mode(self.cr)
-        self.addCleanup(self.registry.leave_test_mode)
         self.addCleanup(self.cr.close)
         self.env = api.Environment(self.cr, odoo.SUPERUSER_ID, {})
 
@@ -229,6 +230,13 @@ class IntegrityCase(UpgradeCommon, IntegrityMetaCase("DummyCase", (object,), {})
 
     def check(self, value):
         self.assertEqual(value, self.convert_check(self.invariant()), self.message)
+
+    def _setup_registry(self):
+        super(IntegrityCase, self)._setup_registry()
+        cr = self.registry.cursor()
+        self.addCleanup(cr.close)
+        self.registry.enter_test_mode(cr)
+        self.addCleanup(self.registry.leave_test_mode)
 
     def setUp(self):
         super(IntegrityCase, self).setUp()
