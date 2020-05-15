@@ -26,6 +26,8 @@ try:
 except ImportError:
     from mock import patch
 
+from . import inherit
+
 import markdown
 import psycopg2
 
@@ -461,6 +463,8 @@ def model_of_table(cr, table):
         ir_config_parameter  ir.config_parameter
 
         documents_request_wizard documents.request_wizard
+
+        stock_package_level stock.package_level
 
         survey_user_input survey.user_input
         survey_user_input_line survey.user_input_line
@@ -2023,7 +2027,25 @@ def drop_depending_views(cr, table, column):
         cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
 
 
-def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
+def _for_each_inherit(cr, model, skip):
+    if skip == "*":
+        return
+    base_version = ENVIRON["__base_version"]  # filled by `base/0.0.0/pre-base_version.py` (and symlinks)
+    for inh in inherit.inheritance_data.get(model, []):
+        if inh.model in skip:
+            continue
+        if inh.born <= base_version:
+            if inh.dead is None or base_version < inh.dead:
+                yield inh.model
+
+
+def _validate_model(model):
+    if "_" in model and "." not in model:
+        raise SleepyDeveloperError("`{}` seems to be a table name instead of model name".format(model))
+
+
+def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
+    _validate_model(model)
     if fieldname == "id":
         # called by `remove_module`. May happen when a model defined in a removed module was
         # overwritten by another module in previous version.
@@ -2130,8 +2152,13 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True):
     if drop_column and table_exists(cr, table) and column_exists(cr, table, fieldname):
         remove_column(cr, table, fieldname, cascade=cascade)
 
+    # remove field on inherits
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        remove_field(cr, inh_model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
 
-def move_field_to_module(cr, model, fieldname, old_module, new_module):
+
+def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inherit=()):
+    _validate_model(model)
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
     try:
         with savepoint(cr):
@@ -2150,9 +2177,13 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module):
             "DELETE FROM ir_model_data WHERE model = 'ir.model.fields' AND name = %s AND module = %s",
             [name, old_module],
         )
+    # move field on inherits
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        move_field_to_module(cr, inh_model, fieldname, old_module, new_module, skip_inherit=skip_inherit)
 
 
-def rename_field(cr, model, old, new, update_references=True):
+def rename_field(cr, model, old, new, update_references=True, skip_inherit=()):
+    _validate_model(model)
     rf = ENVIRON["__renamed_fields"].get(model)
     if rf and old in rf:
         rf.discard(old)
@@ -2226,7 +2257,11 @@ def rename_field(cr, model, old, new, update_references=True):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
     if update_references:
-        update_field_references(cr, old, new, only_models=(model,))
+        update_field_references(cr, old, new, only_models=(model,), skip_inherit=skip_inherit)
+
+    # rename field on inherits
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        rename_field(cr, inh_model, old, new, update_references=update_references, skip_inherit=skip_inherit)
 
 
 def convert_field_to_property(
@@ -2238,6 +2273,9 @@ def convert_field_to_property(
             The `company_field` can be an sql expression.
                 You may use `t` to refer the model's table.
     """
+    _validate_model(model)
+    if target_model:
+        _validate_model(target_model)
     type2field = {
         "char": "value_text",
         "float": "value_float",
@@ -2345,6 +2383,7 @@ def convert_field_to_property(
 
 
 def convert_binary_field_to_attachment(cr, model, field, encoded=True):
+    _validate_model(model)
     table = table_of_model(cr, model)
     if not column_exists(cr, table, field):
         return
@@ -2380,6 +2419,7 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True):
 
 
 def is_field_anonymized(cr, model, field):
+    _validate_model(model)
     if not module_installed(cr, "anonymization"):
         return False
     cr.execute(
@@ -2396,6 +2436,7 @@ def is_field_anonymized(cr, model, field):
 
 
 def register_unanonymization_query(cr, model, field, query, query_type="sql", sequence=10):
+    _validate_model(model)
     cr.execute(
         """
             INSERT INTO ir_model_fields_anonymization_migration_fix(
@@ -2735,6 +2776,7 @@ def _rm_refs(cr, model, ids=None):
 
 
 def remove_model(cr, model, drop_table=True):
+    _validate_model(model)
     model_underscore = model.replace(".", "_")
 
     # remove references
@@ -2817,6 +2859,7 @@ def move_model(cr, model, from_module, to_module, move_data=False):
         move model `model` from `from_module` to `to_module`.
         if `to_module` is not installed, delete the model.
     """
+    _validate_model(model)
     if not module_installed(cr, to_module):
         delete_model(cr, model)
         return
@@ -2861,6 +2904,8 @@ def move_model(cr, model, from_module, to_module, move_data=False):
 
 
 def rename_model(cr, old, new, rename_table=True):
+    _validate_model(old)
+    _validate_model(new)
     if old in ENVIRON["__renamed_fields"]:
         ENVIRON["__renamed_fields"][new] = ENVIRON["__renamed_fields"].pop(old)
     if rename_table:
@@ -3000,6 +3045,8 @@ def rename_model(cr, old, new, rename_table=True):
 
 
 def merge_model(cr, source, target):
+    _validate_model(source)
+    _validate_model(target)
     cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))
     model_ids = dict(cr.fetchall())
     mapping = {model_ids[source]: model_ids[target]}
@@ -3010,6 +3057,8 @@ def merge_model(cr, source, target):
 
 
 def rename_res_model_reference(cr, old, new, ignores=()):
+    _validate_model(old)
+    _validate_model(new)
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [r[:2] for r in res_model_res_id(cr) if r[0] not in ignores]
 
@@ -3019,8 +3068,9 @@ def rename_res_model_reference(cr, old, new, ignores=()):
         cr.execute(query, (new, old))
 
 
-def remove_mixin_from_model(cr, model, mixin, keep=()):
-    assert env(cr)[mixin]._abstract
+def remove_inherit_from_model(cr, model, inherit, keep=()):
+    _validate_model(model)
+    _validate_model(inherit)
     cr.execute(
         """
         SELECT name, ttype, relation, store
@@ -3032,14 +3082,15 @@ def remove_mixin_from_model(cr, model, mixin, keep=()):
                             '__last_update', 'display_name')
            AND name != ALL(%s)
     """,
-        [mixin, list(keep)],
+        [inherit, list(keep)],
     )
     for field, ftype, relation, store in cr.fetchall():
         if ftype.endswith("2many") and store:
             # for mixin, x2many are filtered by their model.
+            # for "classic" inheritance, the caller is responsible to drop the underlying m2m table
+            # (or keeping the field)
             table = table_of_model(cr, relation)
             irs = [ir for ir in indirect_references(cr) if ir.table == table]
-            assert irs  # something goes wrong...
             for ir in irs:
                 query = 'DELETE FROM "{}" WHERE {}'.format(ir.table, ir.model_filter())
                 cr.execute(query, [model])
@@ -3062,8 +3113,11 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     assert id_mapping
     assert all(isinstance(v, int) and isinstance(k, int) for k, v in id_mapping.items())
 
+    _validate_model(model_src)
     if model_dst is None:
         model_dst = model_src
+    else:
+        _validate_model(model_dst)
 
     old = tuple(id_mapping.keys())
     new = tuple(id_mapping.values())
@@ -3187,7 +3241,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             )
 
 
-def update_field_references(cr, old, new, only_models=None):
+def update_field_references(cr, old, new, only_models=None, skip_inherit=()):
     """
         Replace all references to field `old` to `new` in:
             - ir_filters
@@ -3197,6 +3251,10 @@ def update_field_references(cr, old, new, only_models=None):
             - mail_mass_mailing
             - mail_alias
     """
+    if only_models:
+        for model in only_models:
+            _validate_model(model)
+
     p = {
         "old": r"\y%s\y" % (old,),
         "new": new,
@@ -3332,6 +3390,13 @@ def update_field_references(cr, old, new, only_models=None):
         q += "a.alias_defaults ~ %(old)s"
         cr.execute(q, p)
 
+    if only_models:
+        inherited_models = tuple(
+            inh_model for model in only_models for inh_model in _for_each_inherit(cr, model, skip_inherit)
+        )
+        if inherited_models:
+            update_field_references(cr, old, new, only_models=inherited_models, skip_inherit=skip_inherit)
+
 
 def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=None):
     """
@@ -3443,6 +3508,7 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
 def check_company_fields(
     cr, model_name, field_name, logger=_logger, model_company_field="company_id", comodel_company_field="company_id"
 ):
+    _validate_model(model_name)
     cr.execute(
         """
             SELECT *
