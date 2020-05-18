@@ -146,7 +146,9 @@ def splitlines(s):
         Skip empty lines
         Remove comments (starts with `#`).
     """
-    return (sl for l in s.splitlines() for sl in [l.split("#", 1)[0].strip()] if sl)
+    return (
+        stripped_line for line in s.splitlines() for stripped_line in [line.split("#", 1)[0].strip()] if stripped_line
+    )
 
 
 def expand_braces(s):
@@ -399,8 +401,8 @@ IMD_FIELD_PATTERN = "field_%s__%s" if version_gte("saas~11.2") else "field_%s_%s
 
 def table_of_model(cr, model):
     exceptions = dict(
-        l.split()
-        for l in splitlines(
+        line.split()
+        for line in splitlines(
             """
         ir.actions.actions          ir_actions
         ir.actions.act_url          ir_act_url
@@ -440,8 +442,8 @@ def table_of_model(cr, model):
 
 def model_of_table(cr, table):
     exceptions = dict(
-        l.split()
-        for l in splitlines(
+        line.split()
+        for line in splitlines(
             """
         # can also be act_window_close, but there are chances it wont be usefull for anyone...
         ir_actions         ir.actions.actions
@@ -4005,10 +4007,10 @@ class SelfPrint(object):
         return SelfPrint("%r // %r" % (other, self))
 
     def __mod__(self, other):
-        return SelfPrint("%r % %r" % (self, other))
+        return SelfPrint("%r %% %r" % (self, other))
 
     def __rmod__(self, other):
-        return SelfPrint("%r % %r" % (other, self))
+        return SelfPrint("%r %% %r" % (other, self))
 
     def __repr__(self):
         return self.__name
