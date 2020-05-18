@@ -12,7 +12,7 @@ repos:
           - flake8-logging-format
           - flake8-implicit-str-concat
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.0.0
+    rev: v3.0.1
     hooks:
     - id: check-yaml
     - id: end-of-file-fixer
