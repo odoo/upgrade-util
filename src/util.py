@@ -2042,7 +2042,8 @@ def _for_each_inherit(cr, model, skip):
 
 
 def _validate_model(model):
-    if "_" in model and "." not in model and not model.startswith("x_"):
+    exceptions = ["website_pricelist"]
+    if "_" in model and "." not in model and not model.startswith("x_") and model not in exceptions:
         raise SleepyDeveloperError("`{}` seems to be a table name instead of model name".format(model))
 
 
