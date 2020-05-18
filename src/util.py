@@ -307,15 +307,42 @@ else:
 def explode_query(cr, query, num_buckets=8, prefix=""):
     """
         Explode a query to multiple queries that can be executed in parallel
+
+        Use modulo stategy to separate queries in buckets
     """
     if "{parallel_filter}" not in query:
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
 
+    num_buckets = int(num_buckets)
+    if num_buckets < 1:
+        raise ValueError("num_buckets should be greater than zero")
     parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
     return [
         cr.mogrify(query.format(parallel_filter=parallel_filter), [num_buckets, index]).decode()
         for index in range(num_buckets)
+    ]
+
+
+def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
+    """
+        Explode a query to multiple queries that can be executed in parallel
+
+        Use between stategy to separate queries in buckets
+    """
+    if "{parallel_filter}" not in query:
+        sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
+        query += sep_kw + "{parallel_filter}"
+
+    cr.execute("SELECT min(id), max(id) FROM {}".format(table))
+    min_id, max_id = cr.fetchone()
+    if min_id is None:
+        return []  # empty table
+
+    parallel_filter = "{prefix}id BETWEEN %s AND %s".format(prefix=prefix)
+    return [
+        cr.mogrify(query.format(parallel_filter=parallel_filter), [index, index + bucket_size - 1]).decode()
+        for index in range(min_id, max_id, bucket_size)
     ]
 
 
