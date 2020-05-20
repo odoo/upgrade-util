@@ -13,7 +13,8 @@
         <t t-set="message_type" t-value="view_message_types[category]"/>
         <div t-if="messages[category]">
           <t t-esc="message_type[0]"/>
-          <t t-foreach="messages[category]" t-as="view">
+          <t t-foreach="messages[category]" t-as="message">
+            <t t-set="view" t-value="message[0]"/>
             <li>
               <t t-if="view.get('copy_id')">
                 <t t-esc="message_type[1] % view"/>
@@ -31,7 +32,7 @@
       </t>
       <t t-else="">
         <t t-foreach="messages[category]" t-as="message">
-          <li><t t-esc="message" /></li>
+          <li><t t-if="message[1]" t-raw="message[0]" /><t t-else="" t-esc="message[0]" /></li>
         </t>
       </t>
     </ul>

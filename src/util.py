@@ -108,11 +108,15 @@ except NameError:
 migration_reports = {}
 
 
-def add_to_migration_reports(message, category=None):
-    if not category:
-        category = "Other"
+def add_to_migration_reports(message, category="Other", format="text"):
+    assert format in {"text", "html", "md", "rst"}
+    if format == "md":
+        message = md2html(dedent(message))
+    elif format == "rst":
+        message = rst2html(message)
+    raw = format != "text"
     migration_reports[category] = migration_reports.get(category, [])
-    migration_reports[category].append(message)
+    migration_reports[category].append((message, raw))
 
 
 class MigrationError(Exception):
