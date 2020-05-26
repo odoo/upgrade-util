@@ -2500,7 +2500,7 @@ def custom_module_field_as_manual(env):
     # In the past, some models added the reserved word `env` as field (e.g. `payment.acquirer`)
     # if the field was not correctly removed from the database during past upgrades, the field remains in the database.
     reserved_words = ["env"]
-    ignores = {"ir.actions.server": ["condition"]}
+    ignores = {"ir.actions.server": ["condition"], "ir.ui.view": ["page"]}
     for model in models:
         model_fields = tuple(list(env.registry[model]._fields) + reserved_words + ignores.get(model, []))
         env.cr.execute(
