@@ -2252,6 +2252,28 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         remove_field(cr, inh_model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
 
 
+def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
+    """
+        Due to a bug of the ORM [1], mixins doesn't create/register xmlids for fields created in children models
+        Thus, when a field is no more defined in a child model, their xmlids should be removed explicitly to
+        avoid the fields to be considered as missing and being removed at the end of the upgrade.
+
+        [1] https://github.com/odoo/odoo/issues/49354
+    """
+    _validate_model(model)
+
+    cr.execute(
+        """
+            DELETE FROM ir_model_data
+                  WHERE model = 'ir.model.fields'
+                    AND res_id IN (SELECT id FROM ir_model_fields WHERE model=%s AND name=%s)
+        """,
+        [model, fieldname],
+    )
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        remove_field_metadata(cr, inh_model, fieldname, skip_inherit=skip_inherit)
+
+
 def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inherit=()):
     _validate_model(model)
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
