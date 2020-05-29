@@ -56,6 +56,7 @@ try:
     from odoo.tools import UnquoteEvalContext
     from odoo.tools.parse_version import parse_version
     from odoo.tools.safe_eval import safe_eval
+    from odoo.osv import expression
 except ImportError:
     from openerp.modules.module import get_module_path, load_information_from_description_file
     from openerp.sql_db import db_connect
@@ -66,6 +67,7 @@ except ImportError:
     from openerp.tools import UnquoteEvalContext
     from openerp.tools.parse_version import parse_version
     from openerp.tools.safe_eval import safe_eval
+    from openerp.osv import expression
 
 try:
     from odoo.api import Environment
@@ -1833,7 +1835,7 @@ def create_column(cr, table, column, definition, **kwargs):
         if default is None:
             cr.execute(create_query)
         else:
-            cr.execute(create_query + " DEFAULT %s", [default,])
+            cr.execute(create_query + " DEFAULT %s", [default])
             cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
         return True
 
@@ -2274,7 +2276,7 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
         move_field_to_module(cr, inh_model, fieldname, old_module, new_module, skip_inherit=skip_inherit)
 
 
-def rename_field(cr, model, old, new, update_references=True, skip_inherit=()):
+def rename_field(cr, model, old, new, update_references=True, domain_adapter=None, skip_inherit=()):
     _validate_model(model)
     rf = ENVIRON["__renamed_fields"].get(model)
     if rf and old in rf:
@@ -2349,7 +2351,8 @@ def rename_field(cr, model, old, new, update_references=True, skip_inherit=()):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
 
     if update_references:
-        update_field_references(cr, old, new, only_models=(model,), skip_inherit=skip_inherit)
+        # skip all inherit, they will be handled by the resursive call
+        update_field_references(cr, old, new, only_models=(model,), domain_adapter=domain_adapter, skip_inherit="*")
 
     # rename field on inherits
     for inh_model in _for_each_inherit(cr, model, skip_inherit):
@@ -3356,14 +3359,12 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             )
 
 
-def update_field_references(cr, old, new, only_models=None, skip_inherit=()):
+def update_field_references(cr, old, new, only_models=None, domain_adapter=None, skip_inherit=()):
     """
         Replace all references to field `old` to `new` in:
             - ir_filters
             - ir_exports_line
             - ir_act_server
-            - ir_rule
-            - mail_mass_mailing
             - mail_alias
     """
     if only_models:
@@ -3384,7 +3385,6 @@ def update_field_references(cr, old, new, only_models=None, skip_inherit=()):
     q = """
         UPDATE ir_filters
            SET {col_prefix} sort = regexp_replace(sort, %(old)s, %(new)s, 'g'),
-               domain = regexp_replace(domain, %(old)s, %(new)s, 'g'),
                context = regexp_replace(regexp_replace(context,
                                                        %(old)s, %(new)s, 'g'),
                                                        %(def_old)s, %(def_new)s, 'g')
@@ -3396,8 +3396,7 @@ def update_field_references(cr, old, new, only_models=None, skip_inherit=()):
         q += " WHERE "
     q += """
         (
-            domain ~ %(old)s
-            OR context ~ %(old)s
+            context ~ %(old)s
             OR context ~ %(def_old)s
             {col_prefix} OR sort ~ %(old)s
         )
@@ -3448,45 +3447,6 @@ def update_field_references(cr, old, new, only_models=None, skip_inherit=()):
     """
     cr.execute(q.format(col_prefix=col_prefix), p)
 
-    # ir.rule
-    q = """
-        UPDATE ir_rule r
-           SET domain_force = regexp_replace(domain_force, %(old)s, %(new)s, 'g')
-    """
-    if only_models:
-        q += """
-          FROM ir_model m
-         WHERE m.id = r.model_id
-           AND m.model IN %(models)s
-           AND
-        """
-    else:
-        q += "WHERE "
-    q += "r.domain_force ~ %(old)s"
-    cr.execute(q, p)
-
-    # mass mailing
-    ml_table = "mailing_mailing" if table_exists(cr, "mailing_mailing") else "mail_mass_mailing"
-    if column_exists(cr, ml_table, "mailing_domain"):
-        q = """
-            UPDATE {} u
-               SET mailing_domain = regexp_replace(u.mailing_domain, %(old)s, %(new)s, 'g')
-        """
-        if only_models:
-            if column_exists(cr, ml_table, "mailing_model_id"):
-                q += """
-                  FROM ir_model m
-                 WHERE m.id = u.mailing_model_id
-                   AND m.model IN %(models)s
-                   AND
-                """
-            else:
-                q += "WHERE u.mailing_model IN %(models)s AND "
-        else:
-            q += "WHERE "
-        q += "u.mailing_domain ~ %(old)s"
-        cr.execute(q.format(ml_table), p)
-
     # mail.alias
     if column_exists(cr, "mail_alias", "alias_defaults"):
         q = """
@@ -3506,11 +3466,182 @@ def update_field_references(cr, old, new, only_models=None, skip_inherit=()):
         cr.execute(q, p)
 
     if only_models:
+        for model in only_models:
+            # skip all inherit, they will be handled by the resursive call
+            adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*")
+
         inherited_models = tuple(
             inh_model for model in only_models for inh_model in _for_each_inherit(cr, model, skip_inherit)
         )
         if inherited_models:
-            update_field_references(cr, old, new, only_models=inherited_models, skip_inherit=skip_inherit)
+            update_field_references(
+                cr, old, new, only_models=inherited_models, domain_adapter=domain_adapter, skip_inherit=skip_inherit
+            )
+
+
+DomainField = collections.namedtuple("DomainField", "table domain_column model_select")
+
+
+def _get_domain_fields(cr):
+    # haaa, if only we had a `fields.Domain`, we would just have to get all the domains from `ir_model_fields`
+    # Meanwile, we have to enumerate them explicitly
+    # false friends: the `domain` fields on `website` and `amazon.marketplace` are actually domain names.
+    # NOTE: domains on transient models have been ignored
+    mmm = []
+    if column_exists(cr, "mail_mass_mailing", "mailing_model_id"):
+        # >= saas~18
+        mmm = [
+            DomainField(
+                "mail_mass_mailing", "mailing_domain", "(SELECT model FROM ir_model m WHERE m.id = t.mailing_model_id)"
+            )
+        ]
+    elif column_exists(cr, "mail_mass_mailing", "mailing_model"):
+        # >= saas~4
+        mmm = [DomainField("mail_mass_mailing", "mailing_domain", "mailing_model")]
+    else:
+        mail_template = "mail_template" if table_exists(cr, "mail_template") else "email_template"
+        mmm = [
+            DomainField(
+                "mail_mass_mailing",
+                "mailing_domain",
+                "(SELECT model FROM {} m WHERE m.id = t.template_id)".format(mail_template),
+            )
+        ]
+
+    documents_domains_target = "'documents.document'" if table_exists(cr, "documents_document") else "'ir.attachment'"
+
+    result = mmm + [
+        DomainField("ir_model_fields", "domain", "model"),
+        DomainField("ir_act_window", "domain", "res_model"),
+        DomainField("ir_filters", "domain", "model_id"),  # model_id is a varchar
+        DomainField("ir_rule", "domain_force", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
+        DomainField("document_directory", "domain", "(SELECT model FROM ir_model m WHERE m.id = t.ressource_type_id)"),
+        DomainField(
+            "mailing_mailing", "mailing_domain", "(SELECT model FROM ir_model m WHERE m.id = t.mailing_model_id)"
+        ),
+        DomainField("base_action_rule", "filter_domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
+        DomainField("base_action_rule", "filter_pre_domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
+        DomainField(
+            "base_automation", "filter_domain", "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)"
+        ),
+        DomainField(
+            "base_automation",
+            "filter_pre_domain",
+            "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)",
+        ),
+        DomainField("gamification_goal_definition", "domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
+        DomainField("marketing_campaign", "domain", "model_name"),
+        DomainField(
+            "marketing_activity", "domain", "(SELECT model_name FROM marketing_campaign WHERE id = t.campaign_id)"
+        ),
+        DomainField(
+            "marketing_activity",
+            "activity_domain",
+            "(SELECT model_name FROM marketing_campaign WHERE id = t.campaign_id)",
+        ),
+        DomainField("data_merge_model", "domain", "res_model_name"),
+        # static target model
+        DomainField("account_financial_html_report_line", "domain", "'account.move.line'"),
+        DomainField("gamification_challenge", "user_domain", "'res.users'"),
+        DomainField("pos_cache", "product_domain", "'product.product'"),
+        DomainField("sale_coupon_rule", "rule_partners_domain", "'res.partner'"),
+        DomainField("sale_coupon_rule", "rule_products_domain", "'product.product'"),
+        DomainField("sale_subscription_template", "good_health_domain", "'sale.subscription'"),
+        DomainField("sale_subscription_template", "bad_health_domain", "'sale.subscription'"),
+        DomainField("website_crm_score", "domain", "'crm.lead'"),
+        DomainField("team_user", "team_user_domain", "'crm.lead'"),
+        DomainField("crm_team", "score_team_domain", "'crm.lead'"),
+        DomainField("social_post", "visitor_domain", "'website.visitor'"),
+        DomainField("documents_share", "domain", documents_domains_target),
+        DomainField("documents_workflow_rule", "domain", documents_domains_target),
+        DomainField("loyalty_rule", "rule_domain", "'product.product'"),
+    ]
+
+    for df in result:
+        if column_exists(cr, df.table, df.domain_column):
+            yield df
+
+
+def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
+    """Replace {old} by {new} in all domains for model {model} using {adapter} callback"""
+    _validate_model(model)
+    target_model = model
+
+    evaluation_context = {x: SelfPrint(x) for x in "uid user time website active_id company_ids".split()}
+
+    def valid_path_to(cr, path, from_, to):
+        model = from_
+        while path:
+            field = path.pop(0)
+            cr.execute(
+                """
+                SELECT relation
+                  FROM ir_model_fields
+                 WHERE model = %s
+                   AND name = %s
+            """,
+                [model, field],
+            )
+            if not cr.rowcount:
+                # unknown field. Maybe an old domain. Cannot validate it.
+                return False
+            [model] = cr.fetchone()
+
+        return model == to
+
+    def adapt(cr, model, domain):
+        try:
+            eval_dom = safe_eval(domain, evaluation_context)
+        except Exception as e:
+            oops = odoo.tools.ustr(e)
+            _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
+            return None
+
+        final_dom = []
+        changed = False
+        for element in eval_dom:
+            if not expression.is_leaf(element):
+                final_dom.append(element)
+                continue
+
+            left, operator, right = expression.normalize_leaf(element)
+
+            path = left.split(".")
+            for idx in range(len(path)):
+                idx1 = idx + 1
+                if path[-idx1] == old and valid_path_to(cr, path[:-idx1], model, target_model):
+                    if idx == 0 and adapter:
+                        operator, right = adapter(operator, right)
+                    path[-idx1] = new
+                    changed = True
+
+            left = ".".join(path)
+            final_dom.append((left, operator, right))
+
+        if not changed:
+            return None
+
+        _logger.debug("%s: %r -> %r", model, domain, final_dom)
+        return str(final_dom)
+
+    for df in _get_domain_fields(cr):
+        cr.execute(
+            """
+            SELECT id, {df.model_select}, {df.domain_column}
+              FROM {df.table} t
+             WHERE {df.domain_column} ~ %s
+        """.format(
+                df=df
+            ),
+            [r"\y{}\y".format(old)],
+        )
+        for id_, model, domain in cr.fetchall():
+            domain = adapt(cr, model, domain)
+            if domain:
+                cr.execute("UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df), [domain, id_])
+
+    for inh_model in _for_each_inherit(cr, target_model, skip_inherit):
+        adapt_domains(cr, inh_model, old, new, adapter, skip_inherit=skip_inherit)
 
 
 def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=None):
