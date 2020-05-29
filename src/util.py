@@ -2075,7 +2075,11 @@ def drop_depending_views(cr, table, column):
 def _for_each_inherit(cr, model, skip):
     if skip == "*":
         return
-    base_version = ENVIRON["__base_version"]  # filled by `base/0.0.0/pre-base_version.py` (and symlinks)
+    # base_version is normaly computed in `base/0.0.0/pre-base_version.py` (and symlinks)
+    # However, if theses scripts are used to upgrade custom modules afterward (like the P.S. do),
+    # as the `base` module not being updated, the *base_version* MUST be set as an environment variable.
+    # Actually, the version that would be read from the database would be wrong.
+    base_version = ENVIRON.get("__base_version") or parse_version(os.environ["ODOO_BASE_VERSION"])
     for inh in inherit.inheritance_data.get(model, []):
         if inh.model in skip:
             continue
