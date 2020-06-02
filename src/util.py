@@ -97,7 +97,8 @@ ENVIRON = {
     "__renamed_fields": collections.defaultdict(set),
 }
 
-NEARLYWARN = 25  # (between and info, appear on runbot build page)
+NEARLYWARN = 25  # between info and warning; appear on runbot build page
+odoo.netsvc.LEVEL_COLOR_MAPPING[NEARLYWARN] = (odoo.netsvc.YELLOW, odoo.netsvc.DEFAULT)
 
 # python3 shims
 try:
