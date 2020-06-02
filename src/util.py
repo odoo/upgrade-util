@@ -2609,11 +2609,26 @@ def custom_module_field_as_manual(env):
     #      and there is an assert raising in `models.py`: `assert cls._rec_name in cls._fields`.
     rec_names = {key: model._rec_name for key, model in env.registry.models.items()}
 
-    # 3.4 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
+    # 3.4 patches
+    # 3.4.1 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
     # models that have been converted to manual have a too long name, and we dont have the `_table` info.
     with patch("odoo.models.check_pg_name", lambda name: None):
-        # 4. Reload the registry with the models and fields converted to manual.
-        env.registry.setup_models(env.cr)
+        # 3.4.2: `display_name` is added automatically, as a base field, and depends on the field `name`
+        # Sometimes, a custom model has no `name` field or it couldn't be loaded (e.g. an invalid `related`)
+        # Mark it as manual so its skipped on loading fail.
+        from odoo.models import BaseModel
+
+        origin_add_magic_fields = BaseModel._add_magic_fields
+
+        def _add_magic_fields(self):
+            res = origin_add_magic_fields(self)
+            if self._custom and "display_name" in self._fields:
+                self._fields["display_name"].manual = True
+            return res
+
+        with patch.object(BaseModel, "_add_magic_fields", _add_magic_fields):
+            # 4. Reload the registry with the models and fields converted to manual.
+            env.registry.setup_models(env.cr)
 
     # 5. Do the operation.
     yield
