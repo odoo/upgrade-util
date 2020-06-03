@@ -3800,13 +3800,13 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         records.invalidate_cache()
 
 
-def check_company_fields(
+def check_company_consistency(
     cr, model_name, field_name, logger=_logger, model_company_field="company_id", comodel_company_field="company_id"
 ):
     _validate_model(model_name)
     cr.execute(
         """
-            SELECT *
+            SELECT ttype, relation, relation_table, column1, column2
               FROM ir_model_fields
              WHERE name = %s
                AND model = %s
@@ -3822,94 +3822,66 @@ def check_company_fields(
         _logger.warning("Field %s not found on model %s.", field_name, model_name)
         return
 
-    table_model_1 = table_of_model(cr, model_name)
-    table_model_2 = table_of_model(cr, field_values["relation"])
-
-    debug = _logger.isEnabledFor(logging.DEBUG)
-    if debug:
-        select = "count(record1.id)"
-    else:
-        select = """
-            record1.id       AS id_1,
-            record1.{field1} AS comp_1,
-            record2.id       AS id_2,
-            record2.{field2} AS comp_2
-        """.format(
-            field1=model_company_field, field2=comodel_company_field
-        )
+    table = table_of_model(cr, model_name)
+    comodel = field_values["relation"]
+    cotable = table_of_model(cr, comodel)
 
     if field_values["ttype"] == "many2one":
-        cr.execute(
-            """
-            SELECT %(select)s
-            FROM %(table_model)s record1
-            JOIN %(table_relation)s record2 ON record2.id = record1.%(cofield_name)s
-            WHERE record1.%(comp_field_1)s IS NOT NULL
-            AND record2.%(comp_field_2)s IS NOT NULL
-            AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
-        """
-            % {
-                "select": select,
-                "comp_field_1": model_company_field,
-                "comp_field_2": comodel_company_field,
-                "table_model": table_model_1,
-                "table_relation": table_model_2,
-                "cofield_name": field_values["name"],
-            }
+        query = """
+            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}
+              FROM {table} a
+              JOIN {cotable} b ON b.id = a.{field_name}
+             WHERE a.{model_company_field} IS NOT NULL
+               AND b.{comodel_company_field} IS NOT NULL
+               AND a.{model_company_field} != b.{comodel_company_field}
+        """.format(
+            **locals()
         )
-    else:  # if field_values['ttype'] == 'many2many'
-        cr.execute(
-            """
-            SELECT %(select)s
-            FROM %(table_rel)s rel
-            JOIN %(table_model)s record1 ON record1.id = rel.%(column1)s
-            JOIN %(table_relation)s record2 ON record2.id = rel.%(column2)s
-            WHERE record1.%(comp_field_1)s IS NOT NULL
-            AND record2.%(comp_field_2)s IS NOT NULL
-            AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
-        """
-            % {
-                "select": select,
-                "comp_field_1": comodel_company_field,
-                "comp_field_2": model_company_field,
-                "table_rel": field_values["relation_table"],
-                "table_model": table_model_1,
-                "table_relation": table_model_2,
-                "column1": field_values["column1"],
-                "column2": field_values["column2"],
-            }
+    else:  # many2many
+        m2m_relation = field_values["relation_table"]
+        f1, f2 = field_values["column1"], field_values["column2"]
+        query = """
+            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}
+              FROM {m2m_relation} m
+              JOIN {table} a ON a.id = m.{f1}
+              JOIN {cotable} b ON b.id = m.{f2}\
+             WHERE a.{model_company_field} IS NOT NULL
+               AND b.{comodel_company_field} IS NOT NULL
+               AND a.{model_company_field} != b.{comodel_company_field}
+        """.format(
+            **locals()
         )
 
-    if debug:
-        count = cr.fetchone()[0]
-        rows = []
-    else:
-        count = cr.rowcount
-        rows = cr.fetchall()
-    if count:
+    cr.execute(query)
+    if cr.rowcount:
         logger.warning(
-            "Company field %s.%s is not consistent with %s.%s for %d records (through %s relation %s)",
-            table_model_1,
+            "Company field %s/%s is not consistent with %s/%s for %d records (through %s relation %s)",
+            model_name,
             model_company_field,
-            table_model_2,
+            comodel,
             comodel_company_field,
-            count,
+            cr.rowcount,
             field_values["ttype"],
-            field_values["name"],
+            field_name,
         )
-    for res in rows:
-        logger.debug(
-            "Company fields are not consistent on models %s "
-            "(id=%s, company_id=%s) and %s (id=%s, company_id=%s) "
-            "through relation %s (%s)",
-            table_model_1,
-            res[0],
-            res[1],
-            table_model_2,
-            res[2],
-            res[3],
-            field_values["name"],
-            field_values["ttype"],
+
+        lis = "\n".join(
+            "<li> record #%s (company=%s) -&gt; record #%s (company=%s)</li>" % bad for bad in cr.fetchall()
+        )
+
+        add_to_migration_reports(
+            message="""\
+            <details>
+              <summary>Some inconsistencies have been found on field {model_name}/{field_name}</summary>
+              <ul>
+                {lis}
+              </ul>
+            </details>
+        """.format(
+                **locals()
+            ),
+            category="Multi-company inconsistencies",
+            format="html",
         )
 
 
