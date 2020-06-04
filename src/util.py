@@ -3082,15 +3082,23 @@ def rename_model(cr, old, new, rename_table=True):
     cr.execute(
         """
         WITH renames AS (
-            SELECT id, name, '{new}' || substring(name FROM '%#",%#"' FOR '#') as new
+            SELECT id, type, lang, res_id, src, '{new}' || substring(name FROM '%#",%#"' FOR '#') as new
               FROM ir_translation
              WHERE name LIKE '{old},%'
         )
         UPDATE ir_translation t
            SET name = r.new
           FROM renames r
-     LEFT JOIN ir_translation e ON (e.name = r.new)
-         WHERE t.name = r.name
+     LEFT JOIN ir_translation e ON (
+            e.type = r.type
+        AND e.lang = r.lang
+        AND e.name = r.new
+        AND CASE WHEN e.type = 'model' THEN e.res_id IS NOT DISTINCT FROM r.res_id
+                 WHEN e.type = 'selection' THEN e.src IS NOT DISTINCT FROM r.src
+                 ELSE e.res_id IS NOT DISTINCT FROM r.res_id AND e.src IS NOT DISTINCT FROM r.src
+             END
+     )
+         WHERE t.id = r.id
            AND e.id IS NULL
     """.format(
             new=new, old=old
