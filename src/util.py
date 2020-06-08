@@ -511,6 +511,11 @@ def model_of_table(cr, table):
         # Not a real model until saas~13
         {gte_saas13} mail_message_res_partner_needaction_rel mail.notification
 
+        data_merge_rule     data_merge.rule
+        data_merge_model    data_merge.model
+        data_merge_group    data_merge.group
+        data_merge_record   data_merge.record
+
     """.format(
                 action_report_model="ir.actions.report" if version_gte("10.saas~17") else "ir.actions.report.xml",
                 gte_saas13="" if version_gte("9.saas~13") else "#",
