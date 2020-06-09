@@ -3600,7 +3600,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
         final_dom = []
         changed = False
         for element in eval_dom:
-            if not expression.is_leaf(element):
+            if not expression.is_leaf(element) or tuple(element) in [expression.TRUE_LEAF, expression.FALSE_LEAF]:
                 final_dom.append(element)
                 continue
 
