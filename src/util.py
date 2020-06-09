@@ -3162,7 +3162,7 @@ def rename_model(cr, old, new, rename_table=True):
     )
 
 
-def merge_model(cr, source, target):
+def merge_model(cr, source, target, drop_table=True):
     _validate_model(source)
     _validate_model(target)
     cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))
@@ -3171,7 +3171,7 @@ def merge_model(cr, source, target):
     ignores = ["ir.model", "ir.model.fields", "ir.model.constraint", "ir.model.relation"]
     replace_record_references_batch(cr, mapping, "ir.model", replace_xmlid=False, ignores=ignores)
     rename_res_model_reference(cr, source, target, ignores=ignores)
-    remove_model(cr, source)
+    remove_model(cr, source, drop_table=drop_table)
 
 
 def rename_res_model_reference(cr, old, new, ignores=()):
