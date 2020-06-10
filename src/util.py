@@ -2646,18 +2646,35 @@ def custom_module_field_as_manual(env):
     )
     updated_many2one_fields = env.cr.fetchall()
 
-    # 3.3. models `_rec_name` are not reloaded correctly.
+    # 3.4. Custom model set as mail thread will try to load all the fields of the `mail.thread`,
+    #      even if the column in database as not been created yet because the -u on the custom module did not occur yet.
+    #      Fields of the mails threads are in the `ir_model_fields` table, so not need to automatically add them anyway
+    #      e.g. `message_main_attachment_id` is added between 12.0 and 13.0.
+    updated_mail_thread_ids = False
+    if column_exists(env.cr, "ir_model", "is_mail_thread"):
+        env.cr.execute(
+            """
+                UPDATE ir_model
+                   SET is_mail_thread = false
+                 WHERE state = 'manual'
+                   AND is_mail_thread
+             RETURNING id
+            """
+        )
+        updated_mail_thread_ids = [r[0] for r in env.cr.fetchall()]
+
+    # 3.4. models `_rec_name` are not reloaded correctly.
     #      If the model has no `_rec_name` and there is a manual field `name` or `x_name`,
     #      the `_rec_name` becomes this name field. But then, when we convert back the manual fields to base field,
     #      and we reload the registry, the `_rec_name` is not reset by the ORM,
     #      and there is an assert raising in `models.py`: `assert cls._rec_name in cls._fields`.
     rec_names = {key: model._rec_name for key, model in env.registry.models.items()}
 
-    # 3.4 patches
-    # 3.4.1 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
+    # 3.5 patches
+    # 3.5.1 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
     # models that have been converted to manual have a too long name, and we dont have the `_table` info.
     with patch("odoo.models.check_pg_name", lambda name: None):
-        # 3.4.2: `display_name` is added automatically, as a base field, and depends on the field `name`
+        # 3.5.2: `display_name` is added automatically, as a base field, and depends on the field `name`
         # Sometimes, a custom model has no `name` field or it couldn't be loaded (e.g. an invalid `related`)
         # Mark it as manual so its skipped on loading fail.
         from odoo.models import BaseModel
@@ -2686,6 +2703,8 @@ def custom_module_field_as_manual(env):
         env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
     for field_id, on_delete in updated_many2one_fields:
         env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", (on_delete, field_id,))
+    if updated_mail_thread_ids:
+        env.cr.execute("UPDATE ir_model SET is_mail_thread = true WHERE id IN %s", (tuple(updated_mail_thread_ids),))
     for model, rec_name in rec_names.items():
         env.registry[model]._rec_name = rec_name
 
