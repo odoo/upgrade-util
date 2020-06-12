@@ -1400,7 +1400,7 @@ def uninstall_module(cr, module):
     cr.execute("UPDATE ir_module_module SET state='uninstalled' WHERE name=%s", (module,))
 
 
-def uninstall_theme(cr, theme):
+def uninstall_theme(cr, theme, base_theme=None):
     """ Uninstalls a theme module (see uninstall_module) and removes it from the
         related websites.
         Beware that this utility function can only be called in post-* scripts.
@@ -1411,11 +1411,17 @@ def uninstall_theme(cr, theme):
         return
 
     env_ = env(cr)
-    websites = env_["website"].search([("theme_id", "=", theme_id)])
     IrModuleModule = env_["ir.module.module"]
-    for website in websites:
-        IrModuleModule._theme_remove(website)
-
+    if base_theme:
+        cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (base_theme,))
+        (website_theme_id,) = cr.fetchone() or [None]
+        theme_extension = IrModuleModule.browse(theme_id)
+        for website in env_["website"].search([('theme_id', '=', website_theme_id)]):
+            theme_extension._theme_unload(website)
+    else:
+        websites = env_["website"].search([('theme_id', '=', theme_id)])
+        for website in websites:
+            IrModuleModule._theme_remove(website)
     env_["base"].flush()
     uninstall_module(cr, theme)
 
@@ -1433,11 +1439,11 @@ def remove_module(cr, module):
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
 
 
-def remove_theme(cr, theme):
+def remove_theme(cr, theme, base_theme=None):
     """ See remove_module. Beware that removing a theme must be done in post-*
         scripts.
     """
-    uninstall_theme(cr, theme)
+    uninstall_theme(cr, theme, base_theme=base_theme)
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (theme,))
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (theme,))
 
