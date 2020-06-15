@@ -1406,6 +1406,7 @@ def uninstall_theme(cr, theme):
     for website in websites:
         IrModuleModule._theme_remove(website)
 
+    env_["base"].flush()
     uninstall_module(cr, theme)
 
 
@@ -3751,6 +3752,7 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
+    flush = getattr(Model, "flush", lambda: None)
     if ids is None:
         cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
         ids = tuple(map(itemgetter(0), cr.fetchall()))
@@ -3767,6 +3769,7 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
             else:
                 Model.env.add_to_compute(field, records)
         records.recompute()
+        flush()
         records.invalidate_cache()
 
 
@@ -4184,12 +4187,16 @@ def iter_browse(model, *args, **kw):
     if kw:
         raise TypeError("Unknow arguments: %s" % ", ".join(kw))
 
+    flush = getattr(model, "flush", lambda: None)
+
     def browse(ids):
+        flush()
         model.invalidate_cache(*cr_uid)
         args = cr_uid + (list(ids),)
         return model.browse(*args)
 
     def end():
+        flush()
         model.invalidate_cache(*cr_uid)
         if 0:
             yield
