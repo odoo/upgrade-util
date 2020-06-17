@@ -3077,7 +3077,12 @@ def rename_model(cr, old, new, rename_table=True):
             cr.execute("DELETE FROM ir_model_constraint WHERE name=%s", (const,))
             cr.execute('ALTER TABLE "{0}" DROP CONSTRAINT "{1}"'.format(new_table, const))
 
-    rename_res_model_reference(cr, old, new)
+    updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
+    updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]
+
+    for table, column in updates:
+        query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column)
+        cr.execute(query, (new, old))
 
     # "model-comma" fields
     cr.execute(
@@ -3187,22 +3192,16 @@ def merge_model(cr, source, target, drop_table=True):
     cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))
     model_ids = dict(cr.fetchall())
     mapping = {model_ids[source]: model_ids[target]}
-    ignores = ["ir.model", "ir.model.fields", "ir.model.constraint", "ir.model.relation"]
+    ignores = ["ir_model", "ir_model_fields", "ir_model_constraint", "ir_model_relation"]
     replace_record_references_batch(cr, mapping, "ir.model", replace_xmlid=False, ignores=ignores)
-    rename_res_model_reference(cr, source, target, ignores=ignores)
+
+    for ir in indirect_references(cr):
+        if ir.res_model and not ir.res_id and ir.table not in ignores:
+            # only update unbound references, other one should have been updated before
+            query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=ir.table, c=ir.res_model)
+            cr.execute(query, (target, source))
+
     remove_model(cr, source, drop_table=drop_table)
-
-
-def rename_res_model_reference(cr, old, new, ignores=()):
-    _validate_model(old)
-    _validate_model(new)
-    updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
-    updates += [r[:2] for r in res_model_res_id(cr) if r[0] not in ignores]
-
-    for model, column in updates:
-        table = table_of_model(cr, model)
-        query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column)
-        cr.execute(query, (new, old))
 
 
 def remove_inherit_from_model(cr, model, inherit, keep=()):
@@ -3256,12 +3255,13 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     else:
         _validate_model(model_dst)
 
+    ignores = [_validate_table(table) for table in ignores]
+    if not replace_xmlid:
+        ignores.append("ir_model_data")
+
     old = tuple(id_mapping.keys())
     new = tuple(id_mapping.values())
     jmap = json.dumps(id_mapping)
-    ignores = [table_of_model(cr, ignore) for ignore in ignores]
-    if not replace_xmlid:
-        ignores.append("ir_model_data")
 
     def genmap(fmt_k, fmt_v=None):
         # generate map using given format
