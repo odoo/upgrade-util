@@ -234,8 +234,8 @@ def savepoint(cr):
 @contextmanager
 def disable_triggers(cr, *tables):
     # NOTE only super user (at pg level) can disable all the triggers. noop if this is not the case.
-    if any("." in table for table in tables):
-        raise SleepyDeveloperError("table name cannot contains dot")
+    for table in tables:
+        _validate_table(table)
 
     cr.execute("SELECT usesuper FROM pg_user WHERE usename = CURRENT_USER")
     is_su = cr.fetchone()[0]
@@ -1790,8 +1790,7 @@ def column_exists(cr, table, column):
 
 
 def column_type(cr, table, column):
-    if "." in table:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table)
     cr.execute(
         """
             SELECT udt_name
@@ -1849,8 +1848,7 @@ def remove_column(cr, table, column, cascade=False):
 
 
 def table_exists(cr, table):
-    if "." in table:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table)
     cr.execute(
         """
             SELECT 1
@@ -1864,8 +1862,7 @@ def table_exists(cr, table):
 
 
 def view_exists(cr, view):
-    if "." in view:
-        raise SleepyDeveloperError("view name cannot contains dot")
+    _validate_table(view)
     cr.execute("SELECT 1 FROM information_schema.views WHERE table_name=%s", [view])
     return bool(cr.rowcount)
 
@@ -1878,8 +1875,7 @@ def get_fk(cr, table, quote_ident=True):
         Foreign key deletion action code:
             a = no action, r = restrict, c = cascade, n = set null, d = set default
     """
-    if "." in table:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table)
     funk = "quote_ident" if quote_ident else "concat"
     q = """SELECT {funk}(cl1.relname) as table,
                   {funk}(att1.attname) as column,
@@ -1939,8 +1935,7 @@ def get_index_on(cr, table, *columns):
         return an optional tuple (index_name, unique, pk)
         NOTE: column order is respected
     """
-    if "." in table:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table)
     if cr._cnx.server_version >= 90500:
         position = "array_position(x.indkey, x.unnest_indkey)"
     else:
@@ -1980,8 +1975,7 @@ def disabled_index_on(cr, table_name):
     with disabled_index_on(cr, 'my_big_table'):
         my_big_operation()
     """
-    if "." in table_name:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table_name)
     cr.execute(
         """
         UPDATE pg_index
@@ -2012,8 +2006,7 @@ def disabled_index_on(cr, table_name):
 
 def create_index(cr, name, table_name, *columns):
     # create index if table and columns exists and index don't already exists
-    if "." in table_name:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table_name)
     if (
         columns
         and all(column_exists(cr, table_name, c) for c in columns)
@@ -2032,6 +2025,7 @@ def create_index(cr, name, table_name, *columns):
 def temp_index(cr, table, *columns):
     # create a temporary index that will be removed at the end of the contextmanager
     assert columns
+    _validate_table(table)
     name = "_".join(("_upg", table) + columns + (hex(int(time.time() * 1000))[2:],))
     create_index(cr, name, table, *columns)
     try:
@@ -2042,8 +2036,7 @@ def temp_index(cr, table, *columns):
 
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
-    if "." in table:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table)
     q = """
         SELECT distinct quote_ident(dependee.relname)
         FROM pg_depend
@@ -2066,8 +2059,7 @@ def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
         can also returns the list multiple times with different prefixes.
         This can be used to duplicating records (INSERT SELECT from the same table)
     """
-    if "." in table:
-        raise SleepyDeveloperError("table name cannot contains dot")
+    _validate_table(table)
     select = "quote_ident(column_name)"
     params = []
     if extra_prefixes:
@@ -2137,6 +2129,13 @@ def _validate_model(model):
     exceptions = ["website_pricelist"]
     if "_" in model and "." not in model and not model.startswith("x_") and model not in exceptions:
         raise SleepyDeveloperError("`{}` seems to be a table name instead of model name".format(model))
+    return model
+
+
+def _validate_table(table):
+    if "." in table:
+        raise SleepyDeveloperError("`{}` seems to be a model name instead of table name".format(table))
+    return table
 
 
 def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
