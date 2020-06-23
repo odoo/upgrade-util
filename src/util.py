@@ -4020,7 +4020,8 @@ def announce_migration_report(cr):
         "messages": migration_reports,
     }
     _logger.info(migration_reports)
-    message = e["ir.qweb"].render(report, values=values).decode()
+    render = e["ir.qweb"].render if hasattr(e["ir.qweb"], "render") else e["ir.qweb"]._render
+    message = render(report, values=values).decode()
     if message.strip():
         kw = {}
         # If possible, post the migration report message to administrators only.
