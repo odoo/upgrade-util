@@ -500,6 +500,7 @@ def model_of_table(cr, table):
 
         documents_request_wizard documents.request_wizard
 
+        hr_payslip_worked_days hr.payslip.worked_days
         stock_package_level stock.package_level
 
         survey_user_input survey.user_input
@@ -509,6 +510,11 @@ def model_of_table(cr, table):
         mailing_contact_list_rel           mailing.contact.subscription
         # Not a real model until saas~13
         {gte_saas13} mail_message_res_partner_needaction_rel mail.notification
+
+        data_merge_rule     data_merge.rule
+        data_merge_model    data_merge.model
+        data_merge_group    data_merge.group
+        data_merge_record   data_merge.record
 
     """.format(
                 action_report_model="ir.actions.report" if version_gte("10.saas~17") else "ir.actions.report.xml",
@@ -2251,6 +2257,28 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         remove_field(cr, inh_model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
 
 
+def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
+    """
+        Due to a bug of the ORM [1], mixins doesn't create/register xmlids for fields created in children models
+        Thus, when a field is no more defined in a child model, their xmlids should be removed explicitly to
+        avoid the fields to be considered as missing and being removed at the end of the upgrade.
+
+        [1] https://github.com/odoo/odoo/issues/49354
+    """
+    _validate_model(model)
+
+    cr.execute(
+        """
+            DELETE FROM ir_model_data
+                  WHERE model = 'ir.model.fields'
+                    AND res_id IN (SELECT id FROM ir_model_fields WHERE model=%s AND name=%s)
+        """,
+        [model, fieldname],
+    )
+    for inh_model in _for_each_inherit(cr, model, skip_inherit):
+        remove_field_metadata(cr, inh_model, fieldname, skip_inherit=skip_inherit)
+
+
 def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inherit=()):
     _validate_model(model)
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
@@ -2387,10 +2415,14 @@ def convert_field_to_property(
     assert type in type2field
     value_field = type2field[type]
 
-    cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, field))
-    [fields_id] = cr.fetchone()
-
     table = table_of_model(cr, model)
+
+    cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, field))
+    if not cr.rowcount:
+        # no ir_model_fields, no ir_property
+        remove_column(cr, table, field, cascade=True)
+        return
+    [fields_id] = cr.fetchone()
 
     if default_value is None:
         where_clause = "{field} IS NOT NULL".format(field=field)
@@ -3772,13 +3804,13 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         records.invalidate_cache()
 
 
-def check_company_fields(
+def check_company_consistency(
     cr, model_name, field_name, logger=_logger, model_company_field="company_id", comodel_company_field="company_id"
 ):
     _validate_model(model_name)
     cr.execute(
         """
-            SELECT *
+            SELECT ttype, relation, relation_table, column1, column2
               FROM ir_model_fields
              WHERE name = %s
                AND model = %s
@@ -3794,69 +3826,66 @@ def check_company_fields(
         _logger.warning("Field %s not found on model %s.", field_name, model_name)
         return
 
-    table_model_1 = table_of_model(cr, model_name)
-    table_model_2 = table_of_model(cr, field_values["relation"])
+    table = table_of_model(cr, model_name)
+    comodel = field_values["relation"]
+    cotable = table_of_model(cr, comodel)
+
     if field_values["ttype"] == "many2one":
-        cr.execute(
-            """
-            SELECT
-                record1.id                                  AS id_1,
-                record1.%(comp_field_1)s                    AS comp_1,
-                record2.id                                  AS id_2,
-                record2.%(comp_field_2)s                    AS comp_2
-            FROM %(table_model)s record1
-            JOIN %(table_relation)s record2 ON record2.id = record1.%(cofield_name)s
-            WHERE record1.%(comp_field_1)s IS NOT NULL
-            AND record2.%(comp_field_2)s IS NOT NULL
-            AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
-        """
-            % {
-                "comp_field_1": model_company_field,
-                "comp_field_2": comodel_company_field,
-                "table_model": table_model_1,
-                "table_relation": table_model_2,
-                "cofield_name": field_values["name"],
-            }
+        query = """
+            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}
+              FROM {table} a
+              JOIN {cotable} b ON b.id = a.{field_name}
+             WHERE a.{model_company_field} IS NOT NULL
+               AND b.{comodel_company_field} IS NOT NULL
+               AND a.{model_company_field} != b.{comodel_company_field}
+        """.format(
+            **locals()
         )
-    else:  # if field_values['ttype'] == 'many2many'
-        cr.execute(
-            """
-            SELECT
-                record1.id                                  AS id_1,
-                record1.%(comp_field_1)s                    AS comp_1,
-                record2.id                                  AS id_2,
-                record2.%(comp_field_2)s                    AS comp_2
-            FROM %(table_rel)s rel
-            JOIN %(table_model)s record1 ON record1.id = rel.%(column1)s
-            JOIN %(table_relation)s record2 ON record2.id = rel.%(column2)s
-            WHERE record1.%(comp_field_1)s IS NOT NULL
-            AND record2.%(comp_field_2)s IS NOT NULL
-            AND record1.%(comp_field_1)s != record2.%(comp_field_2)s
-        """
-            % {
-                "comp_field_1": comodel_company_field,
-                "comp_field_2": model_company_field,
-                "table_rel": field_values["relation_table"],
-                "table_model": table_model_1,
-                "table_relation": table_model_2,
-                "column1": field_values["column1"],
-                "column2": field_values["column2"],
-            }
+    else:  # many2many
+        m2m_relation = field_values["relation_table"]
+        f1, f2 = field_values["column1"], field_values["column2"]
+        query = """
+            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}
+              FROM {m2m_relation} m
+              JOIN {table} a ON a.id = m.{f1}
+              JOIN {cotable} b ON b.id = m.{f2}\
+             WHERE a.{model_company_field} IS NOT NULL
+               AND b.{comodel_company_field} IS NOT NULL
+               AND a.{model_company_field} != b.{comodel_company_field}
+        """.format(
+            **locals()
         )
 
-    for res in cr.fetchall():
+    cr.execute(query)
+    if cr.rowcount:
         logger.warning(
-            "Company fields are not consistent on models %s "
-            "(id=%s, company_id=%s) and %s (id=%s, company_id=%s) "
-            "through relation %s (%s)",
-            table_model_1,
-            res[0],
-            res[1],
-            table_model_2,
-            res[2],
-            res[3],
-            field_values["name"],
+            "Company field %s/%s is not consistent with %s/%s for %d records (through %s relation %s)",
+            model_name,
+            model_company_field,
+            comodel,
+            comodel_company_field,
+            cr.rowcount,
             field_values["ttype"],
+            field_name,
+        )
+
+        lis = "\n".join(
+            "<li> record #%s (company=%s) -&gt; record #%s (company=%s)</li>" % bad for bad in cr.fetchall()
+        )
+
+        add_to_migration_reports(
+            message="""\
+            <details>
+              <summary>Some inconsistencies have been found on field {model_name}/{field_name}</summary>
+              <ul>
+                {lis}
+              </ul>
+            </details>
+        """.format(
+                **locals()
+            ),
+            category="Multi-company inconsistencies",
+            format="html",
         )
 
 
