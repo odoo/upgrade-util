@@ -3618,7 +3618,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
     _validate_model(model)
     target_model = model
 
-    evaluation_context = {x: SelfPrint(x) for x in "uid user time website active_id company_ids".split()}
+    evaluation_context = {x: SelfPrint(x) for x in "uid user time website active_id company_ids context_today".split()}
 
     def valid_path_to(cr, path, from_, to):
         model = from_
