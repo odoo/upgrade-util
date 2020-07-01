@@ -1971,6 +1971,36 @@ def get_index_on(cr, table, *columns):
     return cr.fetchone()
 
 
+def _get_unique_indexes_with(cr, table, *columns):
+    # (Cursor, str, *str) -> List[Tuple[str, List[str]]
+    """
+        Returns all unique indexes on at least `columms`
+        return a list of tuple [index_name, list_of_column]
+    """
+    _validate_table(table)
+    assert columns
+    cr.execute(
+        """
+        SELECT name, attrs
+          FROM (SELECT quote_ident(i.relname) as name,
+                       array_agg(a.attname::text) as attrs
+                  FROM (select *, unnest(indkey) as unnest_indkey from pg_index) x
+                  JOIN pg_class c ON c.oid = x.indrelid
+                  JOIN pg_class i ON i.oid = x.indexrelid
+                  JOIN pg_attribute a ON (a.attrelid=c.oid AND a.attnum=x.unnest_indkey)
+                 WHERE (c.relkind = ANY (ARRAY['r'::"char", 'm'::"char"]))
+                   AND i.relkind = 'i'::"char"
+                   AND c.relname = %s
+                   AND x.indisunique
+              GROUP BY 1
+          ) idx
+         WHERE attrs @> %s
+    """,
+        [table, list(columns)],
+    )
+    return cr.fetchall()
+
+
 @contextmanager
 def disabled_index_on(cr, table_name):
     """
