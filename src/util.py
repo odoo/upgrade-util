@@ -3259,9 +3259,19 @@ def merge_model(cr, source, target, drop_table=True):
 
     for ir in indirect_references(cr):
         if ir.res_model and not ir.res_id and ir.table not in ignores:
-            # only update unbound references, other one should have been updated before
-            query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=ir.table, c=ir.res_model)
-            cr.execute(query, (target, source))
+            # only update unbound references, other ones have been updated by the call to
+            # `replace_record_references_batch`
+            wheres = []
+            for _, uniqs in _get_unique_indexes_with(cr, ir.table, ir.res_model):
+                sub_where = " AND ".join("o.{0} = t.{0}".format(a) for a in uniqs if a != ir.res_model) or "true"
+                wheres.append(
+                    "NOT EXISTS(SELECT 1 FROM {t} o WHERE {w} AND o.{c}=%(new)s)".format(
+                        t=ir.table, c=ir.res_model, w=sub_where
+                    )
+                )
+            where = " AND ".join(wheres) or "true"
+            query = "UPDATE {t} t SET {c}=%(new)s WHERE {w} AND {c}=%(old)s".format(t=ir.table, c=ir.res_model, w=where)
+            cr.execute(query, dict(new=target, old=source))
 
     remove_model(cr, source, drop_table=drop_table)
 
