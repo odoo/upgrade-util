@@ -174,6 +174,10 @@ def expand_braces(s):
     return [first, second]
 
 
+def split_osenv(name):
+    return re.split(r"\W+", os.getenv(name, "").strip())
+
+
 try:
     import importlib.util
 
