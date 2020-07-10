@@ -3877,14 +3877,17 @@ def check_company_consistency(
     comodel = field_values["relation"]
     cotable = table_of_model(cr, comodel)
 
+    limit = 15
+
     if field_values["ttype"] == "many2one":
         query = """
-            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}
+            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}, count(*) OVER ()
               FROM {table} a
               JOIN {cotable} b ON b.id = a.{field_name}
              WHERE a.{model_company_field} IS NOT NULL
                AND b.{comodel_company_field} IS NOT NULL
                AND a.{model_company_field} != b.{comodel_company_field}
+             LIMIT {limit}
         """.format(
             **locals()
         )
@@ -3892,13 +3895,14 @@ def check_company_consistency(
         m2m_relation = field_values["relation_table"]
         f1, f2 = field_values["column1"], field_values["column2"]
         query = """
-            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}
+            SELECT a.id, a.{model_company_field}, b.id, b.{comodel_company_field}, count(*) OVER ()
               FROM {m2m_relation} m
               JOIN {table} a ON a.id = m.{f1}
-              JOIN {cotable} b ON b.id = m.{f2}\
+              JOIN {cotable} b ON b.id = m.{f2}
              WHERE a.{model_company_field} IS NOT NULL
                AND b.{comodel_company_field} IS NOT NULL
                AND a.{model_company_field} != b.{comodel_company_field}
+             LIMIT {limit}
         """.format(
             **locals()
         )
@@ -3916,14 +3920,16 @@ def check_company_consistency(
             field_name,
         )
 
-        lis = "\n".join(
-            "<li> record #%s (company=%s) -&gt; record #%s (company=%s)</li>" % bad for bad in cr.fetchall()
-        )
+        bad_rows = cr.fetchall()
+        total = bad_rows[-1][-1]
+        lis = "\n".join("<li>record #%s (company=%s) -&gt; record #%s (company=%s)</li>" % bad[:-1] for bad in bad_rows)
 
         add_to_migration_reports(
             message="""\
             <details>
-              <summary>Some inconsistencies have been found on field {model_name}/{field_name}</summary>
+              <summary>
+                Some inconsistencies have been found on field {model_name}/{field_name} ({total} records affected; show top {limit})
+              </summary>
               <ul>
                 {lis}
               </ul>
