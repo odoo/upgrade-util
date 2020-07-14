@@ -1405,7 +1405,7 @@ def uninstall_theme(cr, theme, base_theme=None):
         related websites.
         Beware that this utility function can only be called in post-* scripts.
     """
-    cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (theme,))
+    cr.execute("SELECT id FROM ir_module_module WHERE name=%s AND state in %s", (theme, _INSTALLED_MODULE_STATES,))
     (theme_id,) = cr.fetchone() or [None]
     if not theme_id:
         return
