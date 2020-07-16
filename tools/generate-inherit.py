@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tokenize
-from typing import NamedTuple, Dict
+from typing import NamedTuple, Dict, Set, Optional, Tuple
 
 import black
 
@@ -73,11 +73,24 @@ class Version:
         return hash(self.name)  # Only name is relevant
 
 
-VERSIONS = {Version(f"{major}.0") for major in range(7, 14)}
-VERSIONS |= {Version(f"saas-{saas}") for saas in range(1, 19)}
-VERSIONS |= {Version(f"saas-{major}.{minor}") for major in range(11, 14) for minor in range(1, 6)}
+@dataclass(order=True)
+class Inherit:
+    model: str
+    born: Version  # inclusive
+    dead: Optional[Version] = None  # non-inclusive
+    via: Optional[str] = None  # Many2one field to parent in case of `_inherits`
 
-VERSIONS = sorted(VERSIONS)
+    def apply_on(self, version: Version) -> bool:
+        if self.dead is None:
+            return self.born <= version
+        return self.born <= version < self.dead
+
+
+_VERSIONS = {Version(f"{major}.0") for major in range(7, 14)}
+_VERSIONS |= {Version(f"saas-{saas}") for saas in range(1, 19)}
+_VERSIONS |= {Version(f"saas-{major}.{minor}") for major in range(11, 14) for minor in range(1, 6)}
+
+VERSIONS = sorted(_VERSIONS)
 
 IGNORED_FILES = [
     # defines `_name = LITERAL % CONSTANT`
@@ -88,12 +101,24 @@ IGNORED_FILES = [
     "enterprise/website_version/models/google_management.py",
 ]
 
-
-@dataclass(order=True)
-class Inherit:
-    model: str
-    born: str  # inclusive
-    dead: str = None  # non-inclusive
+# Sometimes, new modules are added during a version lifetime and not forward-ported to dead saas~* version.
+# Theses versions being dead and no upgrade to these versions being made, we can consider it contains some models
+# Without it, we would end with holes in inherit tree.
+VIRTUAL_INHERITS = {
+    "account.report": [
+        Inherit("account.cash.flow.report", born=Version("saas-11.1"), dead=Version("saas-12.5")),
+        Inherit("l10n.lu.report.partner.vat.intra", born=Version("saas-13.1"), dead=Version("saas-13.2")),
+    ],
+    "l10n_mx.trial.report": [
+        Inherit("l10n_mx.trial.closing.report", born=Version("saas-11.1"), dead=Version("saas-12.2")),
+    ],
+    "l10n_mx_edi.pac.sw.mixin": [
+        Inherit("account.invoice", born=Version("saas-11.1"), dead=Version("saas-12.5")),
+        Inherit("account.payment", born=Version("saas-11.1"), dead=Version("saas-12.2")),
+    ],
+    "mail.activity.mixin": [Inherit("l10n_uk.vat.obligation", born=Version("10.saas-15"), dead=Version("12.0"))],
+    "mail.thread": [Inherit("l10n_uk.vat.obligation", born=Version("10.saas-15"), dead=Version("12.0"))],
+}
 
 
 # from lib2to3.refactor.RefactoringTool class
@@ -115,7 +140,7 @@ def _read_python_source(filename):
 
 @dataclass
 class Visitor(black.Visitor):
-    inh: Dict[str, set] = field(default_factory=lambda: defaultdict(set))
+    inh: Dict[str, Set[Tuple[str, str]]] = field(default_factory=lambda: defaultdict(set))
 
     def to_str(self, node):
         if isinstance(node, black.Node):
@@ -147,15 +172,15 @@ class Visitor(black.Visitor):
                     elif attr == "_inherit":
                         node = expr_stmt.children[2]
                         if node.type == black.token.NAME and node.value == "_name":
-                            inh.append(name)
+                            inh.append((name, None))
                         else:
                             val = literal_eval(self.to_str(node))
                             if isinstance(val, str):
                                 val = [val]
-                            inh.extend(val)
+                            inh.extend((v, None) for v in val)
                     elif attr == "_inherits":
                         val = literal_eval(self.to_str(expr_stmt.children[2]))
-                        inh.extend(val.keys())
+                        inh.extend(val.items())
                     else:
                         # handle Many2one with delegate=True attribute
                         if (
@@ -165,6 +190,7 @@ class Visitor(black.Visitor):
                         ):
                             pw = expr_stmt.children[2]
                             if (self.to_str(pw.children[0]) + self.to_str(pw.children[1])) == "fields.Many2one":
+                                via = self.to_str(expr_stmt.children[0])
                                 arglist = pw.children[2].children[1]
                                 comodel = None
                                 delegate = False
@@ -183,12 +209,12 @@ class Visitor(black.Visitor):
                                         ):
                                             comodel = literal_eval(self.to_str(arg.children[2]))
                                 if delegate and comodel:
-                                    inh.append(comodel)
+                                    inh.append((comodel, via))
 
             if name:
-                for i in inh:
+                for i, via in inh:
                     if i != name:
-                        self.inh[i].add(name)
+                        self.inh[i].add((name, via))
 
         return []
 
@@ -228,6 +254,12 @@ def main():
         # if version.name != "saas-3":
         #     continue
         visitor = Visitor()
+
+        for model, virtuals in VIRTUAL_INHERITS.items():
+            for virtual in virtuals:
+                if virtual.apply_on(version):
+                    visitor.inh[model].add((virtual.model, virtual.via))
+
         for repo in REPOSITORIES:
             if not checkout(wd, repo, version):
                 continue
@@ -250,20 +282,20 @@ def main():
 
         for model, children in result.items():
             for child in children:
-                if child.model not in visitor.inh[model] and not child.dead:
+                if (child.model, child.via) not in visitor.inh[model] and not child.dead:
                     child.dead = version
 
         for model, children in visitor.inh.items():
-            for child in children:
+            for child, via in children:
                 for inh in result[model]:
-                    if inh.model == child and not inh.dead:
+                    if inh.model == child and inh.via == via and not inh.dead:
                         break
                 else:
-                    result[model].append(Inherit(model=child, born=version))
+                    result[model].append(Inherit(model=child, born=version, via=via))
 
     result = {m: sorted(result[m]) for m in sorted(result)}
     output = f"""\
-# This file is auto-generated by `{sys.argv[0]}`. Edits may be lost.
+# This file is auto-generated by `{sys.argv[0]}`. Edits will be lost.
 
 from collections import namedtuple
 
@@ -278,7 +310,7 @@ except ImportError:
         # frozendict only appears with new api in 8.0
         frozendict = dict
 
-Inherit = namedtuple("Inherit", "model born dead")  # NOTE: dead is non-inclusive
+Inherit = namedtuple("Inherit", "model born dead via")  # NOTE: dead is non-inclusive
 
 inheritance_data = frozendict({result!r})
 """
