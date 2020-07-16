@@ -53,7 +53,6 @@ try:
     from odoo.tools.func import frame_codeinfo
     from odoo.tools.mail import html_sanitize
     from odoo.tools.misc import file_open
-    from odoo.tools import UnquoteEvalContext
     from odoo.tools.parse_version import parse_version
     from odoo.tools.safe_eval import safe_eval
     from odoo.osv import expression
@@ -64,7 +63,6 @@ except ImportError:
     from openerp.tools.func import frame_codeinfo
     from openerp.tools.mail import html_sanitize
     from openerp.tools.misc import file_open
-    from openerp.tools import UnquoteEvalContext
     from openerp.tools.parse_version import parse_version
     from openerp.tools.safe_eval import safe_eval
     from openerp.osv import expression
@@ -700,6 +698,36 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
             "arch_db": arch_db,
         },
     )
+
+
+def _dashboard_actions(cr, arch_match, *models):
+    """Yield actions of dashboard that match `arch_match` and apply on `models` (if specified)"""
+
+    q = """
+        SELECT id, arch
+          FROM ir_ui_view_custom
+         WHERE arch ~ %s
+    """
+    cr.execute(q, [arch_match])
+    for dash_id, arch in cr.fetchall():
+        dash = lxml.etree.fromstring(arch)
+        for act in dash.xpath("//action"):
+            if models:
+                try:
+                    act_id = int(act.get("name", "FAIL"))
+                except ValueError:
+                    continue
+
+                cr.execute("SELECT res_model FROM ir_act_window WHERE id = %s", [act_id])
+                [act_model] = cr.fetchone() or [None]
+                if act_model not in models:
+                    continue
+            yield act
+
+        cr.execute(
+            "UPDATE ir_ui_view_custom SET arch = %s WHERE id = %s",
+            [lxml.etree.tostring(dash, encoding="unicode"), dash_id],
+        )
 
 
 def remove_record(cr, name, deactivate=False, active_field="active"):
@@ -1416,10 +1444,10 @@ def uninstall_theme(cr, theme, base_theme=None):
         cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (base_theme,))
         (website_theme_id,) = cr.fetchone() or [None]
         theme_extension = IrModuleModule.browse(theme_id)
-        for website in env_["website"].search([('theme_id', '=', website_theme_id)]):
+        for website in env_["website"].search([("theme_id", "=", website_theme_id)]):
             theme_extension._theme_unload(website)
     else:
-        websites = env_["website"].search([('theme_id', '=', theme_id)])
+        websites = env_["website"].search([("theme_id", "=", theme_id)])
         for website in websites:
             IrModuleModule._theme_remove(website)
     env_["base"].flush()
@@ -2194,41 +2222,13 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     ENVIRON["__renamed_fields"][model].add(fieldname)
 
     # clean dashboards' `group_by`
-    cr.execute(
-        """
-            SELECT array_agg(f.name), array_agg(aw.id)
-              FROM ir_model_fields f
-              JOIN ir_act_window aw
-                ON aw.res_model = f.model
-             WHERE f.model = %s
-               AND f.name = %s
-          GROUP BY f.model
-        """,
-        [model, fieldname],
-    )
-    for fields, actions in cr.fetchall():
-        cr.execute(
-            """
-            SELECT id, arch
-              FROM ir_ui_view_custom
-             WHERE arch ~ %s
-        """,
-            ["name=[\"'](%s)[\"']" % "|".join(map(str, actions))],
-        )
-        for id, arch in ((x, lxml.etree.fromstring(y)) for x, y in cr.fetchall()):
-            for action in arch.iterfind(".//action"):
-                context = eval(action.get("context", "{}"), UnquoteEvalContext())
-                if context.get("group_by"):
-                    context["group_by"] = list(set(context["group_by"]) - set(fields))
-                    action.set("context", unicode(context))
-            cr.execute(
-                """
-                    UPDATE ir_ui_view_custom
-                       SET arch = %s
-                     WHERE id = %s
-                """,
-                [lxml.etree.tostring(arch, encoding="unicode"), id],
-            )
+    eval_context = SelfPrintEvalContext()
+    for action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
+        context = safe_eval(action.get("context", "{}"), eval_context, nocopy=True)
+        for key in {"group_by", "pivot_measures", "pivot_column_groupby", "pivot_row_groupby"}:
+            if context.get(key):
+                context[key] = [e for e in context[key] if e.split(":")[0] != fieldname]
+        action.set("context", unicode(context))
 
     cr.execute(
         """
@@ -3467,6 +3467,7 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
             - ir_exports_line
             - ir_act_server
             - mail_alias
+            - ir_ui_view_custom (dashboard)
     """
     if only_models:
         for model in only_models:
@@ -3565,6 +3566,29 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
             q += "WHERE "
         q += "a.alias_defaults ~ %(old)s"
         cr.execute(q, p)
+
+    # ir.ui.view.custom
+    # adapt the context. The domain will be done by `adapt_domain`
+    eval_context = SelfPrintEvalContext()
+    def_old = "default_{}".format(old)
+    def_new = "default_{}".format(new)
+    match = "{0[old]}|{0[def_old]}".format(p)
+
+    def adapt(field):
+        parts = field.split(":", 1)
+        if parts[0] != old:
+            return field
+        parts[0] = new
+        return ":".join(parts)
+
+    for act in _dashboard_actions(cr, match, def_old, *only_models or ()):
+        context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
+        for key in {"group_by", "pivot_measures", "pivot_column_groupby", "pivot_row_groupby"}:
+            if context.get(key):
+                context[key] = [adapt(e) for e in context[key]]
+        if def_old in context:
+            context[def_new] = context.pop(def_old)
+        act.set("context", unicode(context))
 
     if only_models:
         for model in only_models:
@@ -3668,10 +3692,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
     _validate_model(model)
     target_model = model
 
-    evaluation_context = {
-        x: SelfPrint(x)
-        for x in "uid user time website active_id company_ids context_today current_date datetime".split()
-    }
+    evaluation_context = SelfPrintEvalContext()
 
     def valid_path_to(cr, path, from_, to):
         model = from_
@@ -3695,7 +3716,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
 
     def adapt(cr, model, domain):
         try:
-            eval_dom = safe_eval(domain, evaluation_context)
+            eval_dom = safe_eval(domain, evaluation_context, nocopy=True)
         except Exception as e:
             oops = odoo.tools.ustr(e)
             _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
@@ -3728,6 +3749,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
         _logger.debug("%s: %r -> %r", model, domain, final_dom)
         return str(final_dom)
 
+    match_old = r"\y{}\y".format(old)
     for df in _get_domain_fields(cr):
         cr.execute(
             """
@@ -3737,13 +3759,31 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
         """.format(
                 df=df
             ),
-            [r"\y{}\y".format(old)],
+            [match_old],
         )
         for id_, model, domain in cr.fetchall():
             domain = adapt(cr, model, domain)
             if domain:
                 cr.execute("UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df), [domain, id_])
 
+    # adapt domain in dashboards.
+    # NOTE: does not filter on model at dashboard selection for handle dotted domains
+    for act in _dashboard_actions(cr, match_old):
+        if act.get("domain"):
+            try:
+                act_id = int(act.get("name", "FAIL"))
+            except ValueError:
+                continue
+
+            cr.execute("SELECT res_model FROM ir_act_window WHERE id = %s", [act_id])
+            if not cr.rowcount:
+                continue
+            [act_model] = cr.fetchone()
+            domain = adapt(cr, act_model, act.get("domain"))
+            if domain:
+                act.set("domain", domain)
+
+    # down on inherits
     for inh_model in _for_each_inherit(cr, target_model, skip_inherit):
         adapt_domains(cr, inh_model, old, new, adapter, skip_inherit=skip_inherit)
 
@@ -4374,3 +4414,13 @@ class SelfPrint(object):
         return self.__name
 
     __str__ = __repr__
+
+
+class SelfPrintEvalContext(collections.defaultdict):
+    """Evaluation Context that will return a SelfPrint object for all non-literal object"""
+
+    def __init__(self, *args, **kwargs):
+        super(SelfPrintEvalContext, self).__init__(None, *args, **kwargs)
+
+    def __missing__(self, key):
+        return SelfPrint(key)
