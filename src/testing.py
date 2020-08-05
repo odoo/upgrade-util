@@ -2,6 +2,7 @@ from odoo.tests.common import BaseCase, MetaCase, get_db_name
 import odoo
 from odoo import api
 from odoo import release
+from odoo.tools import config
 from odoo.tools.parse_version import parse_version
 import logging
 import json
@@ -241,10 +242,12 @@ class IntegrityCase(UpgradeCommon, IntegrityMetaCase("DummyCase", (object,), {})
 
     def setUp(self):
         super(IntegrityCase, self).setUp()
+        def commit(self):
+            if self.dbname == config['log_db'].split('/')[-1]:
+                self._cnx.commit()
+            else:
+                raise Exception("Commit are forbiden in intergity cases")
 
-        def commit():
-            raise Exception("Commit are forbiden in intergity cases")
-
-        patcher = patch("odoo.sql_db.Cursor.commit", wraps=commit)
+        patcher = patch.object(odoo.sql_db.Cursor, 'commit', commit)
         patcher.start()
         self.addCleanup(patcher.stop)
