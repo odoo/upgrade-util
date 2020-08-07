@@ -2844,6 +2844,7 @@ def indirect_references(cr, bound_only=False):
         IR("project_project", "alias_model", None),
         IR("rating_rating", "res_model", "res_id", "res_model_id"),
         IR("rating_rating", "parent_res_model", "parent_res_id", "parent_res_model_id"),
+        IR("timer_timer", "res_model", "res_id"),
     ]
 
     for ir in each:
