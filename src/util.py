@@ -546,31 +546,41 @@ def env(cr):
     return Environment(cr, SUPERUSER_ID, {})
 
 
-def remove_view(cr, xml_id=None, view_id=None, silent=False):
+def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     """
     Recursively delete the given view and its inherited views, as long as they
     are part of a module. Will crash as soon as a custom view exists anywhere
     in the hierarchy.
+
+    Also handle multi-website COWed views.
     """
     assert bool(xml_id) ^ bool(view_id)
     if xml_id:
         view_id = ref(cr, xml_id)
-        if not view_id:
-            return
+        if view_id:
+            module, _, name = xml_id.partition(".")
+            cr.execute("SELECT model FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
 
-        module, _, name = xml_id.partition(".")
-        cr.execute("SELECT model FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
-
-        [model] = cr.fetchone()
-        if model != "ir.ui.view":
-            raise ValueError("%r should point to a 'ir.ui.view', not a %r" % (xml_id, model))
+            [model] = cr.fetchone()
+            if model != "ir.ui.view":
+                raise ValueError("%r should point to a 'ir.ui.view', not a %r" % (xml_id, model))
     else:
         # search matching xmlid for logging or renaming of custom views
-        cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s", [view_id])
-        if cr.rowcount:
-            xml_id = "%s.%s" % cr.fetchone()
-        else:
-            xml_id = "?"
+        xml_id = "?"
+        if not key:
+            cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s", [view_id])
+            if cr.rowcount:
+                xml_id = "%s.%s" % cr.fetchone()
+
+    # From given or determined xml_id, the views duplicated in a multi-website
+    # context are to be found and removed.
+    if xml_id != "?" and column_exists(cr, "ir_ui_view", "key"):
+        cr.execute("SELECT id FROM ir_ui_view WHERE key = %s AND id != %s", [xml_id, view_id])
+        for [v_id] in cr.fetchall():
+            remove_view(cr, view_id=v_id, silent=silent, key=xml_id)
+
+    if not view_id:
+        return
 
     cr.execute(
         """
@@ -614,7 +624,7 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False):
                 extra_set_sql = ",  mode = 'primary' "
 
             disable_view_query = disable_view_query % extra_set_sql
-            cr.execute(disable_view_query, (xml_id, child_id))
+            cr.execute(disable_view_query, (key or xml_id, child_id))
             add_to_migration_reports(
                 {"id": child_id, "name": child_name}, "Disabled views",
             )
