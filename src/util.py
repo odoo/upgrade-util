@@ -4472,3 +4472,34 @@ class SelfPrintEvalContext(collections.defaultdict):
 
     def __missing__(self, key):
         return SelfPrint(key)
+
+
+@contextmanager
+def no_fiscal_lock(cr):
+    columns = [col for col in get_columns(cr, "res_company")[0] if col.endswith("_lock_date")]
+    set_val = ", ".join("{} = NULL".format(col) for col in columns)
+    returns = ", ".join("old.{}".format(col) for col in columns)
+    cr.execute(
+        """
+            UPDATE res_company c
+               SET {}
+              FROM res_company old
+             WHERE old.id = c.id
+         RETURNING {}, old.id
+        """.format(
+            set_val, returns
+        )
+    )
+    data = cr.fetchall()
+    yield
+    set_val = ", ".join("{} = %s".format(col) for col in columns)
+    cr.executemany(
+        """
+            UPDATE res_company
+               SET {}
+             WHERE id = %s
+        """.format(
+            set_val
+        ),
+        data,
+    )
