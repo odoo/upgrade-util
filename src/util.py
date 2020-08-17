@@ -2155,11 +2155,11 @@ def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
 
 
 def find_new_table_column_name(cr, table, name):
-    columns = get_columns(cr, table)
+    (columns,) = get_columns(cr, table)
     i = 0
     while name in columns:
         i += 1
-        name = name + "_" + i
+        name = "%s_%s" % (name, i)
     return name
 
 
