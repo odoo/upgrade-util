@@ -629,7 +629,7 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
                 {"id": child_id, "name": child_name}, "Disabled views",
             )
     if not silent:
-        _logger.info("remove deprecated built-in view %s (ID %s)", xml_id, view_id)
+        _logger.info("remove deprecated %s view %s (ID %s)", key and "COWed" or "built-in", key or xml_id, view_id)
     remove_record(cr, ("ir.ui.view", view_id))
 
 
