@@ -168,7 +168,11 @@ class Visitor(black.Visitor):
                         continue
                     attr = self.to_str(expr_stmt.children[0])
                     if attr == "_name":
-                        name = literal_eval(self.to_str(expr_stmt.children[2]))
+                        node = expr_stmt.children[2]
+                        if node.type == black.token.NAME and node.value == "_description":
+                            # `_description` being required, some devs uses the following syntax: https://git.io/JUfhO
+                            node = expr_stmt.children[4]
+                        name = literal_eval(self.to_str(node))
                     elif attr == "_inherit":
                         node = expr_stmt.children[2]
                         if node.type == black.token.NAME and node.value == "_name":
