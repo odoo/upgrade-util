@@ -147,9 +147,9 @@ def main(func, version=None):
 
 
 def splitlines(s):
-    """ yield stripped lines of `s`.
-        Skip empty lines
-        Remove comments (starts with `#`).
+    """yield stripped lines of `s`.
+    Skip empty lines
+    Remove comments (starts with `#`).
     """
     return (
         stripped_line for line in s.splitlines() for stripped_line in [line.split("#", 1)[0].strip()] if stripped_line
@@ -203,8 +203,7 @@ except ImportError:
 
 @contextmanager
 def skippable_cm():
-    """Allow a contextmanager to not yield.
-    """
+    """Allow a contextmanager to not yield."""
     if not hasattr(skippable_cm, "_msg"):
 
         @contextmanager
@@ -272,17 +271,17 @@ else:
 
     def parallel_execute(cr, queries, logger=_logger):
         """
-            Execute queries in parallel
-            Use a maximum of 8 workers (but not more than the number of CPUs)
-            Side effect: the given cursor is commited.
-            As example, on `**REDACTED**` (using 8 workers), the following gains are:
-                +---------------------------------------------+-------------+-------------+
-                | File                                        | Sequential  | Parallel    |
-                +---------------------------------------------+-------------+-------------+
-                | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
-                | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
-                | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
-                +---------------------------------------------+-------------+-------------+
+        Execute queries in parallel
+        Use a maximum of 8 workers (but not more than the number of CPUs)
+        Side effect: the given cursor is commited.
+        As example, on `**REDACTED**` (using 8 workers), the following gains are:
+            +---------------------------------------------+-------------+-------------+
+            | File                                        | Sequential  | Parallel    |
+            +---------------------------------------------+-------------+-------------+
+            | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
+            | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
+            | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
+            +---------------------------------------------+-------------+-------------+
         """
         if not queries:
             return
@@ -310,9 +309,9 @@ else:
 
 def explode_query(cr, query, num_buckets=8, prefix=""):
     """
-        Explode a query to multiple queries that can be executed in parallel
+    Explode a query to multiple queries that can be executed in parallel
 
-        Use modulo stategy to separate queries in buckets
+    Use modulo stategy to separate queries in buckets
     """
     if "{parallel_filter}" not in query:
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
@@ -330,9 +329,9 @@ def explode_query(cr, query, num_buckets=8, prefix=""):
 
 def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
     """
-        Explode a query to multiple queries that can be executed in parallel
+    Explode a query to multiple queries that can be executed in parallel
 
-        Use between stategy to separate queries in buckets
+    Use between stategy to separate queries in buckets
     """
     if "{parallel_filter}" not in query:
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
@@ -626,7 +625,8 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
             disable_view_query = disable_view_query % extra_set_sql
             cr.execute(disable_view_query, (key or xml_id, child_id))
             add_to_migration_reports(
-                {"id": child_id, "name": child_name}, "Disabled views",
+                {"id": child_id, "name": child_name},
+                "Disabled views",
             )
     if not silent:
         _logger.info("remove deprecated %s view %s (ID %s)", key and "COWed" or "built-in", key or xml_id, view_id)
@@ -1058,11 +1058,11 @@ def fix_wrong_m2o(cr, table, column, target, value=None):
 
 def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     """
-        Fix broken m2o relations.
-        If any `column` not present in `dst_table`, remove column from `src_table` in
-        order to force recomputation of the function field
+    Fix broken m2o relations.
+    If any `column` not present in `dst_table`, remove column from `src_table` in
+    order to force recomputation of the function field
 
-        WARN: only call this method on m2o function/related fields!!
+    WARN: only call this method on m2o function/related fields!!
     """
     if not column_exists(cr, src_table, column):
         return
@@ -1197,11 +1197,11 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 
 def uniq_tags(cr, model, uniq_column="name", order="id"):
     """
-        Deduplicated "tag" models entries.
-        Should only be referenced as many2many
+    Deduplicated "tag" models entries.
+    Should only be referenced as many2many
 
-        By using `uniq_column=lower(name)` and `order=name`
-        you can prioritize tags in CamelCase/UPPERCASE.
+    By using `uniq_column=lower(name)` and `order=name`
+    you can prioritize tags in CamelCase/UPPERCASE.
     """
     table = table_of_model(cr, model)
     upds = []
@@ -1439,11 +1439,11 @@ def uninstall_module(cr, module):
 
 
 def uninstall_theme(cr, theme, base_theme=None):
-    """ Uninstalls a theme module (see uninstall_module) and removes it from the
-        related websites.
-        Beware that this utility function can only be called in post-* scripts.
+    """Uninstalls a theme module (see uninstall_module) and removes it from the
+    related websites.
+    Beware that this utility function can only be called in post-* scripts.
     """
-    cr.execute("SELECT id FROM ir_module_module WHERE name=%s AND state in %s", (theme, _INSTALLED_MODULE_STATES,))
+    cr.execute("SELECT id FROM ir_module_module WHERE name=%s AND state in %s", [theme, _INSTALLED_MODULE_STATES])
     (theme_id,) = cr.fetchone() or [None]
     if not theme_id:
         return
@@ -1465,8 +1465,8 @@ def uninstall_theme(cr, theme, base_theme=None):
 
 
 def remove_module(cr, module):
-    """ Uninstall the module and delete references to it
-        Ensure to reassign records before calling this method
+    """Uninstall the module and delete references to it
+    Ensure to reassign records before calling this method
     """
     # NOTE: we cannot use the uninstall of module because the given
     # module need to be currently installed and running as deletions
@@ -1478,8 +1478,8 @@ def remove_module(cr, module):
 
 
 def remove_theme(cr, theme, base_theme=None):
-    """ See remove_module. Beware that removing a theme must be done in post-*
-        scripts.
+    """See remove_module. Beware that removing a theme must be done in post-*
+    scripts.
     """
     uninstall_theme(cr, theme, base_theme=base_theme)
     cr.execute("DELETE FROM ir_module_module WHERE name=%s", (theme,))
@@ -1526,8 +1526,7 @@ def rename_module(cr, old, new):
 
 
 def merge_module(cr, old, into, without_deps=False):
-    """Move all references of module `old` into module `into`
-    """
+    """Move all references of module `old` into module `into`"""
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
 
@@ -1811,11 +1810,11 @@ def new_module(cr, module, deps=(), auto_install=False):
 
 def force_migration_of_fresh_module(cr, module, init=True):
     """It may appear that new (or forced installed) modules need a migration script to grab data
-       form other module. (we cannot add a pre-init hook on the fly)
+    form other module. (we cannot add a pre-init hook on the fly)
 
-       Being in init mode may make sens in some situations (when?) but has the nasty side effect
-       of not respecting noupdate flags (in xml file nor in ir_model_data) which can be quite
-       problematic
+    Being in init mode may make sens in some situations (when?) but has the nasty side effect
+    of not respecting noupdate flags (in xml file nor in ir_model_data) which can be quite
+    problematic
     """
     filename, _ = frame_codeinfo(currentframe(), 1)
     version = ".".join(filename.split(os.path.sep)[-2].split(".")[:2])
@@ -1924,10 +1923,10 @@ def view_exists(cr, view):
 def get_fk(cr, table, quote_ident=True):
     """return the list of foreign keys pointing to `table`
 
-        returns a 4 tuple: (foreign_table, foreign_column, constraint_name, on_delete_action)
+    returns a 4 tuple: (foreign_table, foreign_column, constraint_name, on_delete_action)
 
-        Foreign key deletion action code:
-            a = no action, r = restrict, c = cascade, n = set null, d = set default
+    Foreign key deletion action code:
+        a = no action, r = restrict, c = cascade, n = set null, d = set default
     """
     _validate_table(table)
     funk = "quote_ident" if quote_ident else "concat"
@@ -1957,9 +1956,9 @@ def get_fk(cr, table, quote_ident=True):
 
 def target_of(cr, table, column):
     """
-        Return the target of a foreign key.
-        Returns None if there is not foreign key on given column.
-        returns a 3-tuple (foreign_table, foreign_column, constraint_name)
+    Return the target of a foreign key.
+    Returns None if there is not foreign key on given column.
+    returns a 3-tuple (foreign_table, foreign_column, constraint_name)
     """
     cr.execute(
         """
@@ -1986,8 +1985,8 @@ def target_of(cr, table, column):
 
 def get_index_on(cr, table, *columns):
     """
-        return an optional tuple (index_name, unique, pk)
-        NOTE: column order is respected
+    return an optional tuple (index_name, unique, pk)
+    NOTE: column order is respected
     """
     _validate_table(table)
     if cr._cnx.server_version >= 90500:
@@ -2022,8 +2021,8 @@ def get_index_on(cr, table, *columns):
 def _get_unique_indexes_with(cr, table, *columns):
     # (Cursor, str, *str) -> List[Tuple[str, List[str]]
     """
-        Returns all unique indexes on at least `columms`
-        return a list of tuple [index_name, list_of_column]
+    Returns all unique indexes on at least `columms`
+    return a list of tuple [index_name, list_of_column]
     """
     _validate_table(table)
     assert columns
@@ -2140,8 +2139,8 @@ def get_depending_views(cr, table, column):
 
 def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
     """return the list of columns in table (minus ignored ones)
-        can also returns the list multiple times with different prefixes.
-        This can be used to duplicating records (INSERT SELECT from the same table)
+    can also returns the list multiple times with different prefixes.
+    This can be used to duplicating records (INSERT SELECT from the same table)
     """
     _validate_table(table)
     select = "quote_ident(column_name)"
@@ -2309,11 +2308,11 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
 
 def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
     """
-        Due to a bug of the ORM [1], mixins doesn't create/register xmlids for fields created in children models
-        Thus, when a field is no more defined in a child model, their xmlids should be removed explicitly to
-        avoid the fields to be considered as missing and being removed at the end of the upgrade.
+    Due to a bug of the ORM [1], mixins doesn't create/register xmlids for fields created in children models
+    Thus, when a field is no more defined in a child model, their xmlids should be removed explicitly to
+    avoid the fields to be considered as missing and being removed at the end of the upgrade.
 
-        [1] https://github.com/odoo/odoo/issues/49354
+    [1] https://github.com/odoo/odoo/issues/49354
     """
     _validate_model(model)
 
@@ -2441,10 +2440,10 @@ def convert_field_to_property(
     cr, model, field, type, target_model=None, default_value=None, default_value_ref=None, company_field="company_id"
 ):
     """
-        Notes:
-            `target_model` is only use when `type` is "many2one".
-            The `company_field` can be an sql expression.
-                You may use `t` to refer the model's table.
+    Notes:
+        `target_model` is only use when `type` is "many2one".
+        The `company_field` can be an sql expression.
+            You may use `t` to refer the model's table.
     """
     _validate_model(model)
     if target_model:
@@ -2627,12 +2626,12 @@ def register_unanonymization_query(cr, model, field, query, query_type="sql", se
 @contextmanager
 def custom_module_field_as_manual(env):
     """
-        Helper to be used with a Python `with` statement,
-        to perform an operation with models and fields coming from Python modules acting as `manual` models/fields,
-        while restoring back the state of these models and fields once the operation done.
-        e.g.
-         - validating views coming from custom modules, with the fields loaded as the custom source code was there,
-         - crawling the menus as the models/fields coming from custom modules were available.
+    Helper to be used with a Python `with` statement,
+    to perform an operation with models and fields coming from Python modules acting as `manual` models/fields,
+    while restoring back the state of these models and fields once the operation done.
+    e.g.
+     - validating views coming from custom modules, with the fields loaded as the custom source code was there,
+     - crawling the menus as the models/fields coming from custom modules were available.
     """
 
     # 1. Convert models which are not in the registry to `manual` models
@@ -2671,7 +2670,7 @@ def custom_module_field_as_manual(env):
                AND name not in %s
          RETURNING id
         """,
-            (model, model_fields,),
+            [model, model_fields],
         )
         updated_field_ids += [r[0] for r in env.cr.fetchall()]
 
@@ -2784,7 +2783,7 @@ def custom_module_field_as_manual(env):
     for field_id, selection in updated_selection_fields:
         env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
     for field_id, on_delete in updated_many2one_fields:
-        env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", (on_delete, field_id,))
+        env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", [on_delete, field_id])
     if updated_mail_thread_ids:
         env.cr.execute("UPDATE ir_model SET is_mail_thread = true WHERE id IN %s", (tuple(updated_mail_thread_ids),))
     for model, rec_name in rec_names.items():
@@ -2903,7 +2902,7 @@ def generate_indirect_reference_cleaning_queries(cr, ir):
 
         model_filter = ir.model_filter()
         yield cr.mogrify(
-            "DELETE FROM {ir.table} t WHERE {model_filter} AND {cond}".format(**locals()), [model],
+            "DELETE FROM {ir.table} t WHERE {model_filter} AND {cond}".format(**locals()), [model]
         ).decode()
 
 
@@ -3068,8 +3067,8 @@ delete_model = remove_model
 
 def move_model(cr, model, from_module, to_module, move_data=False):
     """
-        move model `model` from `from_module` to `to_module`.
-        if `to_module` is not installed, delete the model.
+    move model `model` from `from_module` to `to_module`.
+    if `to_module` is not installed, delete the model.
     """
     _validate_model(model)
     if not module_installed(cr, to_module):
@@ -3473,12 +3472,12 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
 
 def update_field_references(cr, old, new, only_models=None, domain_adapter=None, skip_inherit=()):
     """
-        Replace all references to field `old` to `new` in:
-            - ir_filters
-            - ir_exports_line
-            - ir_act_server
-            - mail_alias
-            - ir_ui_view_custom (dashboard)
+    Replace all references to field `old` to `new` in:
+        - ir_filters
+        - ir_exports_line
+        - ir_act_server
+        - mail_alias
+        - ir_ui_view_custom (dashboard)
     """
     if only_models:
         for model in only_models:
@@ -4364,7 +4363,13 @@ def log_progress(it, qualifier="elements", logger=_logger, size=None, estimate=T
                 tail = ""
 
             logger.info(
-                "[%.02f%%] %d/%d %s processed in %s%s", (j / size * 100.0), i, size, qualifier, tdiff, tail,
+                "[%.02f%%] %d/%d %s processed in %s%s",
+                (j / size * 100.0),
+                i,
+                size,
+                qualifier,
+                tdiff,
+                tail,
             )
 
 
