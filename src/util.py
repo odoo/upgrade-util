@@ -1198,7 +1198,8 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 def uniq_tags(cr, model, uniq_column="name", order="id"):
     """
     Deduplicated "tag" models entries.
-    Should only be referenced as many2many
+    In standard, should only be referenced as many2many
+    But with a customization, could be referenced as many2one
 
     By using `uniq_column=lower(name)` and `order=name`
     you can prioritize tags in CamelCase/UPPERCASE.
@@ -1206,24 +1207,55 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
     table = table_of_model(cr, model)
     upds = []
     for ft, fc, _, da in get_fk(cr, table):
-        assert da == "c"  # should be a ondelete=cascade fk
         cols = get_columns(cr, ft, ignore=(fc,))[0]
-        assert len(cols) == 1  # it's a m2, should have only 2 columns
-
-        upds.append(
-            """
-            INSERT INTO {rel}({c1}, {c2})
-                 SELECT r.{c1}, d.id
-                   FROM {rel} r
-                   JOIN dups d ON (r.{c2} = ANY(d.others))
-                 EXCEPT
-                 SELECT r.{c1}, r.{c2}
-                   FROM {rel} r
-                   JOIN dups d ON (r.{c2} = d.id)
-        """.format(
-                rel=ft, c1=cols[0], c2=fc
+        is_many2one = False
+        is_many2many = da == "c" and len(cols) == 1  # if ondelete=cascade fk and only 2 columns, it's a m2m
+        if not is_many2many:
+            cr.execute("SELECT count(*) FROM ir_model_fields WHERE ttype = 'many2many' AND relation_table = %s", [ft])
+            [is_many2many] = cr.fetchone()
+        if not is_many2many:
+            model = model_of_table(cr, ft)
+            if model:
+                cr.execute(
+                    """
+                        SELECT count(*)
+                          FROM ir_model_fields
+                         WHERE model = %s
+                           AND name = %s
+                           AND ttype = 'many2one'
+                    """,
+                    [model, fc],
+                )
+                [is_many2one] = cr.fetchone()
+        assert (
+            is_many2many or is_many2one
+        ), "Can't determine if column `%s` of table `%s` is a many2one or many2many" % (fc, ft)
+        if is_many2many:
+            upds.append(
+                """
+                INSERT INTO {rel}({c1}, {c2})
+                     SELECT r.{c1}, d.id
+                       FROM {rel} r
+                       JOIN dups d ON (r.{c2} = ANY(d.others))
+                     EXCEPT
+                     SELECT r.{c1}, r.{c2}
+                       FROM {rel} r
+                       JOIN dups d ON (r.{c2} = d.id)
+            """.format(
+                    rel=ft, c1=cols[0], c2=fc
+                )
             )
-        )
+        else:
+            upds.append(
+                """
+                    UPDATE {rel} r
+                       SET {c} = d.id
+                      FROM dups d
+                     WHERE r.{c} = ANY(d.others)
+                """.format(
+                    rel=ft, c=fc
+                )
+            )
 
     assert upds  # if not m2m found, there is something wrong...
 
