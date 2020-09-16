@@ -4476,7 +4476,9 @@ class SelfPrintEvalContext(collections.defaultdict):
 
 @contextmanager
 def no_fiscal_lock(cr):
+    env(cr)["res.company"].invalidate_cache()
     columns = [col for col in get_columns(cr, "res_company")[0] if col.endswith("_lock_date")]
+    assert columns
     set_val = ", ".join("{} = NULL".format(col) for col in columns)
     returns = ", ".join("old.{}".format(col) for col in columns)
     cr.execute(
