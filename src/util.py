@@ -2392,8 +2392,23 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
         rf.discard(old)
         rf.add(new)
 
-    cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
-    [fid] = cr.fetchone() or [None]
+    try:
+        with savepoint(cr):
+            cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
+            [fid] = cr.fetchone() or [None]
+    except psycopg2.IntegrityError:
+        # If a field with the same name already exists for this model (e.g. due to a custom module),
+        # rename it to avoid clashing and warn the customer
+        custom_name = new + "_custom"
+        rename_field(cr, model, new, custom_name, update_references, domain_adapter=None, skip_inherit=skip_inherit)
+        cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
+        [fid] = cr.fetchone() or [None]
+        msg = (
+            "The field %r from the model %r is now a standard Odoo field, but it already existed in the database "
+            "(coming from a non-standard module) and thus has been renamed to %r" % (new, model, custom_name)
+        )
+        add_to_migration_reports(msg, "Non-standard fields")
+
     if fid:
         name = IMD_FIELD_PATTERN % (model.replace(".", "_"), new)
         try:
