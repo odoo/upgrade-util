@@ -86,9 +86,9 @@ class Inherit:
         return self.born <= version < self.dead
 
 
-_VERSIONS = {Version(f"{major}.0") for major in range(7, 14)}
+_VERSIONS = {Version(f"{major}.0") for major in range(7, 15)}
 _VERSIONS |= {Version(f"saas-{saas}") for saas in range(1, 19)}
-_VERSIONS |= {Version(f"saas-{major}.{minor}") for major in range(11, 14) for minor in range(1, 6)}
+_VERSIONS |= {Version(f"saas-{major}.{minor}") for major in range(11, 15) for minor in range(1, 6)}
 
 VERSIONS = sorted(_VERSIONS)
 
@@ -230,7 +230,9 @@ def init_repos(path: Path) -> None:
         p = path / repo.name
         if not p.exists():
             subprocess.run(
-                ["git", "clone", repo.remote, repo.name], cwd=str(path), check=True,
+                ["git", "clone", repo.remote, repo.name],
+                cwd=str(path),
+                check=True,
             )
         else:
             subprocess.run(["git", "fetch", "-q"], cwd=str(p), check=True)
