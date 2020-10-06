@@ -258,6 +258,15 @@ inheritance_data = frozendict(
                 via="multicompany_manager_id",
             )
         ],
+        "adyen.address.mixin": [
+            Inherit(model="adyen.account", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="adyen.shareholder", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="adyen.store", born=parse_version("14.0"), dead=None, via=None),
+        ],
+        "adyen.id.mixin": [
+            Inherit(model="adyen.account", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="adyen.shareholder", born=parse_version("14.0"), dead=None, via=None),
+        ],
         "barcodes.barcode_events_mixin": [
             Inherit(model="mrp.workorder", born=parse_version("9.saas~13"), dead=parse_version("10.saas~18"), via=None),
             Inherit(model="mrp.workorder", born=parse_version("saas~11.4"), dead=None, via=None),
@@ -439,6 +448,12 @@ inheritance_data = frozendict(
             ),
             Inherit(model="ir.actions.server", born=parse_version("7.0"), dead=None, via=None),
             Inherit(model="ir.actions.wizard", born=parse_version("7.0"), dead=parse_version("7.saas~3"), via=None),
+            Inherit(
+                model="ir_actions_account_report_download",
+                born=parse_version("saas~13.5"),
+                dead=parse_version("14.0"),
+                via=None,
+            ),
         ],
         "ir.actions.server": [
             Inherit(model="base.automation", born=parse_version("10.saas~14"), dead=None, via="action_server_id"),
@@ -516,6 +531,9 @@ inheritance_data = frozendict(
             Inherit(model="ir.qweb.field.selection", born=parse_version("7.saas~3"), dead=None, via=None),
             Inherit(model="ir.qweb.field.text", born=parse_version("7.saas~3"), dead=None, via=None),
         ],
+        "ir.qweb.field.image": [
+            Inherit(model="ir.qweb.field.image_url", born=parse_version("saas~13.5"), dead=None, via=None)
+        ],
         "ir.qweb.field.many2one": [
             Inherit(model="ir.qweb.field.contact", born=parse_version("9.saas~11"), dead=None, via=None),
             Inherit(model="ir.qweb.field.qweb", born=parse_version("9.saas~11"), dead=None, via=None),
@@ -529,6 +547,12 @@ inheritance_data = frozendict(
             )
         ],
         "ir.ui.view": [Inherit(model="website.page", born=parse_version("10.saas~18"), dead=None, via="view_id")],
+        "l10n_cl.edi.util": [
+            Inherit(model="account.move", born=parse_version("13.0"), dead=parse_version("saas~13.1"), via=None),
+            Inherit(model="account.move", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="l10n_cl.dte.caf", born=parse_version("13.0"), dead=parse_version("saas~13.1"), via=None),
+            Inherit(model="l10n_cl.dte.caf", born=parse_version("14.0"), dead=None, via=None),
+        ],
         "l10n_co_reports.certification_report": [
             Inherit(
                 model="l10n_co_reports.certification_report.fuente",
@@ -793,6 +817,7 @@ inheritance_data = frozendict(
             Inherit(model="account.online.provider", born=parse_version("9.saas~13"), dead=None, via=None),
             Inherit(model="account.payment", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="account.voucher", born=parse_version("7.0"), dead=parse_version("saas~12.4"), via=None),
+            Inherit(model="adyen.account", born=parse_version("14.0"), dead=None, via=None),
             Inherit(model="approval.request", born=parse_version("saas~12.2"), dead=None, via=None),
             Inherit(model="blog.blog", born=parse_version("7.saas~3"), dead=None, via=None),
             Inherit(model="blog.post", born=parse_version("7.saas~3"), dead=None, via=None),
