@@ -3156,6 +3156,7 @@ def move_model(cr, model, from_module, to_module, move_data=False):
 
     update_imd("ir.model", "model_%s" % model_u)
     update_imd("ir.model.fields", (IMD_FIELD_PATTERN % (model_u, "%")).replace("_", r"\_"))
+    update_imd("ir.model.constraint", ("constraint_%s_%%" % (model_u,)).replace("_", r"\_"))
     if move_data:
         update_imd(model)
     return
