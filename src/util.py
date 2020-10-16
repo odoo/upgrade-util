@@ -53,6 +53,7 @@ try:
     from odoo.tools.func import frame_codeinfo
     from odoo.tools.mail import html_sanitize
     from odoo.tools.misc import file_open
+    from odoo.tools.misc import mute_logger
     from odoo.tools.parse_version import parse_version
     from odoo.tools.safe_eval import safe_eval
     from odoo.osv import expression
@@ -63,6 +64,7 @@ except ImportError:
     from openerp.tools.func import frame_codeinfo
     from openerp.tools.mail import html_sanitize
     from openerp.tools.misc import file_open
+    from openerp.tools.misc import mute_logger
     from openerp.tools.parse_version import parse_version
     from openerp.tools.safe_eval import safe_eval
     from openerp.osv import expression
@@ -2364,7 +2366,7 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
     _validate_model(model)
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
     try:
-        with savepoint(cr):
+        with savepoint(cr), mute_logger("openerp.sql_db", "odoo.sql_db"):
             cr.execute(
                 """
                    UPDATE ir_model_data
