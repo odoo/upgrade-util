@@ -2673,7 +2673,7 @@ def register_unanonymization_query(cr, model, field, query, query_type="sql", se
 
 
 @contextmanager
-def custom_module_field_as_manual(env):
+def custom_module_field_as_manual(env, rollback=True):
     """
     Helper to be used with a Python `with` statement,
     to perform an operation with models and fields coming from Python modules acting as `manual` models/fields,
@@ -2681,6 +2681,8 @@ def custom_module_field_as_manual(env):
     e.g.
      - validating views coming from custom modules, with the fields loaded as the custom source code was there,
      - crawling the menus as the models/fields coming from custom modules were available.
+
+    !!! Rollback might be deactivated with the `rollback` parameter but for internal purpose ONLY !!!
     """
 
     # 1. Convert models which are not in the registry to `manual` models
@@ -2824,22 +2826,25 @@ def custom_module_field_as_manual(env):
     # 5. Do the operation.
     yield
 
-    # 6. Restore back models and fields converted from `base` to `manual`.
-    if updated_model_ids:
-        env.cr.execute("UPDATE ir_model SET state = 'base' WHERE id IN %s", (tuple(updated_model_ids),))
-    if updated_field_ids:
-        env.cr.execute("UPDATE ir_model_fields SET state = 'base' WHERE id IN %s", (tuple(updated_field_ids),))
-    for field_id, selection in updated_selection_fields:
-        env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
-    for field_id, on_delete in updated_many2one_fields:
-        env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", [on_delete, field_id])
-    if updated_mail_thread_ids:
-        env.cr.execute("UPDATE ir_model SET is_mail_thread = true WHERE id IN %s", (tuple(updated_mail_thread_ids),))
-    for model, rec_name in rec_names.items():
-        env.registry[model]._rec_name = rec_name
+    if rollback:
+        # 6. Restore back models and fields converted from `base` to `manual`.
+        if updated_model_ids:
+            env.cr.execute("UPDATE ir_model SET state = 'base' WHERE id IN %s", (tuple(updated_model_ids),))
+        if updated_field_ids:
+            env.cr.execute("UPDATE ir_model_fields SET state = 'base' WHERE id IN %s", (tuple(updated_field_ids),))
+        for field_id, selection in updated_selection_fields:
+            env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
+        for field_id, on_delete in updated_many2one_fields:
+            env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", [on_delete, field_id])
+        if updated_mail_thread_ids:
+            env.cr.execute(
+                "UPDATE ir_model SET is_mail_thread = true WHERE id IN %s", (tuple(updated_mail_thread_ids),)
+            )
+        for model, rec_name in rec_names.items():
+            env.registry[model]._rec_name = rec_name
 
-    # 7. Reload the registry as before
-    env.registry.setup_models(env.cr)
+        # 7. Reload the registry as before
+        env.registry.setup_models(env.cr)
 
 
 class IndirectReference(collections.namedtuple("IndirectReference", "table res_model res_id res_model_id")):
