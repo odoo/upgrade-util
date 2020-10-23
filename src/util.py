@@ -1813,7 +1813,7 @@ def new_module(cr, module, deps=(), auto_install=False):
         # Also happen for modules added afterward, which should be added by multiple series.
         return
 
-    if deps and auto_install:
+    if deps and auto_install and not module.startswith("test_"):
         to_check = deps if auto_install is True else auto_install
         state = "to install" if modules_installed(cr, *to_check) else "uninstalled"
     else:
