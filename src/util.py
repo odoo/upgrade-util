@@ -133,7 +133,7 @@ class SleepyDeveloperError(ValueError):
 def version_gte(version):
     if "-" in version:
         raise SleepyDeveloperError("version cannot contains dash")
-    return parse_version(release.series) >= parse_version(version)
+    return parse_version(release.serie) >= parse_version(version)
 
 
 def main(func, version=None):
