@@ -287,6 +287,12 @@ else:
         """
         if not queries:
             return
+
+        if len(queries) == 1:
+            # No need to spawn other threads
+            cr.execute(queries[0])
+            return
+
         max_workers = min(get_max_workers(), len(queries))
         reg = env(cr).registry
 
