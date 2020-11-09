@@ -335,14 +335,19 @@ def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
 
     Use between stategy to separate queries in buckets
     """
-    if "{parallel_filter}" not in query:
-        sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
-        query += sep_kw + "{parallel_filter}"
 
     cr.execute("SELECT min(id), max(id) FROM {}".format(table))
     min_id, max_id = cr.fetchone()
     if min_id is None:
         return []  # empty table
+
+    if ((max_id - min_id + 1) * 1.1) <= bucket_size:
+        # If there is less than `bucket_size` records (with a 10% tolerance), no need to explode the query
+        return [query.format(parallel_filter="true")]
+
+    if "{parallel_filter}" not in query:
+        sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
+        query += sep_kw + "{parallel_filter}"
 
     parallel_filter = "{prefix}id BETWEEN %s AND %s".format(prefix=prefix)
     return [
