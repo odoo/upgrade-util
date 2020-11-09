@@ -2086,45 +2086,6 @@ def _get_unique_indexes_with(cr, table, *columns):
     return cr.fetchall()
 
 
-@contextmanager
-def disabled_index_on(cr, table_name):
-    """
-    This method will disable indexes on one table, perform your operation, then re-enable indices
-    and reindex the table. Usefull for mass updates.
-
-    Usage:
-    with disabled_index_on(cr, 'my_big_table'):
-        my_big_operation()
-    """
-    _validate_table(table_name)
-    cr.execute(
-        """
-        UPDATE pg_index
-        SET indisready=false
-        WHERE indrelid = (
-            SELECT oid
-            FROM pg_class
-            WHERE relname=%s
-        )
-    """,
-        [table_name],
-    )
-    yield
-    cr.execute(
-        """
-        UPDATE pg_index
-        SET indisready=true
-        WHERE indrelid = (
-            SELECT oid
-            FROM pg_class
-            WHERE relname=%s
-        )
-    """,
-        [table_name],
-    )
-    cr.execute('REINDEX TABLE "%s"' % table_name)
-
-
 def create_index(cr, name, table_name, *columns):
     # create index if table and columns exists and index don't already exists
     _validate_table(table_name)
