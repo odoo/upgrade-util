@@ -984,7 +984,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     return res_id
 
 
-def update_record_from_xml(cr, xmlid, reset_write_metadata=True):
+def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=False):
     # Force update of a record from xml file to bypass the noupdate flag
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
@@ -1003,13 +1003,17 @@ def update_record_from_xml(cr, xmlid, reset_write_metadata=True):
     """,
         [module, name],
     )
-    if not cr.rowcount:
+    if cr.rowcount:
+        model, res_id, noupdate = cr.fetchone()
+    elif not force_create:
         return
-    model, res_id, noupdate = cr.fetchone()
+    else:
+        # The xmlid doesn't already exists, nothing to reset
+        reset_write_metadata = noupdate = False
 
     write_data = None
-    table = table_of_model(cr, model)
     if reset_write_metadata:
+        table = table_of_model(cr, model)
         cr.execute("SELECT write_uid, write_date, id FROM {} WHERE id=%s".format(table), [res_id])
         write_data = cr.fetchone()
 
