@@ -1898,7 +1898,8 @@ def column_type(cr, table, column):
 
 def create_column(cr, table, column, definition, **kwargs):
     # Manual PEP 3102
-    default = kwargs.pop("default", None)
+    no_def = object()
+    default = kwargs.pop("default", no_def)
     if kwargs:
         raise TypeError("create_column() got an unexpected keyword argument %r" % kwargs.popitem()[0])
     aliases = {
@@ -1914,20 +1915,24 @@ def create_column(cr, table, column, definition, **kwargs):
     }
     definition = aliases.get(definition.lower(), definition)
 
+    if definition == "bool" and default is no_def:
+        default = False
+
     curtype = column_type(cr, table, column)
     if curtype:
         if curtype != definition:
             _logger.error("%s.%s already exists but is %r instead of %r", table, column, curtype, definition)
-        if default is not None:
+        if default is not no_def:
             cr.execute('UPDATE "{0}" SET "{1}" = %s WHERE "{1}" IS NULL'.format(table, column), [default])
         return False
     else:
         create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition)
-        if default is None:
+        if default is no_def:
             cr.execute(create_query)
         else:
             cr.execute(create_query + " DEFAULT %s", [default])
-            cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
+            if definition != "bool":
+                cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
         return True
 
 
