@@ -234,25 +234,6 @@ def savepoint(cr):
         yield
 
 
-@contextmanager
-def disable_triggers(cr, *tables):
-    # NOTE only super user (at pg level) can disable all the triggers. noop if this is not the case.
-    for table in tables:
-        _validate_table(table)
-
-    cr.execute("SELECT usesuper FROM pg_user WHERE usename = CURRENT_USER")
-    is_su = cr.fetchone()[0]
-
-    if is_su:
-        for table in tables:
-            cr.execute("ALTER TABLE %s DISABLE TRIGGER ALL" % table)
-
-    yield
-    if is_su:
-        for table in reversed(tables):
-            cr.execute("ALTER TABLE %s ENABLE TRIGGER ALL" % table)
-
-
 def get_max_workers():
     force_max_worker = os.getenv("MAX_WORKER")
     if force_max_worker:
