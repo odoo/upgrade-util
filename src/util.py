@@ -714,7 +714,11 @@ def _dashboard_actions(cr, arch_match, *models):
     """
     cr.execute(q, [arch_match])
     for dash_id, arch in cr.fetchall():
-        dash = lxml.etree.fromstring(arch)
+        try:
+            dash = lxml.etree.fromstring(arch)
+        except lxml.etree.XMLSyntaxError:
+            _logger.error("Cannot parse dashboard %s", dash_id)
+            continue
         for act in dash.xpath("//action"):
             if models:
                 try:
