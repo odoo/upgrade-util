@@ -3625,6 +3625,7 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
         for model in only_models:
             # skip all inherit, they will be handled by the resursive call
             adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*")
+            adapt_related(cr, model, old, new, skip_inherit="*")
 
         inherited_models = tuple(
             inh_model for model in only_models for inh_model in _for_each_inherit(cr, model, skip_inherit)
@@ -3718,11 +3719,8 @@ def _get_domain_fields(cr):
             yield df
 
 
-def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
-    """Replace {old} by {new} in all domains for model {model} using {adapter} callback"""
-    _validate_model(model)
-    target_model = model
-
+def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
+    # adapt one domain
     evaluation_context = SelfPrintEvalContext()
 
     def valid_path_to(cr, path, from_, to):
@@ -3745,40 +3743,45 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
 
         return model == to
 
-    def adapt(cr, model, domain):
-        try:
-            eval_dom = safe_eval(domain, evaluation_context, nocopy=True)
-        except Exception as e:
-            oops = odoo.tools.ustr(e)
-            _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
-            return None
+    try:
+        eval_dom = safe_eval(domain, evaluation_context, nocopy=True)
+    except Exception as e:
+        oops = odoo.tools.ustr(e)
+        _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
+        return None
 
-        final_dom = []
-        changed = False
-        for element in eval_dom:
-            if not expression.is_leaf(element) or tuple(element) in [expression.TRUE_LEAF, expression.FALSE_LEAF]:
-                final_dom.append(element)
-                continue
+    final_dom = []
+    changed = False
+    for element in eval_dom:
+        if not expression.is_leaf(element) or tuple(element) in [expression.TRUE_LEAF, expression.FALSE_LEAF]:
+            final_dom.append(element)
+            continue
 
-            left, operator, right = expression.normalize_leaf(element)
+        left, operator, right = expression.normalize_leaf(element)
 
-            path = left.split(".")
-            for idx in range(len(path)):
-                idx1 = idx + 1
-                if path[-idx1] == old and valid_path_to(cr, path[:-idx1], model, target_model):
-                    if idx == 0 and adapter:
-                        operator, right = adapter(operator, right)
-                    path[-idx1] = new
-                    changed = True
+        path = left.split(".")
+        for idx in range(len(path)):
+            idx1 = idx + 1
+            if path[-idx1] == old and valid_path_to(cr, path[:-idx1], model, target_model):
+                if idx == 0 and adapter:
+                    operator, right = adapter(operator, right)
+                path[-idx1] = new
+                changed = True
 
-            left = ".".join(path)
-            final_dom.append((left, operator, right))
+        left = ".".join(path)
+        final_dom.append((left, operator, right))
 
-        if not changed:
-            return None
+    if not changed:
+        return None
 
-        _logger.debug("%s: %r -> %r", model, domain, final_dom)
-        return str(final_dom)
+    _logger.debug("%s: %r -> %r", model, domain, final_dom)
+    return str(final_dom)
+
+
+def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
+    """Replace {old} by {new} in all domains for model {model} using {adapter} callback"""
+    _validate_model(model)
+    target_model = model
 
     match_old = r"\y{}\y".format(old)
     for df in _get_domain_fields(cr):
@@ -3793,7 +3796,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
             [match_old],
         )
         for id_, model, domain in cr.fetchall():
-            domain = adapt(cr, model, domain)
+            domain = _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=adapter)
             if domain:
                 cr.execute("UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df), [domain, id_])
 
@@ -3810,13 +3813,39 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
             if not cr.rowcount:
                 continue
             [act_model] = cr.fetchone()
-            domain = adapt(cr, act_model, act.get("domain"))
+            domain = _adapt_one_domain(cr, target_model, old, new, act_model, act.get("domain"), adapter=adapter)
             if domain:
                 act.set("domain", domain)
 
     # down on inherits
     for inh_model in _for_each_inherit(cr, target_model, skip_inherit):
         adapt_domains(cr, inh_model, old, new, adapter, skip_inherit=skip_inherit)
+
+
+def adapt_related(cr, model, old, new, skip_inherit=()):
+    _validate_model(model)
+    target_model = model
+
+    match_old = r"\y{}\y".format(old)
+    cr.execute(
+        """
+        SELECT id, model, related
+          FROM ir_model_fields
+         WHERE related ~ %s
+        """,
+        [match_old],
+    )
+    for id_, model, related in cr.fetchall():
+        domain = _adapt_one_domain(cr, target_model, old, new, model, [(related, "=", "related")])
+        if domain:
+            related = domain[0][0]
+            cr.execute("UPDATE ir_model_fields SET related = %s WHERE id = %s", [related, id_])
+
+    # TODO adapt paths in email templates?
+
+    # down on inherits
+    for inh_model in _for_each_inherit(cr, target_model, skip_inherit):
+        adapt_related(cr, inh_model, old, new, skip_inherit=skip_inherit)
 
 
 def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=None):
