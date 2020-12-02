@@ -3743,12 +3743,20 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
 
         return model == to
 
-    try:
-        eval_dom = safe_eval(domain, evaluation_context, nocopy=True)
-    except Exception as e:
-        oops = odoo.tools.ustr(e)
-        _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
-        return None
+    if isinstance(domain, basestring):
+        try:
+            eval_dom = expression.normalize_domain(safe_eval(domain, evaluation_context, nocopy=True))
+        except Exception as e:
+            oops = odoo.tools.ustr(e)
+            _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
+            return None
+    else:
+        try:
+            eval_dom = expression.normalize_domain(domain)
+        except Exception as e:
+            oops = odoo.tools.ustr(e)
+            _logger.log(NEARLYWARN, "Invalid %r domain: %r: %s", model, domain, oops)
+            return None
 
     final_dom = []
     changed = False
@@ -3775,7 +3783,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
         return None
 
     _logger.debug("%s: %r -> %r", model, domain, final_dom)
-    return str(final_dom)
+    return final_dom
 
 
 def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
@@ -3798,7 +3806,9 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
         for id_, model, domain in cr.fetchall():
             domain = _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=adapter)
             if domain:
-                cr.execute("UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df), [domain, id_])
+                cr.execute(
+                    "UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df), [unicode(domain), id_]
+                )
 
     # adapt domain in dashboards.
     # NOTE: does not filter on model at dashboard selection for handle dotted domains
@@ -3815,7 +3825,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
             [act_model] = cr.fetchone()
             domain = _adapt_one_domain(cr, target_model, old, new, act_model, act.get("domain"), adapter=adapter)
             if domain:
-                act.set("domain", domain)
+                act.set("domain", unicode(domain))
 
     # down on inherits
     for inh_model in _for_each_inherit(cr, target_model, skip_inherit):
