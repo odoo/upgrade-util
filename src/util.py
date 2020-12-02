@@ -3834,6 +3834,11 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
 
 def adapt_related(cr, model, old, new, skip_inherit=()):
     _validate_model(model)
+
+    if not column_exists(cr, "ir_model_fields", "related"):
+        # this field only appears in 9.0
+        return
+
     target_model = model
 
     match_old = r"\y{}\y".format(old)
