@@ -624,7 +624,8 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
             )
     if not silent:
         _logger.info("remove deprecated %s view %s (ID %s)", key and "COWed" or "built-in", key or xml_id, view_id)
-    remove_record(cr, ("ir.ui.view", view_id))
+
+    _remove_records(cr, "ir.ui.view", [view_id])
 
 
 @contextmanager
@@ -757,10 +758,6 @@ def remove_record(cr, name, deactivate=False, active_field="active"):
         if not data:
             return
         model, res_id = data
-        if model == "ir.ui.view":
-            # NOTE: only done when a xmlid is given to avoid infinite recursion
-            _logger.log(NEARLYWARN, "Removing view %r", name)
-            return remove_view(cr, view_id=res_id)
     elif isinstance(name, tuple):
         if len(name) != 2:
             raise ValueError("Please use a 2-tuple (<model>, <res_id>)")
@@ -768,23 +765,36 @@ def remove_record(cr, name, deactivate=False, active_field="active"):
     else:
         raise ValueError("Either use a fully qualified xmlid string <module>.<name> or a 2-tuple (<model>, <res_id>)")
 
+    # deleguate to the right method
+    if model == "ir.ui.view":
+        _logger.log(NEARLYWARN, "Removing view %r", name)
+        return remove_view(cr, view_id=res_id)
+
     if model == "ir.ui.menu":
         _logger.log(NEARLYWARN, "Removing menu %r", name)
         return remove_menus(cr, [res_id])
 
+    return _remove_records(cr, model, [res_id], deactivate=deactivate, active_field=active_field)
+
+
+def _remove_records(cr, model, ids, deactivate=False, active_field="active"):
+    if not ids:
+        return
+
+    ids = tuple(ids)
     table = table_of_model(cr, model)
     try:
         with savepoint(cr):
-            cr.execute('DELETE FROM "%s" WHERE id=%%s' % table, (res_id,))
+            cr.execute('DELETE FROM "{}" WHERE id IN %s'.format(table), [ids])
     except Exception:
         if not deactivate or not active_field:
             raise
-        cr.execute('UPDATE "%s" SET "%s"=%%s WHERE id=%%s' % (table, active_field), (False, res_id))
+        cr.execute('UPDATE "{}" SET "{}" = false WHERE id IN %s'.format(table, active_field), [ids])
     else:
         for ir in indirect_references(cr, bound_only=True):
-            query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(ir.table, ir.model_filter(), ir.res_id)
-            cr.execute(query, [model, res_id])
-        _rm_refs(cr, model, [res_id])
+            query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
+            cr.execute(query, [model, ids])
+        _rm_refs(cr, model, ids)
 
     if model == "res.groups":
         # A group is gone, the auto-generated view `base.user_groups_view` is outdated.
@@ -3019,14 +3029,16 @@ def remove_model(cr, model, drop_table=True):
             for (view_id,) in cr.fetchall():
                 remove_view(cr, view_id=view_id, silent=True)
         else:
-            query = 'DELETE FROM "{0}" WHERE {1} RETURNING id'.format(ir.table, ir.model_filter())
+            query = 'SELECT id FROM "{0}" WHERE {1}'.format(ir.table, ir.model_filter())
             cr.execute(query, [model])
             chunk_size = 1000
             size = (cr.rowcount + chunk_size - 1) / chunk_size
             for ids in log_progress(
                 chunks(map(itemgetter(0), cr.fetchall()), chunk_size, fmt=tuple), qualifier=ir.table, size=size
             ):
-                _rm_refs(cr, model_of_table(cr, ir.table), ids)
+                ir_model = model_of_table(cr, ir.table)
+                _remove_records(cr, ir_model, ids)
+                _rm_refs(cr, ir_model, ids)
 
     _rm_refs(cr, model)
 
