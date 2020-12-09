@@ -2205,7 +2205,7 @@ def _for_each_inherit(cr, model, skip):
             continue
         if inh.born <= base_version:
             if inh.dead is None or base_version < inh.dead:
-                yield inh.model
+                yield inh
 
 
 def _validate_model(model):
@@ -2302,8 +2302,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         remove_column(cr, table, fieldname, cascade=cascade)
 
     # remove field on inherits
-    for inh_model in _for_each_inherit(cr, model, skip_inherit):
-        remove_field(cr, inh_model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
+    for inh in _for_each_inherit(cr, model, skip_inherit):
+        remove_field(cr, inh.model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
 
 
 def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
@@ -2324,8 +2324,8 @@ def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
         """,
         [model, fieldname],
     )
-    for inh_model in _for_each_inherit(cr, model, skip_inherit):
-        remove_field_metadata(cr, inh_model, fieldname, skip_inherit=skip_inherit)
+    for inh in _for_each_inherit(cr, model, skip_inherit):
+        remove_field_metadata(cr, inh.model, fieldname, skip_inherit=skip_inherit)
 
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inherit=()):
@@ -2349,8 +2349,8 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
             [name, old_module],
         )
     # move field on inherits
-    for inh_model in _for_each_inherit(cr, model, skip_inherit):
-        move_field_to_module(cr, inh_model, fieldname, old_module, new_module, skip_inherit=skip_inherit)
+    for inh in _for_each_inherit(cr, model, skip_inherit):
+        move_field_to_module(cr, inh.model, fieldname, old_module, new_module, skip_inherit=skip_inherit)
 
 
 def rename_field(cr, model, old, new, update_references=True, domain_adapter=None, skip_inherit=()):
@@ -2447,8 +2447,8 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
         update_field_references(cr, old, new, only_models=(model,), domain_adapter=domain_adapter, skip_inherit="*")
 
     # rename field on inherits
-    for inh_model in _for_each_inherit(cr, model, skip_inherit):
-        rename_field(cr, inh_model, old, new, update_references=update_references, skip_inherit=skip_inherit)
+    for inh in _for_each_inherit(cr, model, skip_inherit):
+        rename_field(cr, inh.model, old, new, update_references=update_references, skip_inherit=skip_inherit)
 
 
 def convert_field_to_property(
@@ -3628,7 +3628,7 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
             adapt_related(cr, model, old, new, skip_inherit="*")
 
         inherited_models = tuple(
-            inh_model for model in only_models for inh_model in _for_each_inherit(cr, model, skip_inherit)
+            inh.model for model in only_models for inh in _for_each_inherit(cr, model, skip_inherit)
         )
         if inherited_models:
             update_field_references(
@@ -3828,8 +3828,8 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
                 act.set("domain", unicode(domain))
 
     # down on inherits
-    for inh_model in _for_each_inherit(cr, target_model, skip_inherit):
-        adapt_domains(cr, inh_model, old, new, adapter, skip_inherit=skip_inherit)
+    for inh in _for_each_inherit(cr, target_model, skip_inherit):
+        adapt_domains(cr, inh.model, old, new, adapter, skip_inherit=skip_inherit)
 
 
 def adapt_related(cr, model, old, new, skip_inherit=()):
@@ -3859,8 +3859,8 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
     # TODO adapt paths in email templates?
 
     # down on inherits
-    for inh_model in _for_each_inherit(cr, target_model, skip_inherit):
-        adapt_related(cr, inh_model, old, new, skip_inherit=skip_inherit)
+    for inh in _for_each_inherit(cr, target_model, skip_inherit):
+        adapt_related(cr, inh.model, old, new, skip_inherit=skip_inherit)
 
 
 def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=None):
