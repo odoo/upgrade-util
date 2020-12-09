@@ -2976,6 +2976,21 @@ def _ir_values_value(cr):
     return result
 
 
+def _unknown_model_id(cr):
+    result = getattr(_unknown_model_id, "result", None)
+    if result is None:
+        cr.execute(
+            """
+                INSERT INTO ir_model(name, model)
+                     SELECT 'Unknown', '_unknown'
+                      WHERE NOT EXISTS (SELECT 1 FROM ir_model WHERE model = '_unknown')
+            """
+        )
+        cr.execute("SELECT id FROM ir_model WHERE model = '_unknown'")
+        _unknown_model_id.result = result = cr.fetchone()[0]
+    return result
+
+
 def _rm_refs(cr, model, ids=None):
     if ids is None:
         match = "like %s"
@@ -3034,31 +3049,56 @@ def _rm_refs(cr, model, ids=None):
 def remove_model(cr, model, drop_table=True):
     _validate_model(model)
     model_underscore = model.replace(".", "_")
+    chunk_size = 1000
+    notify = False
+    unk_id = _unknown_model_id(cr)
 
     # remove references
     for ir in indirect_references(cr):
-        if ir.table in ("ir_model", "ir_model_fields"):
+        if ir.table in ("ir_model", "ir_model_fields", "ir_model_data"):
             continue
-        if ir.table == "ir_ui_view":
-            cr.execute("SELECT id FROM ir_ui_view WHERE {}".format(ir.model_filter()), [model])
-            for (view_id,) in cr.fetchall():
-                remove_view(cr, view_id=view_id, silent=True)
-        else:
-            query = 'SELECT id FROM "{0}" WHERE {1}'.format(ir.table, ir.model_filter())
-            cr.execute(query, [model])
-            chunk_size = 1000
-            size = (cr.rowcount + chunk_size - 1) / chunk_size
-            for ids in log_progress(
-                chunks(map(itemgetter(0), cr.fetchall()), chunk_size, fmt=tuple), qualifier=ir.table, size=size
-            ):
-                ir_model = model_of_table(cr, ir.table)
-                _remove_records(cr, ir_model, ids)
-                _rm_refs(cr, ir_model, ids)
+
+        query = """
+            WITH _ as (
+                SELECT r.id, bool_or(COALESCE(d.module, '') NOT IN ('', '__export__')) AS from_module
+                  FROM "{}" r
+             LEFT JOIN ir_model_data d ON d.model = %s AND d.res_id = r.id
+                 WHERE {}
+             GROUP BY r.id
+            )
+            SELECT from_module, array_agg(id) FROM _ GROUP BY from_module
+        """
+        ref_model = model_of_table(cr, ir.table)
+        cr.execute(query.format(ir.table, ir.model_filter(prefix="r.")), [ref_model, model])
+        for from_module, ids in cr.fetchall():
+            if from_module:
+                if ir.table == "ir_ui_view":
+                    for view_id in ids:
+                        remove_view(cr, view_id=view_id, silent=True)
+                else:
+                    # remove in batch
+                    size = (len(ids) + chunk_size - 1) / chunk_size
+                    for sub_ids in log_progress(chunks(ids, chunk_size, fmt=tuple), qualifier=ir.table, size=size):
+                        _remove_records(cr, ref_model, sub_ids)
+                        _rm_refs(cr, ref_model, sub_ids)
+            else:
+                # link to `_unknown` model
+                sets, args = zip(
+                    *[
+                        ('"{}" = %s'.format(c), v)
+                        for c, v in [(ir.res_model, "_unknown"), (ir.res_model_id, unk_id)]
+                        if c
+                    ]
+                )
+
+                query = 'UPDATE "{}" SET {} WHERE id IN %s'.format(ir.table, ",".join(sets))
+                cr.execute(query, args + (tuple(ids),))
+                notify = notify or bool(cr.rowcount)
 
     _rm_refs(cr, model)
 
-    cr.execute("SELECT id FROM ir_model WHERE model=%s", (model,))
-    [mod_id] = cr.fetchone() or [None]
+    cr.execute("SELECT id, name FROM ir_model WHERE model=%s", (model,))
+    [mod_id, mod_label] = cr.fetchone() or [None, model]
     if mod_id:
         # some required fk are in "ON DELETE SET NULL/RESTRICT".
         for tbl in "base_action_rule base_automation google_drive_config".split():
@@ -3099,6 +3139,7 @@ def remove_model(cr, model, drop_table=True):
         "DELETE FROM ir_model_data WHERE model='ir.model.fields' AND name LIKE %s",
         [(IMD_FIELD_PATTERN % (model_underscore, "%")).replace("_", r"\_")],
     )
+    cr.execute("DELETE FROM ir_model_data WHERE model = %s", [model])
 
     table = table_of_model(cr, model)
     if drop_table:
@@ -3106,6 +3147,16 @@ def remove_model(cr, model, drop_table=True):
             cr.execute('DROP TABLE "{0}" CASCADE'.format(table))
         elif view_exists(cr, table):
             cr.execute('DROP VIEW "{0}" CASCADE'.format(table))
+
+    if notify:
+        add_to_migration_reports(
+            message="The model {model} ({label}) has been removed. "
+            "The linked records (crons, mail templates, automated actions...)"
+            " have also been removed (standard) or linked to the '_unknown' model (custom).".format(
+                model=model, label=mod_label
+            ),
+            category="Removed Models",
+        )
 
 
 # compat layer...
