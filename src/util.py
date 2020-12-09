@@ -782,6 +782,21 @@ def _remove_records(cr, model, ids, deactivate=False, active_field="active"):
         return
 
     ids = tuple(ids)
+
+    for inh in _for_each_inherit(cr, model, skip=()):
+        if inh.via:
+            table = table_of_model(cr, inh.model)
+            if not table_exists(cr, table):
+                continue
+            cr.execute('SELECT id FROM "{}" WHERE "{}" IN %s'.format(table, inh.via), [ids])
+            if inh.model == "ir.ui.menu":
+                remove_menus(cr, [menu_id for menu_id, in cr.fetchall()])
+            elif inh.model == "ir.ui.view":
+                for (view_id,) in cr.fetchall():
+                    remove_view(cr, view_id=view_id)
+            else:
+                _remove_records(cr, inh.model, [rid for rid, in cr.fetchall()])
+
     table = table_of_model(cr, model)
     try:
         with savepoint(cr):
