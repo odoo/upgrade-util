@@ -786,7 +786,8 @@ def _remove_records(cr, model, ids, deactivate=False, active_field="active"):
     for inh in _for_each_inherit(cr, model, skip=()):
         if inh.via:
             table = table_of_model(cr, inh.model)
-            if not table_exists(cr, table):
+            if not column_exists(cr, table, inh.via):
+                # column may not exists in case of a partially unintalled module that left only *magic columns* in tables
                 continue
             cr.execute('SELECT id FROM "{}" WHERE "{}" IN %s'.format(table, inh.via), [ids])
             if inh.model == "ir.ui.menu":
