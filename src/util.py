@@ -2843,7 +2843,7 @@ def custom_module_field_as_manual(env, rollback=True):
         env.registry.setup_models(env.cr)
 
 
-class IndirectReference(collections.namedtuple("IndirectReference", "table res_model res_id res_model_id")):
+class IndirectReference(collections.namedtuple("IndirectReference", "table res_model res_id res_model_id set_unknown")):
     def model_filter(self, prefix="", placeholder="%s"):
         if prefix and prefix[-1] != ".":
             prefix += "."
@@ -2856,28 +2856,29 @@ class IndirectReference(collections.namedtuple("IndirectReference", "table res_m
         return '{}"{}"={}'.format(prefix, column, placeholder)
 
 
-IndirectReference.__new__.__defaults__ = (None, None)  # https://stackoverflow.com/a/18348004
+# By default, there is no `res_id`, no `res_model_id` and it is deleted when the linked model is removed
+IndirectReference.__new__.__defaults__ = (None, None, False)  # https://stackoverflow.com/a/18348004
 
 
 def indirect_references(cr, bound_only=False):
     IR = IndirectReference
     each = [
         IR("ir_attachment", "res_model", "res_id"),
-        IR("ir_cron", "model", None),
-        IR("ir_act_report_xml", "model", None),
+        IR("ir_cron", "model", None, set_unknown=True),
+        IR("ir_act_report_xml", "model", None, set_unknown=True),
         IR("ir_act_window", "res_model", "res_id"),
         IR("ir_act_window", "src_model", None),
         IR("ir_act_server", "wkf_model_name", None),
         IR("ir_act_server", "crud_model_name", None),
-        IR("ir_act_server", "model_name", None),
-        IR("ir_act_client", "res_model", None),
+        IR("ir_act_server", "model_name", None, set_unknown=True),
+        IR("ir_act_client", "res_model", None, set_unknown=True),
         IR("ir_model", "model", None),
         IR("ir_model_fields", "model", None),
         IR("ir_model_fields", "relation", None),  # destination of a relation field
         IR("ir_model_data", "model", "res_id"),
-        IR("ir_filters", "model_id", None),  # YUCK!, not an id
-        IR("ir_exports", "resource", None),
-        IR("ir_ui_view", "model", None),
+        IR("ir_filters", "model_id", None, set_unknown=True),  # YUCK!, not an id
+        IR("ir_exports", "resource", None, set_unknown=True),
+        IR("ir_ui_view", "model", None, set_unknown=True),
         IR("ir_values", "model", "res_id"),
         IR("wkf_transition", "trigger_model", None),
         IR("wkf_triggers", "model", None),
@@ -2886,8 +2887,8 @@ def indirect_references(cr, bound_only=False):
         IR("base_import_import", "res_model", None),
         IR("calendar_event", "res_model", "res_id"),  # new in saas~18
         IR("documents_document", "res_model", "res_id"),
-        IR("email_template", "model", None),  # stored related
-        IR("mail_template", "model", None),  # model renamed in saas~6
+        IR("email_template", "model", None, set_unknown=True),  # stored related
+        IR("mail_template", "model", None, set_unknown=True),  # model renamed in saas~6
         IR("mail_activity", "res_model", "res_id", "res_model_id"),
         IR("mail_alias", None, "alias_force_thread_id", "alias_model_id"),
         IR("mail_alias", None, "alias_parent_thread_id", "alias_parent_model_id"),
@@ -2898,9 +2899,9 @@ def indirect_references(cr, bound_only=False):
         IR("mail_wizard_invite", "res_model", "res_id"),
         IR("mail_mail_statistics", "model", "res_id"),
         IR("mailing_trace", "model", "res_id"),
-        IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id"),
-        IR("mailing_mailing", None, None, "mailing_model_id"),
-        IR("project_project", "alias_model", None),
+        IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id", set_unknown=True),
+        IR("mailing_mailing", None, None, "mailing_model_id", set_unknown=True),
+        IR("project_project", "alias_model", None, set_unknown=True),
         IR("rating_rating", "res_model", "res_id", "res_model_id"),
         IR("rating_rating", "parent_res_model", "parent_res_id", "parent_res_model_id"),
         IR("timer_timer", "res_model", "res_id"),
@@ -3076,7 +3077,7 @@ def remove_model(cr, model, drop_table=True):
         ref_model = model_of_table(cr, ir.table)
         cr.execute(query.format(ir.table, ir.model_filter(prefix="r.")), [ref_model, model])
         for from_module, ids in cr.fetchall():
-            if from_module:
+            if from_module or not ir.set_unknown:
                 if ir.table == "ir_ui_view":
                     for view_id in ids:
                         remove_view(cr, view_id=view_id, silent=True)
