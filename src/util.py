@@ -895,6 +895,10 @@ def rename_xmlid(cr, old, new, noupdate=None):
         model, rid = data
         if model == "ir.ui.view" and column_exists(cr, "ir_ui_view", "key"):
             cr.execute("UPDATE ir_ui_view SET key=%s WHERE id=%s AND key=%s", [new, rid, old])
+            if cr.rowcount:
+                # iif the key has been updated for this view, also update it for all other cowed views.
+                # Don't change the view keys inconditionally to avoid changing unrelated views.
+                cr.execute("UPDATE ir_ui_view SET key = %s WHERE key = %s", [new, old])
         return rid
     return None
 
