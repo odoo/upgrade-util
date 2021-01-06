@@ -1949,7 +1949,9 @@ def create_column(cr, table, column, definition, **kwargs):
         if curtype != definition:
             _logger.error("%s.%s already exists but is %r instead of %r", table, column, curtype, definition)
         if default is not no_def:
-            cr.execute('UPDATE "{0}" SET "{1}" = %s WHERE "{1}" IS NULL'.format(table, column), [default])
+            query = 'UPDATE "{0}" SET "{1}" = %s WHERE "{1}" IS NULL'.format(table, column)
+            query = cr.mogrify(query, [default]).decode()
+            parallel_execute(cr, explode_query_range(cr, query, table=table))
         return False
     else:
         create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition)
