@@ -159,11 +159,26 @@ inheritance_data = frozendict(
             Inherit(model="account.partner.ledger", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="account.sales.report", born=parse_version("saas~11.5"), dead=None, via=None),
             Inherit(model="l10n.au.tax.report", born=parse_version("saas~13.4"), dead=None, via=None),
-            Inherit(model="l10n.be.report.partner.vat.intra", born=parse_version("10.saas~14"), dead=None, via=None),
+            Inherit(
+                model="l10n.be.report.partner.vat.intra",
+                born=parse_version("10.saas~14"),
+                dead=parse_version("saas~14.1"),
+                via=None,
+            ),
             Inherit(model="l10n.be.report.partner.vat.listing", born=parse_version("10.saas~14"), dead=None, via=None),
-            Inherit(model="l10n.de.report.partner.vat.intra", born=parse_version("10.saas~18"), dead=None, via=None),
+            Inherit(
+                model="l10n.de.report.partner.vat.intra",
+                born=parse_version("10.saas~18"),
+                dead=parse_version("saas~14.1"),
+                via=None,
+            ),
             Inherit(model="l10n.in.report.account", born=parse_version("saas~12.1"), dead=None, via=None),
-            Inherit(model="l10n.lu.report.partner.vat.intra", born=parse_version("13.0"), dead=None, via=None),
+            Inherit(
+                model="l10n.lu.report.partner.vat.intra",
+                born=parse_version("13.0"),
+                dead=parse_version("saas~14.1"),
+                via=None,
+            ),
             Inherit(model="l10n.nl.report.intrastat", born=parse_version("10.saas~18"), dead=None, via=None),
             Inherit(model="l10n_ar.vat.book", born=parse_version("saas~12.5"), dead=None, via=None),
             Inherit(
@@ -814,7 +829,13 @@ inheritance_data = frozendict(
             Inherit(model="account.journal", born=parse_version("saas~12.2"), dead=None, via=None),
             Inherit(model="account.move", born=parse_version("10.saas~14"), dead=parse_version("10.saas~17"), via=None),
             Inherit(model="account.move", born=parse_version("saas~12.2"), dead=None, via=None),
-            Inherit(model="account.online.provider", born=parse_version("9.saas~13"), dead=None, via=None),
+            Inherit(model="account.online.link", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(
+                model="account.online.provider",
+                born=parse_version("9.saas~13"),
+                dead=parse_version("saas~14.1"),
+                via=None,
+            ),
             Inherit(model="account.payment", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="account.voucher", born=parse_version("7.0"), dead=parse_version("saas~12.4"), via=None),
             Inherit(model="adyen.account", born=parse_version("14.0"), dead=None, via=None),
@@ -1025,8 +1046,8 @@ inheritance_data = frozendict(
             ),
         ],
         "phone.validation.mixin": [
-            Inherit(model="crm.lead", born=parse_version("10.saas~16"), dead=None, via=None),
-            Inherit(model="res.partner", born=parse_version("10.saas~16"), dead=None, via=None),
+            Inherit(model="crm.lead", born=parse_version("10.saas~16"), dead=parse_version("saas~14.2"), via=None),
+            Inherit(model="res.partner", born=parse_version("10.saas~16"), dead=parse_version("saas~14.2"), via=None),
         ],
         "portal.mixin": [
             Inherit(
