@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
+import subprocess
 import sys
 from pathlib import PurePath
-import subprocess
-
 
 py2_patterns = [
     "src/*.py",

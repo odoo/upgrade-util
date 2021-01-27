@@ -1,12 +1,12 @@
-from odoo.tests.common import BaseCase, MetaCase, get_db_name
+import json
+import logging
+import re
+
 import odoo
-from odoo import api
-from odoo import release
+from odoo import api, release
+from odoo.tests.common import BaseCase, MetaCase, get_db_name
 from odoo.tools import config
 from odoo.tools.parse_version import parse_version
-import logging
-import json
-import re
 
 try:
     from unittest.mock import patch
@@ -22,8 +22,8 @@ VERSION_RE = re.compile(r"^(saas[-~])?(\d+).(\d+)$")
 class UpgradeCommon(BaseCase):
     __initialized = False
 
-    def __init_subclass__(subclass):
-        subclass.change_version = (None, None)
+    def __init_subclass__(cls):
+        cls.change_version = (None, None)
 
     @property
     def key(self):
@@ -174,7 +174,7 @@ class UpgradeCase(UpgradeCommon, UpgradeMetaCase("DummyCase", (object,), {})):
     """
     Test case to modify data in origin version, and assert in target version.
     User must define a "prepare" and a "check" method.
-    - prepare method can write in database, return value will be stored in a dedicated table and 
+    - prepare method can write in database, return value will be stored in a dedicated table and
       passed as argument to check.
     - check method can assert that the received argument is the one expected,
       executing any code to retrive equivalent information in migrated database.
@@ -186,14 +186,14 @@ class UpgradeCase(UpgradeCommon, UpgradeMetaCase("DummyCase", (object,), {})):
     prepare and check implementation may contains version conditionnal code to match api changes.
 
     using @change_version class decorator can indicate with script version is tested here if any:
-    Example: to test a saas~12.3 script, using @change_version('saas-12,3') will only run prepare if 
+    Example: to test a saas~12.3 script, using @change_version('saas-12,3') will only run prepare if
     version in [12.0, 12.3[ and run check if version is in [12.3, 13]
 
     """
 
-    def __init_subclass__(subclass):  # should be in metaCase for python2.7 compatibility?
-        if not hasattr(subclass, "prepare") or not hasattr(subclass, "check"):
-            _logger.error("%s (UpgradeCase) must define prepare and check methods", subclass.__name__)
+    def __init_subclass__(cls):  # should be in metaCase for python2.7 compatibility?
+        if not hasattr(cls, "prepare") or not hasattr(cls, "check"):
+            _logger.error("%s (UpgradeCase) must define prepare and check methods", cls.__name__)
 
     def test_prepare(self):
         super(UpgradeCase, self).test_prepare()
@@ -220,9 +220,9 @@ class IntegrityCase(UpgradeCommon, IntegrityMetaCase("DummyCase", (object,), {})
 
     message = "Invariant check fail"
 
-    def __init_subclass__(subclass):
-        if not hasattr(subclass, "invariant"):
-            _logger.error("%s (IntegrityCase) must define an invariant method", subclass.__name__)
+    def __init_subclass__(cls):
+        if not hasattr(cls, "invariant"):
+            _logger.error("%s (IntegrityCase) must define an invariant method", cls.__name__)
 
     # IntegrityCase should not alterate database:
     # TODO give a test cursor, don't commit after prepare, use a protected cursor to set_value
@@ -242,12 +242,13 @@ class IntegrityCase(UpgradeCommon, IntegrityMetaCase("DummyCase", (object,), {})
 
     def setUp(self):
         super(IntegrityCase, self).setUp()
+
         def commit(self):
-            if self.dbname == config['log_db'].split('/')[-1]:
+            if self.dbname == config["log_db"].split("/")[-1]:
                 self._cnx.commit()
             else:
                 raise Exception("Commit are forbiden in intergity cases")
 
-        patcher = patch.object(odoo.sql_db.Cursor, 'commit', commit)
+        patcher = patch.object(odoo.sql_db.Cursor, "commit", commit)
         patcher.start()
         self.addCleanup(patcher.stop)

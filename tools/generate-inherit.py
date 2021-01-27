@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 
+import io
+import itertools
+import subprocess
+import sys
+import tokenize
 from ast import literal_eval
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import total_ordering
-import io
-import itertools
 from pathlib import Path
-import subprocess
-import sys
-import tokenize
-from typing import NamedTuple, Dict, Set, Optional, Tuple
+from typing import Dict, NamedTuple, Optional, Set, Tuple
 
 import black
-
 
 MODELS = ["osv", "osv_memory", "Model", "TransientModel", "AbstractModel"]
 MODELS += [".".join(x).lstrip(".") for x in itertools.product(["openerp", "odoo", ""], ["osv", "models"], MODELS)]

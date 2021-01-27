@@ -6,37 +6,37 @@ import collections
 import datetime
 import json
 import logging
-import lxml
 import os
-from multiprocessing import cpu_count
 import re
 import sys
 import time
-
 from contextlib import contextmanager
-from docutils.core import publish_string
+from functools import reduce
 from inspect import currentframe
 from itertools import chain, islice
-from functools import reduce
+from multiprocessing import cpu_count
 from operator import itemgetter
 from textwrap import dedent
+
+import lxml
+from docutils.core import publish_string
 
 try:
     from unittest.mock import patch
 except ImportError:
     from mock import patch
 
-from . import inherit
-
 import markdown
 import psycopg2
 
+from . import inherit
+
 try:
     import odoo
-    from odoo import release, SUPERUSER_ID
+    from odoo import SUPERUSER_ID, release
 except ImportError:
     import openerp as odoo
-    from openerp import release, SUPERUSER_ID
+    from openerp import SUPERUSER_ID, release
 
 try:
     from odoo.addons.base.models.ir_module import MyWriter  # > 11.0
@@ -48,26 +48,24 @@ except ImportError:
 
 try:
     from odoo.modules.module import get_module_path, load_information_from_description_file
+    from odoo.osv import expression
     from odoo.sql_db import db_connect
     from odoo.tools.convert import xml_import
     from odoo.tools.func import frame_codeinfo
     from odoo.tools.mail import html_sanitize
-    from odoo.tools.misc import file_open
-    from odoo.tools.misc import mute_logger
+    from odoo.tools.misc import file_open, mute_logger
     from odoo.tools.parse_version import parse_version
     from odoo.tools.safe_eval import safe_eval
-    from odoo.osv import expression
 except ImportError:
     from openerp.modules.module import get_module_path, load_information_from_description_file
+    from openerp.osv import expression
     from openerp.sql_db import db_connect
     from openerp.tools.convert import xml_import
     from openerp.tools.func import frame_codeinfo
     from openerp.tools.mail import html_sanitize
-    from openerp.tools.misc import file_open
-    from openerp.tools.misc import mute_logger
+    from openerp.tools.misc import file_open, mute_logger
     from openerp.tools.parse_version import parse_version
     from openerp.tools.safe_eval import safe_eval
-    from openerp.osv import expression
 
 try:
     from odoo.api import Environment
