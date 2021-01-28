@@ -384,6 +384,13 @@ def has_enterprise():
     return bool(get_module_path("delivery_fedex", downloaded=False, display_warning=False))
 
 
+def has_design_themes():
+    """Return whernever the current installation has theme addons availables"""
+    if os.getenv("ODOO_HAS_DESIGN_THEMES"):
+        return True
+    return bool(get_module_path("theme_yes", downloaded=False, display_warning=False))
+
+
 def is_saas(cr):
     """Return whether the current installation has saas modules installed or not"""
     # this is shitty, I know - but the one above me is as shitty so ¯\_(ツ)_/¯
