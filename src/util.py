@@ -26,7 +26,6 @@ try:
 except ImportError:
     from mock import patch
 
-import markdown
 import psycopg2
 
 from . import inherit
@@ -4200,6 +4199,7 @@ def rst2html(rst):
 
 
 def md2html(md):
+    import markdown
     mdversion = markdown.__version_info__ if hasattr(markdown, "__version_info__") else markdown.version_info
     extensions = [
         "markdown.extensions.nl2br",
