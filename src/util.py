@@ -674,6 +674,8 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
         )
         [arch] = cr.fetchone() or [None]
         if arch:
+            if isinstance(arch, unicode):
+                arch = arch.encode("utf-8")
             arch = lxml.etree.fromstring(arch)
             yield arch
             cr.execute(
@@ -720,6 +722,8 @@ def _dashboard_actions(cr, arch_match, *models):
     cr.execute(q, [arch_match])
     for dash_id, arch in cr.fetchall():
         try:
+            if isinstance(arch, unicode):
+                arch = arch.encode("utf-8")
             dash = lxml.etree.fromstring(arch)
         except lxml.etree.XMLSyntaxError:
             _logger.error("Cannot parse dashboard %s", dash_id)
@@ -4200,6 +4204,7 @@ def rst2html(rst):
 
 def md2html(md):
     import markdown
+
     mdversion = markdown.__version_info__ if hasattr(markdown, "__version_info__") else markdown.version_info
     extensions = [
         "markdown.extensions.nl2br",
