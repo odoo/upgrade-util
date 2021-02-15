@@ -1344,9 +1344,9 @@ def delete_unused(cr, *xmlids):
               FROM xids x
              WHERE d.module = x.module
                AND d.name = x.name
-         RETURNING d.model, d.res_id
+         RETURNING d.id, d.model, d.res_id, d.module || '.' || d.name as xmlid
        )
-       SELECT model, array_agg(res_id)
+       SELECT model, array_agg(res_id ORDER BY id), array_agg(xmlid ORDER BY id)
          FROM _upd
      GROUP BY model
     """.format(
@@ -1354,8 +1354,10 @@ def delete_unused(cr, *xmlids):
         )
     )
 
-    for model, ids in cr.fetchall():
+    deleted = []
+    for model, ids, xmlids in cr.fetchall():
         table = table_of_model(cr, model)
+        res_id_to_xmlid = dict(zip(ids, xmlids))
 
         sub = " UNION ".join(
             [
@@ -1383,6 +1385,9 @@ def delete_unused(cr, *xmlids):
 
         for tid in ids:
             remove_record(cr, (model, tid))
+            deleted.append(res_id_to_xmlid[tid])
+
+    return deleted
 
 
 def modules_installed(cr, *modules):
