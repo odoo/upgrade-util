@@ -2800,6 +2800,19 @@ def custom_module_field_as_manual(env, rollback=True):
             """
         )
         updated_mail_thread_ids = [r[0] for r in env.cr.fetchall()]
+        if updated_mail_thread_ids:
+            env.cr.execute(
+                """
+                    UPDATE ir_model_fields
+                        SET state = 'manual'
+                        WHERE state = 'base'
+                        AND model_id IN %s
+                        AND name IN %s
+                    RETURNING id
+                """,
+                [tuple(updated_mail_thread_ids), tuple(env["mail.thread"]._fields.keys())],
+            )
+            updated_field_ids += [r[0] for r in env.cr.fetchall()]
 
     # 3.4. models `_rec_name` are not reloaded correctly.
     #      If the model has no `_rec_name` and there is a manual field `name` or `x_name`,
