@@ -2067,12 +2067,20 @@ def target_of(cr, table, column):
     return cr.fetchone()
 
 
-def get_index_on(cr, table, *columns):
+def get_index_on(cr, table, *columns, **kwargs):
     """
     return an optional tuple (index_name, unique, pk)
     NOTE: column order is respected
     """
+
+    # Manual PEP 3102
+    quote_ident = kwargs.pop("quote_ident", True)
+    if kwargs:
+        raise TypeError("get_index_on() got an unexpected keyword argument %r" % kwargs.popitem()[0])
+
     _validate_table(table)
+
+    funk = "quote_ident" if quote_ident else "concat"
     if cr._cnx.server_version >= 90500:
         position = "array_position(x.indkey, x.unnest_indkey)"
     else:
@@ -2081,7 +2089,7 @@ def get_index_on(cr, table, *columns):
     cr.execute(
         """
         SELECT name, indisunique, indisprimary
-          FROM (SELECT quote_ident(i.relname) as name,
+          FROM (SELECT {}(i.relname) as name,
                        x.indisunique, x.indisprimary,
                        array_agg(a.attname::text order by {}) as attrs
                   FROM (select *, unnest(indkey) as unnest_indkey from pg_index) x
@@ -2095,7 +2103,7 @@ def get_index_on(cr, table, *columns):
           ) idx
          WHERE attrs = %s
     """.format(
-            position
+            funk, position
         ),
         [table, list(columns)],
     )
