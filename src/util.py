@@ -2162,6 +2162,16 @@ def temp_index(cr, table, *columns):
         cr.execute('DROP INDEX IF EXISTS "{}"'.format(name))
 
 
+def remove_constraint(cr, table, name, cascade=False):
+    _validate_table(table)
+    cascade = "CASCADE" if cascade else ""
+    cr.execute('ALTER TABLE "{}" DROP CONSTRAINT IF EXISTS "{}" {}'.format(table, name, cascade))
+    cr.execute("DELETE FROM ir_model_constraint WHERE name = %s RETURNING id", [name])
+    if cr.rowcount:
+        ids = tuple(c for c, in cr.fetchall())
+        cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
+
+
 def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
     _validate_table(table)
@@ -3138,8 +3148,11 @@ def remove_model(cr, model, drop_table=True):
         for tbl in "base_action_rule base_automation google_drive_config".split():
             if column_exists(cr, tbl, "model_id"):
                 cr.execute("DELETE FROM {0} WHERE model_id=%s".format(tbl), [mod_id])
-        cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
+        cr.execute("DELETE FROM ir_model_constraint WHERE model=%s RETURNING id", (mod_id,))
+        if cr.rowcount:
+            ids = tuple(c for c, in cr.fetchall())
+            cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
 
         # Drop XML IDs of ir.rule and ir.model.access records that will be cascade-dropped,
         # when the ir.model record is dropped - just in case they need to be re-created
@@ -3289,8 +3302,7 @@ def rename_model(cr, old, new, rename_table=True):
             [new_table, "PRIMARY KEY"],
         )
         for (const,) in cr.fetchall():
-            cr.execute("DELETE FROM ir_model_constraint WHERE name=%s", (const,))
-            cr.execute('ALTER TABLE "{0}" DROP CONSTRAINT "{1}"'.format(new_table, const))
+            remove_constraint(cr, new_table, const)
 
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]
