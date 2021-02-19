@@ -206,6 +206,7 @@ class UpgradeCase(UpgradeCommon, UpgradeMetaCase("DummyCase", (object,), {})):
 class IntegrityMetaCase(UpgradeMetaCase):
     def __init__(self, name, bases, attrs):
         super(IntegrityMetaCase, self).__init__(name, bases, attrs)
+        self.test_sequence = 20
         self.test_tags -= {"upgrade_case"}
         self.test_tags |= {"integrity_case"}
 
