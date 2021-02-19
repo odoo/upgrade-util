@@ -159,6 +159,9 @@ class UpgradeMetaCase(MetaCase):
         # wee need to set test_tags after Base case __init__
         super(UpgradeMetaCase, self).__init__(name, bases, attrs)
         self.test_tags = {"post_install", "upgrade", "upgrade_case"}
+        self.test_class = name
+        if self.__module__.startswith("odoo.upgrade."):
+            self.test_module = self.__module__.split(".")[2]
 
     def __dir__(self):
         # since UpgradeCase and IntegrityCase are common classes intended to be overloaded,
@@ -202,7 +205,6 @@ class UpgradeCase(UpgradeCommon, UpgradeMetaCase("DummyCase", (object,), {})):
 
 class IntegrityMetaCase(UpgradeMetaCase):
     def __init__(self, name, bases, attrs):
-        self.test_class = name
         super(IntegrityMetaCase, self).__init__(name, bases, attrs)
         self.test_tags -= {"upgrade_case"}
         self.test_tags |= {"integrity_case"}
