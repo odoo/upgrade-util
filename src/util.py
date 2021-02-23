@@ -3421,7 +3421,7 @@ def rename_model(cr, old, new, rename_table=True):
     )
 
 
-def merge_model(cr, source, target, drop_table=True):
+def merge_model(cr, source, target, drop_table=True, fields_mapping=None):
     _validate_model(source)
     _validate_model(target)
     cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))
@@ -3429,6 +3429,41 @@ def merge_model(cr, source, target, drop_table=True):
     mapping = {model_ids[source]: model_ids[target]}
     ignores = ["ir_model", "ir_model_fields", "ir_model_constraint", "ir_model_relation"]
     replace_record_references_batch(cr, mapping, "ir.model", replace_xmlid=False, ignores=ignores)
+
+    # remap the fields on ir_model_fields
+    cr.execute(
+        """
+        SELECT mf1.id,
+               mf2.id
+          FROM ir_model_fields mf1
+          JOIN ir_model_fields mf2
+            ON mf1.model=%s
+           AND mf2.model=%s
+           AND mf1.name=mf2.name
+        """,
+        [source, target],
+    )
+    field_ids_mapping = dict(cr.fetchall())
+    if fields_mapping:
+        cr.execute(
+            """
+            SELECT mf1.id,
+                   mf2.id
+              FROM ir_model_fields mf1
+              JOIN ir_model_fields mf2
+                ON mf1.model=%s
+               AND mf2.model=%s
+               AND mf2.name=('{jmap}'::json ->> mf1.name::varchar)::varchar
+            """.format(
+                jmap=json.dumps(fields_mapping)
+            ),
+            [source, target],
+        )
+        field_ids_mapping.update(dict(cr.fetchall()))
+
+    if field_ids_mapping:
+        ignores = ["ir_model_fields_group_rel", "ir_model_fields_selection"]
+        replace_record_references_batch(cr, field_ids_mapping, "ir.model.fields", replace_xmlid=False, ignores=ignores)
 
     for ir in indirect_references(cr):
         if ir.res_model and not ir.res_id and ir.table not in ignores:
