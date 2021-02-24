@@ -2504,6 +2504,8 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
     # NOTE table_exists is needed to avoid altering views
     if table_exists(cr, table) and column_exists(cr, table, old):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
+        # Rename corresponding index
+        cr.execute('ALTER INDEX IF EXISTS "{0}_{1}_index" RENAME TO "{2}_{3}_index"'.format(table, old, table, new))
 
     if update_references:
         # skip all inherit, they will be handled by the resursive call
@@ -3311,6 +3313,19 @@ def rename_model(cr, old, new, rename_table=True):
         )
         for (const,) in cr.fetchall():
             remove_constraint(cr, new_table, const)
+
+        # Rename indexes
+        cr.execute(
+            """
+            SELECT concat(%(old_table)s, '_', column_name, '_index') as old_index,
+                   concat(%(new_table)s, '_', column_name, '_index') as new_index
+              FROM information_schema.columns
+             WHERE table_name = %(new_table)s
+            """,
+            {"old_table": old_table, "new_table": new_table},
+        )
+        for old_idx, new_idx in cr.fetchall():
+            cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(old_idx, new_idx))
 
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]
