@@ -1915,24 +1915,32 @@ def force_migration_of_fresh_module(cr, module, init=True):
         odoo.tools.config["init"][module] = "oh yeah!"
 
 
-def column_exists(cr, table, column):
-    return column_type(cr, table, column) is not None
-
-
-def column_type(cr, table, column):
+def _column_info(cr, table, column):
     _validate_table(table)
     cr.execute(
         """
-            SELECT udt_name
+            SELECT udt_name, is_nullable::boolean, is_updatable::boolean
               FROM information_schema.columns
              WHERE table_name = %s
                AND column_name = %s
-    """,
+        """,
         [table, column],
     )
+    return cr.fetchone()
 
-    r = cr.fetchone()
-    return r[0] if r else None
+
+def column_exists(cr, table, column):
+    return _column_info(cr, table, column) is not None
+
+
+def column_type(cr, table, column):
+    nfo = _column_info(cr, table, column)
+    return nfo[0] if nfo else None
+
+
+def column_updatable(cr, table, column):
+    nfo = _column_info(cr, table, column)
+    return nfo and nfo[2]
 
 
 def create_column(cr, table, column, definition, **kwargs):
@@ -3068,8 +3076,7 @@ def _rm_refs(cr, model, ids=None):
 
     for ref_model, ref_column in cr.fetchall():
         table = table_of_model(cr, ref_model)
-        # NOTE table_exists is needed to avoid deleting from views
-        if table_exists(cr, table) and column_exists(cr, table, ref_column):
+        if column_updatable(cr, table, ref_column):
             query_tail = ' FROM "{0}" WHERE "{1}" {2}'.format(table, ref_column, match)
             if ref_model == "ir.ui.view":
                 cr.execute("SELECT id" + query_tail, [needle])
@@ -3344,7 +3351,7 @@ def rename_model(cr, old, new, rename_table=True):
     )
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
-        if column_exists(cr, table, column):
+        if column_updatable(cr, table, column):
             cr.execute(
                 """
                     UPDATE "{table}"
@@ -3660,7 +3667,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype='reference'")
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
-        if table not in ignores and column_exists(cr, table, column):
+        if table not in ignores and column_updatable(cr, table, column):
             cr.execute(
                 """
                     UPDATE "{table}"
