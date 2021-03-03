@@ -1204,6 +1204,10 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         cr.execute("ALTER TABLE {m2m} ADD FOREIGN KEY ({col2}) REFERENCES {fk2} ON DELETE CASCADE".format(**locals()))
 
     # create indexes
+    fixup_m2m_indexes(cr, m2m, col1, col2)
+
+
+def fixup_m2m_indexes(cr, m2m, col1, col2):
     idx1 = get_index_on(cr, m2m, col1, col2)
     idx2 = get_index_on(cr, m2m, col2, col1)
 
@@ -1212,16 +1216,27 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
         cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % (m2m, col2, col1))
     elif idx1 and idx2:
-        if not idx1[1] and not idx2[1]:
-            # if both are not unique, create a PK
+        if not idx1[2] and not idx2[2]:
+            # None is the PK. Create one
+            if idx1[1]:
+                # It's an unique index, drop the constraint
+                cr.execute('ALTER TABLE "%s" DROP CONSTRAINT %s' % (m2m, idx1[0]))
+            else:
+                cr.execute("DROP INDEX %s" % idx1[0])
             cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
     else:
         # only 1 index exist, create the second one
         # determine which one is missing
         fmt = (m2m, col2, col1) if idx1 else (m2m, col1, col2)
-        if (idx1 or idx2)[1]:
-            # the existing index is unique, create a normal index
+        existing = idx1 or idx2
+        if existing[2]:
+            # the existing index is the PK, create a normal index
             cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % fmt)
+        elif existing[1]:
+            # it's a unique index. Remove it and recreate a PK and a normal index
+            cr.execute('ALTER TABLE "%s" DROP CONSTRAINT %s' % (m2m, existing[0]))
+            cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
+            cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % (m2m, col2, col1))
         else:
             # create a PK (unqiue index)
             cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % fmt)
