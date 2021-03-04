@@ -2192,7 +2192,7 @@ def get_depending_views(cr, table, column):
     # http://stackoverflow.com/a/11773226/75349
     _validate_table(table)
     q = """
-        SELECT distinct quote_ident(dependee.relname)
+        SELECT distinct quote_ident(dependee.relname), dependee.relkind
         FROM pg_depend
         JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
         JOIN pg_class as dependee ON pg_rewrite.ev_class = dependee.oid
@@ -2202,10 +2202,10 @@ def get_depending_views(cr, table, column):
         WHERE dependent.relname = %s
         AND pg_attribute.attnum > 0
         AND pg_attribute.attname = %s
-        AND dependee.relkind='v'
+        AND dependee.relkind in ('v', 'm')
     """
     cr.execute(q, [table, column])
-    return map(itemgetter(0), cr.fetchall())
+    return cr.fetchall()
 
 
 def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
@@ -2245,8 +2245,8 @@ def find_new_table_column_name(cr, table, name):
 
 def drop_depending_views(cr, table, column):
     """drop views depending on a field to allow the ORM to resize it in-place"""
-    for v in get_depending_views(cr, table, column):
-        cr.execute("DROP VIEW IF EXISTS {0} CASCADE".format(v))
+    for v, k in get_depending_views(cr, table, column):
+        cr.execute("DROP {0} VIEW IF EXISTS {1} CASCADE".format("MATERIALIZED" if k == "m" else "", v))
 
 
 def _get_base_version(cr):
