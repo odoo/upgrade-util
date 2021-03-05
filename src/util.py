@@ -464,9 +464,10 @@ def table_of_model(cr, model):
 
         # `mail.notification` was a "normal" model in versions <9.0
         # and a named m2m in >=saas~13
-        {gte_saas13} mail.notification mail_message_res_partner_needaction_rel
+        # and renamed as a "normal" model table in >= saas~14.3
+        {gte_saas13_lte_saas14_3} mail.notification mail_message_res_partner_needaction_rel
     """.format(
-                gte_saas13="" if version_gte("9.saas~13") else "#"
+                gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#"
             )
         )
     )
@@ -508,7 +509,7 @@ def model_of_table(cr, table):
         mail_mass_mailing_contact_list_rel mail.mass_mailing.list_contact_rel
         mailing_contact_list_rel           mailing.contact.subscription
         # Not a real model until saas~13
-        {gte_saas13} mail_message_res_partner_needaction_rel mail.notification
+        {gte_saas13_lte_saas14_3} mail_message_res_partner_needaction_rel mail.notification
 
         data_merge_rule     data_merge.rule
         data_merge_model    data_merge.model
@@ -517,7 +518,7 @@ def model_of_table(cr, table):
 
     """.format(
                 action_report_model="ir.actions.report" if version_gte("10.saas~17") else "ir.actions.report.xml",
-                gte_saas13="" if version_gte("9.saas~13") else "#",
+                gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#",
             )
         )
     )
