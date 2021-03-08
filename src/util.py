@@ -1150,12 +1150,11 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         return
 
     # cleanup
+    fixup_m2m_cleanup(cr, m2m, col1, col2)
     cr.execute(
         """
         DELETE FROM {m2m} t
-              WHERE {col1} IS NULL
-                 OR {col2} IS NULL
-                 OR NOT EXISTS (SELECT id FROM {fk1} WHERE id=t.{col1})
+              WHERE NOT EXISTS (SELECT id FROM {fk1} WHERE id=t.{col1})
                  OR NOT EXISTS (SELECT id FROM {fk2} WHERE id=t.{col2})
     """.format(
             **locals()
@@ -1164,24 +1163,6 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     deleted = cr.rowcount
     if deleted:
         _logger.debug("%(m2m)s: removed %(deleted)d invalid rows", locals())
-
-    # remove duplicated rows
-    cr.execute(
-        """
-        DELETE FROM {m2m}
-              WHERE ctid IN (SELECT ctid
-                               FROM (SELECT ctid,
-                                            ROW_NUMBER() OVER (PARTITION BY {col1}, {col2}
-                                                                   ORDER BY ctid) as rnum
-                                       FROM {m2m}) t
-                              WHERE t.rnum > 1)
-    """.format(
-            **locals()
-        )
-    )
-    deleted = cr.rowcount
-    if deleted:
-        _logger.debug("%(m2m)s: removed %(deleted)d duplicated rows", locals())
 
     # set not null
     cr.execute("ALTER TABLE {m2m} ALTER COLUMN {col1} SET NOT NULL".format(**locals()))
@@ -1206,6 +1187,39 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 
     # create indexes
     fixup_m2m_indexes(cr, m2m, col1, col2)
+
+
+def fixup_m2m_cleanup(cr, m2m, col1, col2):
+    cr.execute(
+        """
+        DELETE FROM {m2m} t
+              WHERE {col1} IS NULL
+                 OR {col2} IS NULL
+    """.format(
+            **locals()
+        )
+    )
+    deleted = cr.rowcount
+    if deleted:
+        _logger.debug("%(m2m)s: removed %(deleted)d rows with NULL values", locals())
+
+    # remove duplicated rows
+    cr.execute(
+        """
+        DELETE FROM {m2m}
+              WHERE ctid IN (SELECT ctid
+                               FROM (SELECT ctid,
+                                            ROW_NUMBER() OVER (PARTITION BY {col1}, {col2}
+                                                                   ORDER BY ctid) as rnum
+                                       FROM {m2m}) t
+                              WHERE t.rnum > 1)
+    """.format(
+            **locals()
+        )
+    )
+    deleted = cr.rowcount
+    if deleted:
+        _logger.debug("%(m2m)s: removed %(deleted)d duplicated rows", locals())
 
 
 def fixup_m2m_indexes(cr, m2m, col1, col2):
