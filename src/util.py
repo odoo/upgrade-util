@@ -1217,25 +1217,21 @@ def fixup_m2m_indexes(cr, m2m, col1, col2):
         cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
         cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % (m2m, col2, col1))
     elif idx1 and idx2:
-        if not idx1[2] and not idx2[2]:
+        if not idx1.ispk and not idx2.ispk:
             # None is the PK. Create one
-            if idx1[1]:
-                # It's an unique index, drop the constraint
-                cr.execute('ALTER TABLE "%s" DROP CONSTRAINT %s' % (m2m, idx1[0]))
-            else:
-                cr.execute("DROP INDEX %s" % idx1[0])
+            idx1.drop(cr)
             cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
     else:
         # only 1 index exist, create the second one
         # determine which one is missing
         fmt = (m2m, col2, col1) if idx1 else (m2m, col1, col2)
         existing = idx1 or idx2
-        if existing[2]:
+        if existing.ispk:
             # the existing index is the PK, create a normal index
             cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % fmt)
-        elif existing[1]:
+        elif existing.isunique:
             # it's a unique index. Remove it and recreate a PK and a normal index
-            cr.execute('ALTER TABLE "%s" DROP CONSTRAINT %s' % (m2m, existing[0]))
+            existing.drop(cr)
             cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
             cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % (m2m, col2, col1))
         else:
@@ -1245,10 +1241,10 @@ def fixup_m2m_indexes(cr, m2m, col1, col2):
     # remove indexes on 1 column only
     idx = get_index_on(cr, m2m, col1)
     if idx:
-        cr.execute("DROP INDEX %s" % idx[0])
+        idx.drop(cr)
     idx = get_index_on(cr, m2m, col2)
     if idx:
-        cr.execute("DROP INDEX %s" % idx[0])
+        idx.drop(cr)
 
 
 def uniq_tags(cr, model, uniq_column="name", order="id"):
@@ -2091,20 +2087,22 @@ def target_of(cr, table, column):
     return cr.fetchone()
 
 
-def get_index_on(cr, table, *columns, **kwargs):
+class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstraint ispk")):
+    def drop(self, cr):
+        if self.isconstraint:
+            remove_constraint(cr, self.on, self.name)
+        else:
+            cr.execute('DROP INDEX "%s"' % self.name)
+
+
+def get_index_on(cr, table, *columns):
     """
-    return an optional tuple (index_name, unique, pk)
+    return an optional IndexInfo recors
     NOTE: column order is respected
     """
 
-    # Manual PEP 3102
-    quote_ident = kwargs.pop("quote_ident", True)
-    if kwargs:
-        raise TypeError("get_index_on() got an unexpected keyword argument %r" % kwargs.popitem()[0])
-
     _validate_table(table)
 
-    funk = "quote_ident" if quote_ident else "concat"
     if cr._cnx.server_version >= 90500:
         position = "array_position(x.indkey, x.unnest_indkey)"
     else:
@@ -2112,26 +2110,33 @@ def get_index_on(cr, table, *columns, **kwargs):
         position = "strpos(array_to_string(x.indkey::int4[] || 0, ','), x.unnest_indkey::varchar || ',')"
     cr.execute(
         """
-        SELECT name, indisunique, indisprimary
-          FROM (SELECT {}(i.relname) as name,
-                       x.indisunique, x.indisprimary,
+        SELECT name, on_, indisunique, indisconstraint, indisprimary
+          FROM (SELECT i.relname as name,
+                       c.relname as on_,
+                       x.indisunique,
+                       t.conname IS NOT NULL as indisconstraint,
+                       x.indisprimary,
                        array_agg(a.attname::text order by {}) as attrs
                   FROM (select *, unnest(indkey) as unnest_indkey from pg_index) x
                   JOIN pg_class c ON c.oid = x.indrelid
                   JOIN pg_class i ON i.oid = x.indexrelid
                   JOIN pg_attribute a ON (a.attrelid=c.oid AND a.attnum=x.unnest_indkey)
+             LEFT JOIN pg_constraint t ON (    t.connamespace = i.relnamespace
+                                           AND t.conname = i.relname
+                                           AND t.contype IN ('u'::"char", 'p'::"char")
+                                           AND x.indisunique AND t.conrelid = c.oid)
                  WHERE (c.relkind = ANY (ARRAY['r'::"char", 'm'::"char"]))
                    AND i.relkind = 'i'::"char"
                    AND c.relname = %s
-              GROUP BY 1, 2, 3
+              GROUP BY 1, 2, 3, 4, 5
           ) idx
          WHERE attrs = %s
     """.format(
-            funk, position
+            position
         ),
         [table, list(columns)],
     )
-    return cr.fetchone()
+    return IndexInfo(*cr.fetchone()) if cr.rowcount else None
 
 
 def _get_unique_indexes_with(cr, table, *columns):
