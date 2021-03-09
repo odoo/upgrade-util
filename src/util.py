@@ -2681,17 +2681,22 @@ def convert_field_to_property(
     remove_column(cr, table, field, cascade=True)
 
 
-def convert_binary_field_to_attachment(cr, model, field, encoded=True):
+def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_field=None):
     _validate_model(model)
     table = table_of_model(cr, model)
     if not column_exists(cr, table, field):
         return
-    att_name = "%s(%%s).%s" % (model.title().replace(".", ""), field)
+    name_query = "COALESCE({0}, '{1}('|| id || ').{2}')".format(
+        "NULL" if not name_field else name_field,
+        model.title().replace(".", ""),
+        field,
+    )
+
     A = env(cr)["ir.attachment"]
     iter_cur = cr._cnx.cursor("fetch_binary")
     iter_cur.itersize = 1
-    iter_cur.execute('SELECT id, "{field}" FROM {table} WHERE "{field}" IS NOT NULL'.format(**locals()))
-    for rid, data in iter_cur:
+    iter_cur.execute('SELECT id, "{field}", {name_query} FROM {table} WHERE "{field}" IS NOT NULL'.format(**locals()))
+    for rid, data, name in iter_cur:
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
         data = bytes(data)
@@ -2700,7 +2705,7 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True):
             continue
         if not encoded:
             data = base64.b64encode(data)
-        att = A.create({"name": att_name % rid, "datas": data, "type": "binary"})
+        att = A.create({"name": name, "datas": data, "type": "binary"})
         cr.execute(
             """
                UPDATE ir_attachment
