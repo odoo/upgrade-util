@@ -1019,7 +1019,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     return res_id
 
 
-def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=False):
+def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=False, from_module=None):
     # Force update of a record from xml file to bypass the noupdate flag
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
@@ -1056,16 +1056,17 @@ def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=Fa
     # use a data tag inside openerp tag to be compatible with all supported versions
     new_root = lxml.etree.fromstring("<openerp><data/></openerp>")
 
-    manifest = load_information_from_description_file(module)
+    from_module = from_module or module
+    manifest = load_information_from_description_file(from_module)
     for f in manifest.get("data", []):
         if not f.endswith(".xml"):
             continue
-        with file_open(os.path.join(module, f)) as fp:
+        with file_open(os.path.join(from_module, f)) as fp:
             doc = lxml.etree.parse(fp)
             for node in doc.xpath(xpath):
                 new_root[0].append(node)
 
-    importer = xml_import(cr, module, idref={}, mode="update")
+    importer = xml_import(cr, from_module, idref={}, mode="update")
     kw = dict(mode="update") if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
     importer.parse(new_root, **kw)
 
