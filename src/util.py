@@ -2862,31 +2862,38 @@ def custom_module_field_as_manual(env, rollback=True):
     #      even if the column in database as not been created yet because the -u on the custom module did not occur yet.
     #      Fields of the mails threads are in the `ir_model_fields` table, so not need to automatically add them anyway
     #      e.g. `message_main_attachment_id` is added between 12.0 and 13.0.
-    updated_mail_thread_ids = False
-    if column_exists(env.cr, "ir_model", "is_mail_thread"):
-        env.cr.execute(
-            """
-                UPDATE ir_model
-                   SET is_mail_thread = false
-                 WHERE state = 'manual'
-                   AND is_mail_thread
-             RETURNING id
-            """
-        )
-        updated_mail_thread_ids = [r[0] for r in env.cr.fetchall()]
-        if updated_mail_thread_ids:
+    updated_mixin_ids = {}
+    for mixin, mixin_column in [
+        ("mail.thread", "is_mail_thread"),
+        ("mail.activity.mixin", "is_mail_activity"),
+        ("mail.thread.blacklist", "is_mail_blacklist"),
+    ]:
+        if column_exists(env.cr, "ir_model", mixin_column):
             env.cr.execute(
                 """
-                    UPDATE ir_model_fields
-                        SET state = 'manual'
-                        WHERE state = 'base'
-                        AND model_id IN %s
-                        AND name IN %s
+                       UPDATE ir_model
+                          SET %(column)s = false
+                        WHERE state = 'manual'
+                          AND %(column)s
                     RETURNING id
-                """,
-                [tuple(updated_mail_thread_ids), tuple(env["mail.thread"]._fields.keys())],
+                """
+                % {"column": mixin_column}
             )
-            updated_field_ids += [r[0] for r in env.cr.fetchall()]
+            ids = [r[0] for r in env.cr.fetchall()]
+            if ids:
+                updated_mixin_ids[mixin_column] = ids
+                env.cr.execute(
+                    """
+                           UPDATE ir_model_fields
+                              SET state = 'manual'
+                            WHERE state = 'base'
+                              AND model_id IN %s
+                              AND name IN %s
+                        RETURNING id
+                    """,
+                    [tuple(ids), tuple(env[mixin]._fields.keys())],
+                )
+                updated_field_ids += [r[0] for r in env.cr.fetchall()]
 
     # 3.4. models `_rec_name` are not reloaded correctly.
     #      If the model has no `_rec_name` and there is a manual field `name` or `x_name`,
@@ -2929,10 +2936,8 @@ def custom_module_field_as_manual(env, rollback=True):
             env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
         for field_id, on_delete in updated_many2one_fields:
             env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", [on_delete, field_id])
-        if updated_mail_thread_ids:
-            env.cr.execute(
-                "UPDATE ir_model SET is_mail_thread = true WHERE id IN %s", (tuple(updated_mail_thread_ids),)
-            )
+        for mixin_column, ids in updated_mixin_ids.items():
+            env.cr.execute("UPDATE ir_model SET %s = true WHERE id IN %%s" % mixin_column, (tuple(ids),))
         for model, rec_name in rec_names.items():
             env.registry[model]._rec_name = rec_name
 
