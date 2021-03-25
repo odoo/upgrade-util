@@ -82,8 +82,9 @@ class UpgradeCommon(BaseCase):
         super().setUp()
         self._setup_registry()
         self.cr = self.registry.cursor()
-        self.addCleanup(self.cr.close)
         self.env = api.Environment(self.cr, odoo.SUPERUSER_ID, {})
+        self.addCleanup(self.env.clear)
+        self.addCleanup(self.cr.close)
 
     # could be reworked that to either call prepare or check in a unique test_method
     # -> but in this case impossible to filter on prepare or check with test_tags
