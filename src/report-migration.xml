@@ -30,6 +30,12 @@
           </t>
         </div>
       </t>
+      <t t-elif="category == 'Filters/Dashboards'">
+        <p>During the upgrade some fields have been removed. The records below have been automatically corrected.</p>
+        <t t-foreach="messages[category]" t-as="message">
+          <a t-att-href="'web?debug=1#view_type=form&amp;model=%s&amp;id=%s' % (message[0][0], message[0][1])" t-esc="message[0][2]" target="_blank"/><br/>
+        </t>
+      </t>
       <t t-else="">
         <t t-foreach="messages[category]" t-as="message">
           <li><t t-if="message[1]" t-raw="message[0]" /><t t-else="" t-esc="message[0]" /></li>

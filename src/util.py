@@ -725,7 +725,7 @@ else:
 
 
 def _dashboard_actions(cr, arch_match, *models):
-    """Yield actions of dashboard that match `arch_match` and apply on `models` (if specified)"""
+    """Yield (dashboard_id, action) of dashboards that match `arch_match` and apply on `models` (if specified)"""
 
     q = """
         SELECT id, arch
@@ -752,7 +752,7 @@ def _dashboard_actions(cr, arch_match, *models):
                 [act_model] = cr.fetchone() or [None]
                 if act_model not in models:
                     continue
-            yield act
+            yield dash_id, act
 
         cr.execute(
             "UPDATE ir_ui_view_custom SET arch = %s WHERE id = %s",
@@ -2349,14 +2349,53 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
 
     ENVIRON["__renamed_fields"][model].add(fieldname)
 
-    # clean dashboards' `group_by`
-    eval_context = SelfPrintEvalContext()
-    for action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
-        context = safe_eval(action.get("context", "{}"), eval_context, nocopy=True)
-        for key in {"group_by", "pivot_measures", "pivot_column_groupby", "pivot_row_groupby"}:
+    keys_to_clean = (
+        "group_by",
+        "pivot_measures",
+        "pivot_column_groupby",
+        "pivot_row_groupby",
+        "graph_groupbys",
+        "orderedBy",
+    )
+
+    def clean_context(context):
+        changed = False
+        context = safe_eval(context, SelfPrintEvalContext(), nocopy=True)
+        for key in keys_to_clean:
             if context.get(key):
-                context[key] = [e for e in context[key] if e.split(":")[0] != fieldname]
+                context_part = [e for e in context[key] if e.split(":")[0] != fieldname]
+                changed |= context_part != context[key]
+                context[key] = context_part
+        return context, changed
+
+    # clean dashboard's contexts
+    for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
+        context, changed = clean_context(action.get("context", "{}"))
         action.set("context", unicode(context))
+        if changed:
+            add_to_migration_reports(
+                ("ir.ui.view.custom", id_, action.get("string", "ir.ui.view.custom")), "Filters/Dashboards"
+            )
+
+    # clean filter's contexts
+    cr.execute(
+        "SELECT id, name, context FROM ir_filters WHERE model_id = %s AND context ~ %s",
+        [model, r"\y{}\y".format(fieldname)],
+    )
+    for id_, name, context in cr.fetchall():
+        context, changed = clean_context(context or "{}")
+        cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
+        if changed:
+            add_to_migration_reports(("ir.filters", id_, name), "Filters/Dashboards")
+
+    def adapter(leaf, is_or, negated):
+        # replace by TRUE_LEAF, unless negated or in a OR operation but not negated
+        if is_or ^ negated:
+            return [expression.FALSE_LEAF]
+        return [expression.TRUE_LEAF]
+
+    # clean domains
+    adapt_domains(cr, model, fieldname, "ignored", adapter=adapter)
 
     cr.execute(
         """
@@ -3860,9 +3899,17 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
         parts[0] = new
         return ":".join(parts)
 
-    for act in _dashboard_actions(cr, match, def_old, *only_models or ()):
+    keys_to_clean = (
+        "group_by",
+        "pivot_measures",
+        "pivot_column_groupby",
+        "pivot_row_groupby",
+        "graph_groupbys",
+        "orderedBy",
+    )
+    for _, act in _dashboard_actions(cr, match, def_old, *only_models or ()):
         context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
-        for key in {"group_by", "pivot_measures", "pivot_column_groupby", "pivot_row_groupby"}:
+        for key in keys_to_clean:
             if context.get(key):
                 context[key] = [adapt(e) for e in context[key]]
         if def_old in context:
@@ -3968,8 +4015,26 @@ def _get_domain_fields(cr):
 
 
 def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
-    # adapt one domain
+    if not adapter:
+        adapter = lambda leaf, _, __: [leaf]
+
     evaluation_context = SelfPrintEvalContext()
+
+    # pre-check domain
+    if isinstance(domain, basestring):
+        try:
+            eval_dom = expression.normalize_domain(safe_eval(domain, evaluation_context, nocopy=True))
+        except Exception as e:
+            oops = odoo.tools.ustr(e)
+            _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
+            return None
+    else:
+        try:
+            eval_dom = expression.normalize_domain(domain)
+        except Exception as e:
+            oops = odoo.tools.ustr(e)
+            _logger.log(NEARLYWARN, "Invalid %r domain: %r: %s", model, domain, oops)
+            return None
 
     def valid_path_to(cr, path, from_, to):
         model = from_
@@ -3991,41 +4056,59 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
 
         return model == to
 
-    if isinstance(domain, basestring):
-        try:
-            eval_dom = expression.normalize_domain(safe_eval(domain, evaluation_context, nocopy=True))
-        except Exception as e:
-            oops = odoo.tools.ustr(e)
-            _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
-            return None
-    else:
-        try:
-            eval_dom = expression.normalize_domain(domain)
-        except Exception as e:
-            oops = odoo.tools.ustr(e)
-            _logger.log(NEARLYWARN, "Invalid %r domain: %r: %s", model, domain, oops)
-            return None
+    def clean_path(left):
+        path = left.split(".")
+        for idx in range(1, len(path) + 1):
+            if path[-idx] == old and valid_path_to(cr, path[:-idx], model, target_model):
+                path[-idx] = new
+        return ".".join(path)
+
+    def clean_term(term):
+        if isinstance(term, str) or not isinstance(term[0], str):
+            return term
+        return (clean_path(term[0]), term[1], term[2])
 
     final_dom = []
     changed = False
+    op_arity = {expression.NOT_OPERATOR: 1, expression.AND_OPERATOR: 2, expression.OR_OPERATOR: 2}
+    op_stack = []  # (operator, number of terms missing)
     for element in eval_dom:
-        if not expression.is_leaf(element) or tuple(element) in [expression.TRUE_LEAF, expression.FALSE_LEAF]:
+        while op_stack and op_stack[-1][1] == 0:
+            op_stack.pop()  # found all terms current operator was expecting, pop it
+            op_stack[-1][1] -= 1  # previous operator now got one more term
+
+        if isinstance(element, str):
+            op_stack.append([element, op_arity[element]])
             final_dom.append(element)
             continue
 
-        left, operator, right = expression.normalize_leaf(element)
+        if op_stack:
+            op_stack[-1][1] -= 1  # previous operator got a term
 
-        path = left.split(".")
-        for idx in range(len(path)):
-            idx1 = idx + 1
-            if path[-idx1] == old and valid_path_to(cr, path[:-idx1], model, target_model):
-                if idx == 0 and adapter:
-                    operator, right = adapter(operator, right)
-                path[-idx1] = new
-                changed = True
+        if tuple(element) in [expression.TRUE_LEAF, expression.FALSE_LEAF]:
+            final_dom.append(element)
+            continue
 
-        left = ".".join(path)
-        final_dom.append((left, operator, right))
+        is_or = False
+        neg = False
+        for op, _ in reversed(op_stack):
+            if op != expression.NOT_OPERATOR:
+                is_or = op == expression.OR_OPERATOR
+                break
+            neg = not neg
+
+        leaf = expression.normalize_leaf(element)
+        path = leaf[0].split(".")
+        if path[-1] == old and valid_path_to(cr, path[:-1], model, target_model):
+            # adapt only when {old} field is the last part of left path
+            dom = [clean_term(term) for term in adapter(leaf, is_or, neg)]
+        else:
+            dom = [clean_term(leaf)]
+
+        if dom != [leaf]:
+            changed = True
+
+        final_dom.extend(dom)
 
     if not changed:
         return None
@@ -4035,7 +4118,19 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
 
 
 def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
-    """Replace {old} by {new} in all domains for model {model} using {adapter} callback"""
+    """
+    Replace {old} by {new} in all domains for model {model} using an adapter callback.
+
+    {adapter} is to adapt leafs. It is a function that takes three arguments and
+    returns a domain that substitutes the original leaf:
+    (leaf: Tuple[str,str,Any], in_or: bool, negated: bool) -> List[Union[str,Tuple[str,str,Any]]]
+
+    The parameter {in_or} signals that the leaf is part of an or ("|") domain, otherwise
+    it is part of an and ("&") domain. The other parameter signals if the leaf is
+    {negated} ("!").
+
+    Note that the {adapter} is called ony on leafs that use the {old} field of {model}.
+    """
     _validate_model(model)
     target_model = model
 
@@ -4060,7 +4155,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
 
     # adapt domain in dashboards.
     # NOTE: does not filter on model at dashboard selection for handle dotted domains
-    for act in _dashboard_actions(cr, match_old):
+    for _, act in _dashboard_actions(cr, match_old):
         if act.get("domain"):
             try:
                 act_id = int(act.get("name", "FAIL"))
