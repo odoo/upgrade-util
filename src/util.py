@@ -83,6 +83,17 @@ except ImportError:
 
 
 try:
+    from markupsafe import Markup, escape
+
+    from odoo.tools.misc import html_escape
+
+    if html_escape is not escape:
+        Markup = None  # noqa:F811 -- retarded flake8
+except ImportError:
+    Markup = None
+
+
+try:
     from concurrent.futures import ThreadPoolExecutor
 except ImportError:
     ThreadPoolExecutor = None
@@ -114,9 +125,13 @@ def add_to_migration_reports(message, category="Other", format="text"):
         message = md2html(dedent(message))
     elif format == "rst":
         message = rst2html(message)
-    raw = format != "text"
-    migration_reports[category] = migration_reports.get(category, [])
-    migration_reports[category].append((message, raw))
+    raw = False
+    if format != "text":
+        if Markup:
+            message = Markup(message)
+        else:
+            raw = True
+    migration_reports.setdefault(category, []).append((message, raw))
 
 
 class MigrationError(Exception):
@@ -4629,8 +4644,11 @@ def announce(
 
 def announce_migration_report(cr):
     filepath = os.path.join(os.path.dirname(__file__), "report-migration.xml")
-    with open(filepath, "r") as fp:
-        report = lxml.etree.fromstring(fp.read())
+    with open(filepath, "rb") as fp:
+        contents = fp.read()
+        if Markup:
+            contents = contents.replace(b"t-raw", b"t-out")
+        report = lxml.etree.fromstring(contents)
     e = env(cr)
     values = {
         "action_view_id": e.ref("base.action_ui_view").id,
