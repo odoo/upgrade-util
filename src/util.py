@@ -2972,7 +2972,7 @@ def indirect_references(cr, bound_only=False):
         IR("ir_act_window", "src_model", None),
         IR("ir_act_server", "wkf_model_name", None),
         IR("ir_act_server", "crud_model_name", None),
-        IR("ir_act_server", "model_name", None, set_unknown=True),
+        IR("ir_act_server", "model_name", None, "model_id", set_unknown=True),
         IR("ir_act_client", "res_model", None, set_unknown=True),
         IR("ir_model", "model", None),
         IR("ir_model_fields", "model", None),
