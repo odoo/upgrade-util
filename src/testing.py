@@ -159,6 +159,7 @@ class UpgradeMetaCase(MetaCase):
         # Setting test_tags in __init_subclass__ could work, but Basecase will ovveride them in __init__.
         # wee need to set test_tags after Base case __init__
         super(UpgradeMetaCase, self).__init__(name, bases, attrs)
+        self.test_sequence = 10
         self.test_tags = {"post_install", "upgrade", "upgrade_case"}
         self.test_class = name
         if self.__module__.startswith("odoo.upgrade."):
