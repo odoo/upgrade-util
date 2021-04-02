@@ -712,6 +712,18 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
     )
 
 
+# fmt:off
+if version_gte("saas~14.3"):
+    def remove_asset(cr, name):
+        cr.execute("SELECT id FROM ir_asset WHERE bundle = %s", [name])
+        if cr.rowcount:
+            _remove_records(cr, "ir.asset", [aid for aid, in cr.fetchall()])
+else:
+    def remove_asset(cr, name):
+        remove_view(cr, name, silent=True)
+# fmt:on
+
+
 def _dashboard_actions(cr, arch_match, *models):
     """Yield actions of dashboard that match `arch_match` and apply on `models` (if specified)"""
 
