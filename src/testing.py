@@ -4,7 +4,7 @@ import re
 
 import odoo
 from odoo import api, release
-from odoo.tests.common import BaseCase, MetaCase, get_db_name
+from odoo.tests.common import BaseCase, MetaCase, TransactionCase, get_db_name, tagged
 from odoo.tools import config
 from odoo.tools.parse_version import parse_version
 
@@ -17,6 +17,11 @@ _logger = logging.getLogger(__name__)
 
 DATA_TABLE = "upgrade_test_data"
 VERSION_RE = re.compile(r"^(saas[-~])?(\d+).(\d+)$")
+
+
+@tagged("upgrade")
+class UnitTestCase(TransactionCase):
+    pass
 
 
 class UpgradeCommon(BaseCase):
