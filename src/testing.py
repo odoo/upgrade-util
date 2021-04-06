@@ -182,13 +182,13 @@ class UpgradeCase(UpgradeCommon, UpgradeMetaCase("DummyCase", (object,), {})):
     - prepare method can write in database, return value will be stored in a dedicated table and
       passed as argument to check.
     - check method can assert that the received argument is the one expected,
-      executing any code to retrive equivalent information in migrated database.
+      executing any code to retrieve equivalent information in migrated database.
       Note: check argument is a loaded json dump, meaning that tuple are converted to list.
-      convert_check can be used to normalise the right part of the comparaison.
+      convert_check can be used to normalise the right part of the comparison.
 
     check method is only called if corresponding prepared was run in previous version
 
-    prepare and check implementation may contains version conditionnal code to match api changes.
+    prepare and check implementation may contains version conditional code to match api changes.
 
     using @change_version class decorator can indicate with script version is tested here if any:
     Example: to test a saas~12.3 script, using @change_version('saas-12,3') will only run prepare if
@@ -216,11 +216,11 @@ class IntegrityMetaCase(UpgradeMetaCase):
 # pylint: disable=inherit-non-class
 class IntegrityCase(UpgradeCommon, IntegrityMetaCase("DummyCase", (object,), {})):
     """
-    Test case to check invariant throug any version
+    Test case to check invariant through any version
     User must define a "invariant" method.
     invariant return value will be compared between the two version.
 
-    invariant implementation may contains version conditionnal code to match api changes.
+    invariant implementation may contains version conditional code to match api changes.
     """
 
     message = "Invariant check fail"
@@ -252,7 +252,7 @@ class IntegrityCase(UpgradeCommon, IntegrityMetaCase("DummyCase", (object,), {})
             if self.dbname == config["log_db"].split("/")[-1]:
                 self._cnx.commit()
             else:
-                raise Exception("Commit are forbiden in intergity cases")
+                raise Exception("Commit are forbidden in integrity cases")
 
         patcher = patch.object(odoo.sql_db.Cursor, "commit", commit)
         patcher.start()
