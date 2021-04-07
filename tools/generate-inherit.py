@@ -108,6 +108,9 @@ VIRTUAL_INHERITS = {
         Inherit("account.cash.flow.report", born=Version("saas-11.1"), dead=Version("saas-12.5")),
         Inherit("l10n.lu.report.partner.vat.intra", born=Version("saas-13.1"), dead=Version("saas-13.2")),
     ],
+    "l10n_cl.edi.util": [
+        Inherit("stock.picking", born=Version("14.0"), dead=Version("saas-14.2")),
+    ],
     "l10n_mx.trial.report": [
         Inherit("l10n_mx.trial.closing.report", born=Version("saas-11.1"), dead=Version("saas-12.2")),
     ],
@@ -115,8 +118,11 @@ VIRTUAL_INHERITS = {
         Inherit("account.invoice", born=Version("saas-11.1"), dead=Version("saas-12.5")),
         Inherit("account.payment", born=Version("saas-11.1"), dead=Version("saas-12.2")),
     ],
-    "mail.activity.mixin": [Inherit("l10n_uk.vat.obligation", born=Version("10.saas-15"), dead=Version("12.0"))],
-    "mail.thread": [Inherit("l10n_uk.vat.obligation", born=Version("10.saas-15"), dead=Version("12.0"))],
+    "mail.activity.mixin": [Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0"))],
+    "mail.thread": [
+        Inherit("account.online.link", born=Version("12.0"), dead=Version("14.0")),
+        Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0")),
+    ],
 }
 
 
