@@ -567,6 +567,7 @@ inheritance_data = frozendict(
             Inherit(model="account.move", born=parse_version("14.0"), dead=None, via=None),
             Inherit(model="l10n_cl.dte.caf", born=parse_version("13.0"), dead=parse_version("saas~13.1"), via=None),
             Inherit(model="l10n_cl.dte.caf", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="stock.picking", born=parse_version("14.0"), dead=None, via=None),
         ],
         "l10n_co_reports.certification_report": [
             Inherit(
@@ -746,7 +747,9 @@ inheritance_data = frozendict(
             Inherit(model="sign.request", born=parse_version("saas~11.5"), dead=None, via=None),
             Inherit(model="slide.channel", born=parse_version("saas~13.4"), dead=None, via=None),
             Inherit(model="social.post", born=parse_version("saas~12.5"), dead=None, via=None),
-            Inherit(model="stock.inventory", born=parse_version("saas~13.5"), dead=None, via=None),
+            Inherit(
+                model="stock.inventory", born=parse_version("saas~13.5"), dead=parse_version("saas~14.3"), via=None
+            ),
             Inherit(model="stock.landed.cost", born=parse_version("saas~12.1"), dead=None, via=None),
             Inherit(model="stock.picking", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="stock.picking.batch", born=parse_version("saas~12.1"), dead=None, via=None),
@@ -857,8 +860,7 @@ inheritance_data = frozendict(
             Inherit(model="account.journal", born=parse_version("saas~12.2"), dead=None, via=None),
             Inherit(model="account.move", born=parse_version("10.saas~14"), dead=parse_version("10.saas~17"), via=None),
             Inherit(model="account.move", born=parse_version("saas~12.2"), dead=None, via=None),
-            Inherit(model="account.online.link", born=parse_version("13.0"), dead=parse_version("saas~13.1"), via=None),
-            Inherit(model="account.online.link", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="account.online.link", born=parse_version("12.0"), dead=None, via=None),
             Inherit(
                 model="account.online.provider",
                 born=parse_version("9.saas~13"),
@@ -994,7 +996,9 @@ inheritance_data = frozendict(
             Inherit(model="slide.slide", born=parse_version("8.saas~6"), dead=None, via=None),
             Inherit(model="social.media", born=parse_version("saas~12.5"), dead=None, via=None),
             Inherit(model="social.post", born=parse_version("saas~12.5"), dead=None, via=None),
-            Inherit(model="stock.inventory", born=parse_version("saas~13.5"), dead=None, via=None),
+            Inherit(
+                model="stock.inventory", born=parse_version("saas~13.5"), dead=parse_version("saas~14.3"), via=None
+            ),
             Inherit(model="stock.landed.cost", born=parse_version("7.saas~5"), dead=None, via=None),
             Inherit(model="stock.picking", born=parse_version("7.0"), dead=None, via=None),
             Inherit(model="stock.picking.batch", born=parse_version("10.saas~17"), dead=None, via=None),
@@ -1796,6 +1800,7 @@ inheritance_data = frozendict(
                 via=None,
             ),
             Inherit(model="sale.order", born=parse_version("8.saas~6"), dead=None, via=None),
+            Inherit(model="sale.subscription", born=parse_version("saas~14.3"), dead=None, via=None),
             Inherit(model="website.links", born=parse_version("8.saas~6"), dead=parse_version("9.0"), via=None),
         ],
         "utm.source": [
@@ -1816,12 +1821,14 @@ inheritance_data = frozendict(
         "website.cover_properties.mixin": [
             Inherit(model="blog.blog", born=parse_version("saas~13.2"), dead=None, via=None),
             Inherit(model="blog.post", born=parse_version("saas~13.2"), dead=None, via=None),
+            Inherit(model="calendar.appointment.type", born=parse_version("saas~14.3"), dead=None, via=None),
             Inherit(model="event.event", born=parse_version("saas~13.2"), dead=None, via=None),
         ],
         "website.multi.mixin": [
             Inherit(model="blog.blog", born=parse_version("saas~11.5"), dead=None, via=None),
             Inherit(model="coupon.program", born=parse_version("saas~13.4"), dead=None, via=None),
             Inherit(model="forum.forum", born=parse_version("saas~11.5"), dead=None, via=None),
+            Inherit(model="gift.card", born=parse_version("saas~14.3"), dead=None, via=None),
             Inherit(model="product.public.category", born=parse_version("saas~11.5"), dead=None, via=None),
             Inherit(
                 model="sale.coupon.program", born=parse_version("saas~11.5"), dead=parse_version("saas~13.4"), via=None
