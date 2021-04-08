@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 
 import odoo
@@ -13,6 +14,8 @@ try:
 except ImportError:
     from mock import patch
 
+from . import util
+
 _logger = logging.getLogger(__name__)
 
 DATA_TABLE = "upgrade_test_data"
@@ -21,7 +24,11 @@ VERSION_RE = re.compile(r"^(saas[-~])?(\d+).(\d+)$")
 
 @tagged("upgrade")
 class UnitTestCase(TransactionCase):
-    pass
+    @classmethod
+    def setUpClass(cls):
+        if "__base_version" not in util.ENVIRON:
+            bv = os.getenv("ODOO_BASE_VERSION", release.series)
+            util.ENVIRON["__base_version"] = parse_version(bv)
 
 
 class UpgradeCommon(BaseCase):
