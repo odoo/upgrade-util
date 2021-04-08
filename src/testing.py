@@ -1,3 +1,5 @@
+import functools
+import inspect
 import json
 import logging
 import os
@@ -20,6 +22,45 @@ _logger = logging.getLogger(__name__)
 
 DATA_TABLE = "upgrade_test_data"
 VERSION_RE = re.compile(r"^(saas[-~])?(\d+).(\d+)$")
+
+
+def parametrize(argvalues):
+    """
+    Decorator for UnitTestCase test functions to parametrize the decorated test.
+    Usage:
+    ```python
+    @parametrize([
+        (1, 2),
+        (2, 4),
+        (-1, -2),
+        (0, 0),
+    ])
+    def test_double(self, input, expected):
+        self.assertEqual(input * 2, expected)
+    ```
+
+    It works by injecting test functions in the containing class.
+    Idea taken from the `parameterized` package (https://pypi.org/project/parameterized/).
+    """
+
+    def make_func(func, name, args):
+        @functools.wraps(func)
+        def wrapped(self):
+            return func(self, *args)
+
+        wrapped.__name__ = name
+        return wrapped
+
+    def decorator(func):
+        frame_locals = inspect.currentframe().f_back.f_locals
+
+        digits = len(str(len(argvalues)))
+        for i, args in enumerate(argvalues):
+            new_name = f"{func.__name__}__{i:0>{digits}}"
+            # inject new function in the parent frame
+            frame_locals[new_name] = make_func(func, new_name, args)
+
+    return decorator
 
 
 @tagged("upgrade")
