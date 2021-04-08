@@ -67,6 +67,7 @@ def parametrize(argvalues):
 class UnitTestCase(TransactionCase):
     @classmethod
     def setUpClass(cls):
+        super().setUpClass()
         if "__base_version" not in util.ENVIRON:
             bv = os.getenv("ODOO_BASE_VERSION", release.series)
             util.ENVIRON["__base_version"] = parse_version(bv)
