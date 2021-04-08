@@ -2407,11 +2407,12 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     if column_exists(cr, "ir_attachment", "res_field"):
         parallel_execute(
             cr,
-            explode_query(
+            explode_query_range(
                 cr,
                 cr.mogrify(
                     "DELETE FROM ir_attachment WHERE res_model = %s AND res_field = %s", [model, fieldname]
                 ).decode(),
+                table="ir_attachment",
             ),
         )
 
