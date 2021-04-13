@@ -1166,9 +1166,9 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     fixup_m2m_cleanup(cr, m2m, col1, col2)
     cr.execute(
         """
-        DELETE FROM {m2m} t
-              WHERE NOT EXISTS (SELECT id FROM {fk1} WHERE id=t.{col1})
-                 OR NOT EXISTS (SELECT id FROM {fk2} WHERE id=t.{col2})
+        DELETE FROM "{m2m}" t
+              WHERE NOT EXISTS (SELECT id FROM "{fk1}" WHERE id=t."{col1}")
+                 OR NOT EXISTS (SELECT id FROM "{fk2}" WHERE id=t."{col2}")
     """.format(
             **locals()
         )
@@ -1178,25 +1178,25 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         _logger.debug("%(m2m)s: removed %(deleted)d invalid rows", locals())
 
     # set not null
-    cr.execute("ALTER TABLE {m2m} ALTER COLUMN {col1} SET NOT NULL".format(**locals()))
-    cr.execute("ALTER TABLE {m2m} ALTER COLUMN {col2} SET NOT NULL".format(**locals()))
+    cr.execute('ALTER TABLE "{m2m}" ALTER COLUMN "{col1}" SET NOT NULL'.format(**locals()))
+    cr.execute('ALTER TABLE "{m2m}" ALTER COLUMN "{col2}" SET NOT NULL'.format(**locals()))
 
     # create  missing or bad fk
     target = target_of(cr, m2m, col1)
     if target and target[:2] != (fk1, "id"):
-        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
+        cr.execute('ALTER TABLE "{m2m}" DROP CONSTRAINT {con}'.format(m2m=m2m, con=target[2]))
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col1)s -> %(fk1)s", locals())
-        cr.execute("ALTER TABLE {m2m} ADD FOREIGN KEY ({col1}) REFERENCES {fk1} ON DELETE CASCADE".format(**locals()))
+        cr.execute('ALTER TABLE "{m2m}" ADD FOREIGN KEY ("{col1}") REFERENCES "{fk1}" ON DELETE CASCADE'.format(**locals()))
 
     target = target_of(cr, m2m, col2)
     if target and target[:2] != (fk2, "id"):
-        cr.execute("ALTER TABLE {m2m} DROP CONSTRAINT {con}".format(m2m=m2m, con=target[2]))
+        cr.execute('ALTER TABLE "{m2m}" DROP CONSTRAINT {con}'.format(m2m=m2m, con=target[2]))
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col2)s -> %(fk2)s", locals())
-        cr.execute("ALTER TABLE {m2m} ADD FOREIGN KEY ({col2}) REFERENCES {fk2} ON DELETE CASCADE".format(**locals()))
+        cr.execute('ALTER TABLE "{m2m}" ADD FOREIGN KEY ("{col2}") REFERENCES "{fk2}" ON DELETE CASCADE'.format(**locals()))
 
     # create indexes
     fixup_m2m_indexes(cr, m2m, col1, col2)
@@ -1205,9 +1205,9 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 def fixup_m2m_cleanup(cr, m2m, col1, col2):
     cr.execute(
         """
-        DELETE FROM {m2m} t
-              WHERE {col1} IS NULL
-                 OR {col2} IS NULL
+        DELETE FROM "{m2m}" t
+              WHERE "{col1}" IS NULL
+                 OR "{col2}" IS NULL
     """.format(
             **locals()
         )
@@ -1219,12 +1219,12 @@ def fixup_m2m_cleanup(cr, m2m, col1, col2):
     # remove duplicated rows
     cr.execute(
         """
-        DELETE FROM {m2m}
+        DELETE FROM "{m2m}"
               WHERE ctid IN (SELECT ctid
                                FROM (SELECT ctid,
-                                            ROW_NUMBER() OVER (PARTITION BY {col1}, {col2}
+                                            ROW_NUMBER() OVER (PARTITION BY "{col1}", "{col2}"
                                                                    ORDER BY ctid) as rnum
-                                       FROM {m2m}) t
+                                       FROM "{m2m}") t
                               WHERE t.rnum > 1)
     """.format(
             **locals()
