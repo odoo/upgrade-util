@@ -4525,8 +4525,7 @@ def guess_admin_id(cr):
                           FROM ir_model_data
                          WHERE module = 'base'
                            AND name = 'group_system')
-    """,
-        [SUPERUSER_ID],
+    """
     )
     return cr.fetchone()[0] or SUPERUSER_ID
 
