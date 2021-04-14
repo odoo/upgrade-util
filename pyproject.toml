@@ -3,7 +3,7 @@ line-length = 120
 
 [tool.isort]
 profile = 'black'
-line_length = 132
+line_length = 120
 sections = ['FUTURE', 'STDLIB', 'THIRDPARTY', 'FIRSTPARTY', 'ODOOADDONS', 'LOCALFOLDER']
 known_first_party = ['odoo', 'openerp']
 known_odooaddons = ['odoo.addons', 'openerp.addons']
