@@ -3,15 +3,15 @@ import os
 
 from odoo.tools.misc import str2bool
 
+from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import IntegrityCase
-from odoo.addons.base.maintenance.migrations.util import version_gte
 
 _logger = logging.getLogger("odoo.upgrade.base.tests.test_ensure_has_pk")
 
 
 class TestTablesHavePK(IntegrityCase):
     def invariant(self):
-        if not version_gte("14.0"):
+        if not util.version_gte("14.0"):
             # Older versions generated m2m tables without PK
             return
 
