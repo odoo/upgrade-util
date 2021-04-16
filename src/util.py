@@ -4064,7 +4064,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
         return ".".join(path)
 
     def clean_term(term):
-        if isinstance(term, str) or not isinstance(term[0], str):
+        if isinstance(term, basestring) or not isinstance(term[0], basestring):
             return term
         return (clean_path(term[0]), term[1], term[2])
 
@@ -4077,7 +4077,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
             op_stack.pop()  # found all terms current operator was expecting, pop it
             op_stack[-1][1] -= 1  # previous operator now got one more term
 
-        if isinstance(element, str):
+        if isinstance(element, basestring):
             op_stack.append([element, op_arity[element]])
             final_dom.append(element)
             continue
