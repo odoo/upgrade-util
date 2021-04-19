@@ -2358,14 +2358,27 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         "orderedBy",
     )
 
+    def filter_value(key, value):
+        if key == "orderedBy" and isinstance(value, dict):
+            res = {k: (filter_value(None, v) if k == "name" else v) for k, v in value.items()}
+            if "name" not in res or res["name"] is not None:
+                # return if name didn't match fieldname
+                return res
+        elif not isinstance(value, basestring):
+            # if not a string, ignore it
+            return value
+        elif value.split(":")[0] != fieldname:
+            # only return if not matching fieldname
+            return value
+
     def clean_context(context):
         changed = False
         context = safe_eval(context, SelfPrintEvalContext(), nocopy=True)
         for key in keys_to_clean:
             if context.get(key):
-                context_part = [e for e in context[key] if e.split(":")[0] != fieldname]
+                context_part = [filter_value(key, e) for e in context[key]]
                 changed |= context_part != context[key]
-                context[key] = context_part
+                context[key] = [e for e in context_part if e is not None]
         return context, changed
 
     # clean dashboard's contexts
@@ -3892,10 +3905,20 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
     def_new = "default_{}".format(new)
     match = "{0[old]}|{0[def_old]}".format(p)
 
-    def adapt(field):
-        parts = field.split(":", 1)
+    def adapt_value(key, value):
+        if key == "orderedBy" and isinstance(value, dict):
+            # only adapt the "name" key
+            return {k: (adapt_value(None, v) if k == "name" else v) for k, v in value.items()}
+
+        if not isinstance(value, basestring):
+            # ignore if not a string
+            return value
+
+        parts = value.split(":", 1)
         if parts[0] != old:
-            return field
+            # if not match old, leave it
+            return value
+        # change to new, and return it
         parts[0] = new
         return ":".join(parts)
 
@@ -3911,7 +3934,8 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
         context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
         for key in keys_to_clean:
             if context.get(key):
-                context[key] = [adapt(e) for e in context[key]]
+                context[key] = [adapt_value(key, e) for e in context[key]]
+
         if def_old in context:
             context[def_new] = context.pop(def_old)
         act.set("context", unicode(context))
