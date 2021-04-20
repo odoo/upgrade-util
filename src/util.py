@@ -2792,6 +2792,48 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
     remove_column(cr, table, field)
 
 
+def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
+    _validate_model(model)
+    if not mapping:
+        return
+    table = table_of_model(cr, model)
+
+    if column_exists(cr, table, field):
+        query = "UPDATE {table} SET {field}= %s::json->>{field} WHERE {field} IN %s".format(table=table, field=field)
+        queries = [
+            cr.mogrify(q, [json.dumps(mapping), tuple(mapping)]).decode()
+            for q in explode_query_range(cr, query, table=table)
+        ]
+        parallel_execute(cr, queries)
+
+    cr.execute(
+        """
+        DELETE FROM ir_model_fields_selection s
+              USING ir_model_fields f
+              WHERE f.id = s.field_id
+                AND f.model = %s
+                AND f.name = %s
+                AND s.value IN %s
+        """,
+        [model, field, tuple(mapping)],
+    )
+
+    def adapter(leaf, _or, _neg):
+        left, op, right = leaf
+        if isinstance(right, (tuple, list)):
+            right = [mapping.get(r, r) for r in right]
+        else:
+            right = mapping.get(right, right)
+        return [(left, op, right)]
+
+    # skip all inherit, they will be handled by the resursive call
+    adapt_domains(cr, model, field, field, adapter=adapter, skip_inherit="*")
+
+    # rename field on inherits
+    for inh in _for_each_inherit(cr, model, skip_inherit):
+        change_field_selection_values(cr, inh.model, field, mapping=mapping, skip_inherit=skip_inherit)
+
+
 def is_field_anonymized(cr, model, field):
     _validate_model(model)
     if not module_installed(cr, "anonymization"):
