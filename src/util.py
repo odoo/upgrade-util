@@ -3037,15 +3037,28 @@ def custom_module_field_as_manual(env, rollback=True):
         # Mark it as manual so its skipped on loading fail.
         from odoo.models import BaseModel
 
-        origin_add_magic_fields = BaseModel._add_magic_fields
+        try:
+            origin_add_magic_fields = BaseModel._add_magic_fields
 
-        def _add_magic_fields(self):
-            res = origin_add_magic_fields(self)
-            if self._custom and "display_name" in self._fields:
-                self._fields["display_name"].manual = True
-            return res
+            def _add_magic_fields(self):
+                res = origin_add_magic_fields(self)
+                if self._custom and "display_name" in self._fields:
+                    self._fields["display_name"].manual = True
+                return res
 
-        with patch.object(BaseModel, "_add_magic_fields", _add_magic_fields):
+            def patch_display_name():
+                return patch.object(BaseModel, "_add_magic_fields", _add_magic_fields)
+
+        except AttributeError:
+            # Since saas-14.4, _add_magic_fields() no longer exists.  Moreover,
+            # '_rec_name' is automatically fixed when the field it refers to is
+            # dropped from the model's class.  Therefore, 'display_name' no
+            # longer needs to become manual.
+            @contextmanager
+            def patch_display_name():
+                yield
+
+        with patch_display_name():
             # 4. Reload the registry with the models and fields converted to manual.
             env.registry.setup_models(env.cr)
 
