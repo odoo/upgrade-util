@@ -4755,20 +4755,28 @@ def iter_browse(model, *args, **kw):
     ids = args[-1]
     chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
     logger = kw.pop("logger", _logger)
+    strategy = kw.pop("strategy", "flush")
+    assert strategy in {"flush", "commit"}
     if kw:
         raise TypeError("Unknow arguments: %s" % ", ".join(kw))
 
     flush = getattr(model, "flush", lambda: None)
 
     def browse(ids):
-        flush()
-        model.invalidate_cache(*cr_uid)
+        if strategy == "commit":
+            model.env.cr.commit()
+        else:
+            flush()
+            model.invalidate_cache(*cr_uid)
         args = cr_uid + (list(ids),)
         return model.browse(*args)
 
     def end():
-        flush()
-        model.invalidate_cache(*cr_uid)
+        if strategy == "commit":
+            model.env.cr.commit()
+        else:
+            flush()
+            model.invalidate_cache(*cr_uid)
         if 0:
             yield
 
