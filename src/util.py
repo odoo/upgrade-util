@@ -1188,7 +1188,9 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col1)s -> %(fk1)s", locals())
-        cr.execute('ALTER TABLE "{m2m}" ADD FOREIGN KEY ("{col1}") REFERENCES "{fk1}" ON DELETE CASCADE'.format(**locals()))
+        cr.execute(
+            'ALTER TABLE "{m2m}" ADD FOREIGN KEY ("{col1}") REFERENCES "{fk1}" ON DELETE CASCADE'.format(**locals())
+        )
 
     target = target_of(cr, m2m, col2)
     if target and target[:2] != (fk2, "id"):
@@ -1196,7 +1198,9 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         target = None
     if not target:
         _logger.debug("%(m2m)s: add FK %(col2)s -> %(fk2)s", locals())
-        cr.execute('ALTER TABLE "{m2m}" ADD FOREIGN KEY ("{col2}") REFERENCES "{fk2}" ON DELETE CASCADE'.format(**locals()))
+        cr.execute(
+            'ALTER TABLE "{m2m}" ADD FOREIGN KEY ("{col2}") REFERENCES "{fk2}" ON DELETE CASCADE'.format(**locals())
+        )
 
     # create indexes
     fixup_m2m_indexes(cr, m2m, col1, col2)
