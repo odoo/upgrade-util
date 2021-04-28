@@ -325,7 +325,7 @@ def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
     if min_id is None:
         return []  # empty table
 
-    if ((max_id - min_id + 1) * 1.1) <= bucket_size:
+    if ((max_id - min_id + 1) * 0.9) <= bucket_size:
         # If there is less than `bucket_size` records (with a 10% tolerance), no need to explode the query
         return [query.format(parallel_filter="true")]
 
