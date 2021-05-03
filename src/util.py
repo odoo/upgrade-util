@@ -4163,9 +4163,16 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
             op_stack[-1][1] -= 1  # previous operator now got one more term
 
         if isinstance(element, basestring):
+            if element not in op_arity:
+                _logger.log(NEARLYWARN, "Invalid domain on %r: %s", model, domain)
+                return None
             op_stack.append([element, op_arity[element]])
             final_dom.append(element)
             continue
+
+        if not expression.is_leaf(element):
+            _logger.log(NEARLYWARN, "Invalid domain on %r: %s", model, domain)
+            return None
 
         if op_stack:
             op_stack[-1][1] -= 1  # previous operator got a term
