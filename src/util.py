@@ -2581,6 +2581,19 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
 
     if fid:
         name = IMD_FIELD_PATTERN % (model.replace(".", "_"), new)
+        # In some cases the same field may be present on ir_model_data with both the double __ and single _ name
+        # version. To avoid conflicts (module, name) on the UPDATE below we keep only the double __ version
+        cr.execute(
+            """
+             DELETE FROM ir_model_data
+                   WHERE id IN (SELECT unnest((array_agg(id ORDER BY id))[2:count(id)])
+                                  FROM ir_model_data
+                                 WHERE model = 'ir.model.fields'
+                                   AND res_id = %s
+                                 GROUP BY module)
+            """,
+            [fid],
+        )
         try:
             with savepoint(cr):
                 cr.execute("UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s", [name, fid])
