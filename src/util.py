@@ -1441,6 +1441,17 @@ def delete_unused(cr, *xmlids):
             )
             ids = map(itemgetter(0), cr.fetchall())
 
+        ids = list(ids)
+        if model == "res.lang":
+            cr.execute(
+                """
+                DELETE FROM ir_translation t
+                      USING res_lang l
+                      WHERE t.lang = l.code
+                        AND l.id = ANY(%s)
+                 """,
+                [ids],
+            )
         for tid in ids:
             remove_record(cr, (model, tid))
             deleted.append(res_id_to_xmlid[tid])
