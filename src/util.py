@@ -4853,46 +4853,60 @@ def chunks(iterable, size, fmt=None):
         return
 
 
-def iter_browse(model, *args, **kw):
-    """
-    Iterate and browse through record without filling the cache.
-    `args` can be `cr, uid, ids` or just `ids` depending on kind of `model` (old/new api)
-    """
-    assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
-    cr_uid = args[:-1]
-    ids = args[-1]
-    chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
-    logger = kw.pop("logger", _logger)
-    strategy = kw.pop("strategy", "flush")
-    assert strategy in {"flush", "commit"}
-    if kw:
-        raise TypeError("Unknow arguments: %s" % ", ".join(kw))
+class iter_browse(object):
+    __slots__ = ("_model", "_cr_uid", "_size", "_chunk_size", "_logger", "_strategy", "_flush", "_it")
 
-    flush = getattr(model, "flush", lambda: None)
+    def __init__(self, model, *args, **kw):
+        assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
+        self._model = model
+        self._cr_uid = args[:-1]
+        ids = args[-1]
+        self._size = len(ids)
+        self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
+        self._logger = kw.pop("logger", _logger)
+        self._strategy = kw.pop("strategy", "flush")
+        assert self._strategy in {"flush", "commit"}
+        if kw:
+            raise TypeError("Unknow arguments: %s" % ", ".join(kw))
 
-    def browse(ids):
-        if strategy == "commit":
-            model.env.cr.commit()
+        self._flush = getattr(model, "flush", lambda: None)
+
+        self._it = chunks(ids, self._chunk_size, fmt=self._browse)
+
+    def _browse(self, ids):
+        next(self._end(), None)
+        args = self._cr_uid + (list(ids),)
+        return self._model.browse(*args)
+
+    def _end(self):
+        if self._strategy == "commit":
+            self._model.env.cr.commit()
         else:
-            flush()
-            model.invalidate_cache(*cr_uid)
-        args = cr_uid + (list(ids),)
-        return model.browse(*args)
-
-    def end():
-        if strategy == "commit":
-            model.env.cr.commit()
-        else:
-            flush()
-            model.invalidate_cache(*cr_uid)
+            self._flush()
+            self._model.invalidate_cache(*self._cr_uid)
         if 0:
             yield
 
-    it = chain.from_iterable(chunks(ids, chunk_size, fmt=browse))
-    if logger:
-        it = log_progress(it, qualifier=model._name, logger=logger, size=len(ids))
+    def __iter__(self):
+        it = chain.from_iterable(self._it)
+        if self._logger:
+            it = log_progress(it, qualifier=self._model._name, logger=self._logger, size=self._size)
+        return chain(it, self._end())
 
-    return chain(it, end())
+    def __getattr__(self, attr):
+        if not callable(getattr(self._model, attr)):
+            raise AttributeError("The attribute %r is not callable" % attr)
+
+        it = self._it
+        if self._logger:
+            sz = (self._size + self._chunk_size - 1) // self._chunk_size
+            qualifier = "%s[:%d]" % (self._model._name, self._chunk_size)
+            it = log_progress(it, qualifier=qualifier, logger=self._logger, size=sz)
+
+        def caller(*args, **kwargs):
+            return [getattr(chnk, attr)(*args, **kwargs) for chnk in chain(it, self._end())]
+
+        return caller
 
 
 def log_progress(it, qualifier="elements", logger=_logger, size=None, estimate=True, log_hundred_percent=False):

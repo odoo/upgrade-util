@@ -240,3 +240,32 @@ class TestRemoveFieldDomains(UnitTestCase):
         altered_domain = literal_eval(cr.fetchone()[0])
 
         self.assertEqual(altered_domain, expected)
+
+
+class TestIterBrowse(UnitTestCase):
+    def test_iter_browse_iter(self):
+        cr = self.env.cr
+        cr.execute("SELECT id FROM res_country")
+        ids = [c for c, in cr.fetchall()]
+        chunk_size = 10
+
+        Country = type(self.env["res.country"])
+        with mock.patch.object(Country, "_read", autospec=True, side_effect=Country._read) as read:
+            for c in util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size):
+                c.name
+        expected = (len(ids) + chunk_size - 1) // chunk_size
+        self.assertEqual(read.call_count, expected)
+
+    def test_iter_browse_call(self):
+        cr = self.env.cr
+        cr.execute("SELECT id FROM res_country")
+        ids = [c for c, in cr.fetchall()]
+        chunk_size = 10
+
+        Country = type(self.env["res.country"])
+        with mock.patch.object(Country, "write", autospec=True, side_effect=Country.write) as write:
+            ib = util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size)
+            ib.write({"vat_label": "VAT"})
+
+        expected = (len(ids) + chunk_size - 1) // chunk_size
+        self.assertEqual(write.call_count, expected)
