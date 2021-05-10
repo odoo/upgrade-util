@@ -7,6 +7,12 @@ from textwrap import dedent
 import lxml
 from docutils.core import publish_string
 
+# python3 shims
+try:
+    basestring
+except NameError:
+    basestring = unicode = str
+
 try:
     from markupsafe import Markup, escape
 
@@ -70,7 +76,9 @@ def announce_migration_report(cr):
     }
     _logger.info(migration_reports)
     render = e["ir.qweb"].render if hasattr(e["ir.qweb"], "render") else e["ir.qweb"]._render
-    message = render(report, values=values).decode("utf-8")
+    message = render(report, values=values)
+    if not isinstance(message, basestring):
+        message = message.decode("utf-8")
     if message.strip():
         message = message.replace("{", "{{").replace("}", "}}")
         kw = {}
