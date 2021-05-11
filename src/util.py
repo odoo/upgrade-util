@@ -2404,6 +2404,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     def clean_context(context):
         changed = False
         context = safe_eval(context, SelfPrintEvalContext(), nocopy=True)
+        if not isinstance(context, dict):
+            return context, changed
         for key in keys_to_clean:
             if context.get(key):
                 context_part = [filter_value(key, e) for e in context[key]]
