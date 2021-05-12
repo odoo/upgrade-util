@@ -28,7 +28,7 @@ except ImportError:
 
 import psycopg2
 
-from . import inherit
+from .. import inherit
 
 try:
     import odoo
@@ -98,7 +98,7 @@ try:
 except ImportError:
     ThreadPoolExecutor = None
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__.rpartition(".")[0])
 
 _INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 
@@ -196,7 +196,7 @@ try:
     def import_script(path, name=None):
         if not name:
             name, _ = os.path.splitext(os.path.basename(path))
-        full_path = os.path.join(os.path.dirname(__file__), path)
+        full_path = os.path.join(os.path.dirname(__file__), "..", path)
         spec = importlib.util.spec_from_file_location(name, full_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -210,7 +210,7 @@ except ImportError:
     def import_script(path, name=None):
         if not name:
             name, _ = os.path.splitext(os.path.basename(path))
-        full_path = os.path.join(os.path.dirname(__file__), path)
+        full_path = os.path.join(os.path.dirname(__file__), "..", path)
         with open(full_path) as fp:
             return imp.load_source(name, full_path, fp)
 
@@ -5044,3 +5044,6 @@ def no_fiscal_lock(cr):
         ),
         data,
     )
+
+
+__all__ = list(locals())
