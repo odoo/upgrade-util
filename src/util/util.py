@@ -29,6 +29,7 @@ except ImportError:
 import psycopg2
 
 from .. import inherit
+from .exceptions import MigrationError, SleepyDeveloperError
 
 try:
     import odoo
@@ -132,14 +133,6 @@ def add_to_migration_reports(message, category="Other", format="text"):
         else:
             raw = True
     migration_reports.setdefault(category, []).append((message, raw))
-
-
-class MigrationError(Exception):
-    pass
-
-
-class SleepyDeveloperError(ValueError):
-    pass
 
 
 def version_gte(version):
