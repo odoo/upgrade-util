@@ -3566,8 +3566,8 @@ def rename_model(cr, old, new, rename_table=True):
             cr.execute(
                 """
                     UPDATE "{table}"
-                       SET {column}='{new}' || substring({column} FROM '%#",%#"' FOR '#')
-                     WHERE {column} LIKE '{old},%'
+                       SET "{column}"='{new}' || substring("{column}" FROM '%#",%#"' FOR '#')
+                     WHERE "{column}" LIKE '{old},%'
             """.format(
                     table=table, column=column, new=new, old=old
                 )
