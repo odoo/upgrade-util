@@ -3,7 +3,6 @@
 
 import base64
 import collections
-import datetime
 import json
 import logging
 import os
@@ -13,7 +12,7 @@ import time
 from contextlib import contextmanager
 from functools import reduce
 from inspect import currentframe
-from itertools import chain, islice
+from itertools import chain
 from multiprocessing import cpu_count
 from operator import itemgetter
 from textwrap import dedent
@@ -30,6 +29,7 @@ import psycopg2
 
 from .. import inherit
 from .exceptions import MigrationError, SleepyDeveloperError
+from .misc import SelfPrintEvalContext, chunks, has_enterprise, log_progress, splitlines, version_gte
 
 try:
     import odoo
@@ -47,7 +47,7 @@ except ImportError:
         from openerp.addons.base.module.module import MyWriter
 
 try:
-    from odoo.modules.module import get_module_path, load_information_from_description_file
+    from odoo.modules.module import load_information_from_description_file
     from odoo.osv import expression
     from odoo.sql_db import db_connect
     from odoo.tools.convert import xml_import
@@ -57,7 +57,7 @@ try:
     from odoo.tools.parse_version import parse_version
     from odoo.tools.safe_eval import safe_eval
 except ImportError:
-    from openerp.modules.module import get_module_path, load_information_from_description_file
+    from openerp.modules.module import load_information_from_description_file
     from openerp.osv import expression
     from openerp.sql_db import db_connect
     from openerp.tools.convert import xml_import
@@ -135,12 +135,6 @@ def add_to_migration_reports(message, category="Other", format="text"):
     migration_reports.setdefault(category, []).append((message, raw))
 
 
-def version_gte(version):
-    if "-" in version:
-        raise SleepyDeveloperError("version cannot contains dash")
-    return parse_version(release.serie) >= parse_version(version)
-
-
 def main(func, version=None):
     """a main() function for scripts"""
     # NOTE: this is not recommanded when the func callback use the ORM as the addon-path is
@@ -151,83 +145,6 @@ def main(func, version=None):
     dbname = sys.argv[1]
     with db_connect(dbname).cursor() as cr, manage_env():
         func(cr, version)
-
-
-def splitlines(s):
-    """yield stripped lines of `s`.
-    Skip empty lines
-    Remove comments (starts with `#`).
-    """
-    return (
-        stripped_line for line in s.splitlines() for stripped_line in [line.split("#", 1)[0].strip()] if stripped_line
-    )
-
-
-def expand_braces(s):
-    # expand braces (a la bash)
-    # only handle one expension of a 2 parts (because we don't need more)
-    r = re.compile(r"(.*){([^},]*?,[^},]*?)}(.*)")
-    m = r.search(s)
-    if not m:
-        raise ValueError("No expansion braces found")
-    head, match, tail = m.groups()
-    a, b = match.split(",")
-    first = head + a + tail
-    second = head + b + tail
-    if r.search(first):  # as the regexp will match the last expansion, we only need to verify first term
-        raise ValueError("Multiple expansion braces found")
-    return [first, second]
-
-
-def split_osenv(name):
-    return re.split(r"\W+", os.getenv(name, "").strip())
-
-
-try:
-    import importlib.util
-
-    def import_script(path, name=None):
-        if not name:
-            name, _ = os.path.splitext(os.path.basename(path))
-        full_path = os.path.join(os.path.dirname(__file__), "..", path)
-        spec = importlib.util.spec_from_file_location(name, full_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
-
-except ImportError:
-    # python2 version
-    import imp
-
-    def import_script(path, name=None):
-        if not name:
-            name, _ = os.path.splitext(os.path.basename(path))
-        full_path = os.path.join(os.path.dirname(__file__), "..", path)
-        with open(full_path) as fp:
-            return imp.load_source(name, full_path, fp)
-
-
-@contextmanager
-def skippable_cm():
-    """Allow a contextmanager to not yield."""
-    if not hasattr(skippable_cm, "_msg"):
-
-        @contextmanager
-        def _():
-            if 0:
-                yield
-
-        try:
-            with _():
-                pass
-        except RuntimeError as r:
-            skippable_cm._msg = str(r)
-    try:
-        yield
-    except RuntimeError as r:
-        if str(r) != skippable_cm._msg:
-            raise
 
 
 @contextmanager
@@ -251,7 +168,7 @@ def get_max_workers():
 if ThreadPoolExecutor is None:
 
     def parallel_execute(cr, queries, logger=_logger):
-        for query in log_progress(queries, qualifier="queries", logger=logger, size=len(queries)):
+        for query in log_progress(queries, logger, qualifier="queries", size=len(queries)):
             cr.execute(query)
 
 
@@ -292,8 +209,8 @@ else:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for _ in log_progress(
                 executor.map(execute, queries),
+                logger,
                 qualifier="queries",
-                logger=logger,
                 size=len(queries),
                 estimate=False,
                 log_hundred_percent=True,
@@ -378,24 +295,6 @@ def pg_text2html(s):
     """.format(
         src=s, esc=pg_html_escape(s)
     )
-
-
-def has_enterprise():
-    """Return whernever the current installation has enterprise addons availables"""
-    # NOTE should always return True as customers need Enterprise to migrate or
-    #      they are on SaaS, which include enterpise addons.
-    #      This act as a sanity check for developpers or in case we release the scripts.
-    if os.getenv("ODOO_HAS_ENTERPRISE"):
-        return True
-    # XXX maybe we will need to change this for version > 9
-    return bool(get_module_path("delivery_fedex", downloaded=False, display_warning=False))
-
-
-def has_design_themes():
-    """Return whernever the current installation has theme addons availables"""
-    if os.getenv("ODOO_HAS_DESIGN_THEMES"):
-        return True
-    return bool(get_module_path("theme_yes", downloaded=False, display_warning=False))
 
 
 def is_saas(cr):
@@ -3349,7 +3248,8 @@ def remove_model(cr, model, drop_table=True):
                 else:
                     # remove in batch
                     size = (len(ids) + chunk_size - 1) / chunk_size
-                    for sub_ids in log_progress(chunks(ids, chunk_size, fmt=tuple), qualifier=ir.table, size=size):
+                    it = chunks(ids, chunk_size, fmt=tuple)
+                    for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
                         _remove_records(cr, ref_model, sub_ids)
                         _rm_refs(cr, ref_model, sub_ids)
             else:
@@ -4431,7 +4331,7 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
 
     size = (len(ids) + chunk_size - 1) / chunk_size
     qual = "%s %d-bucket" % (model, chunk_size) if chunk_size != 1 else model
-    for subids in log_progress(chunks(ids, chunk_size, list), qualifier=qual, logger=logger, size=size):
+    for subids in log_progress(chunks(ids, chunk_size, list), logger, qualifier=qual, size=size):
         records = Model.browse(subids)
         for field_name in fields:
             field = records._fields[field_name]
@@ -4826,34 +4726,6 @@ def drop_workflow(cr, osv):
     )
 
 
-def chunks(iterable, size, fmt=None):
-    """
-    Split `iterable` into chunks of `size` and wrap each chunk
-    using function 'fmt' (`iter` by default; join strings)
-
-    >>> list(chunks(range(10), 4, fmt=tuple))
-    [(0, 1, 2, 3), (4, 5, 6, 7), (8, 9)]
-    >>> ' '.join(chunks('abcdefghijklm', 3))
-    'abc def ghi jkl m'
-    >>>
-
-    """
-    if fmt is None:
-        # fmt:off
-        fmt = {
-            str: "".join,
-            unicode: u"".join,
-        }.get(type(iterable), iter)
-        # fmt:on
-
-    it = iter(iterable)
-    try:
-        while True:
-            yield fmt(chain((next(it),), islice(it, size - 1)))
-    except StopIteration:
-        return
-
-
 class iter_browse(object):
     __slots__ = ("_model", "_cr_uid", "_size", "_chunk_size", "_logger", "_strategy", "_flush", "_it")
 
@@ -4891,7 +4763,7 @@ class iter_browse(object):
     def __iter__(self):
         it = chain.from_iterable(self._it)
         if self._logger:
-            it = log_progress(it, qualifier=self._model._name, logger=self._logger, size=self._size)
+            it = log_progress(it, self._logger, qualifier=self._model._name, size=self._size)
         return chain(it, self._end())
 
     def __getattr__(self, attr):
@@ -4902,108 +4774,12 @@ class iter_browse(object):
         if self._logger:
             sz = (self._size + self._chunk_size - 1) // self._chunk_size
             qualifier = "%s[:%d]" % (self._model._name, self._chunk_size)
-            it = log_progress(it, qualifier=qualifier, logger=self._logger, size=sz)
+            it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
         def caller(*args, **kwargs):
             return [getattr(chnk, attr)(*args, **kwargs) for chnk in chain(it, self._end())]
 
         return caller
-
-
-def log_progress(it, qualifier="elements", logger=_logger, size=None, estimate=True, log_hundred_percent=False):
-    if size is None:
-        size = len(it)
-    t0 = t1 = datetime.datetime.now()
-    for i, e in enumerate(it, 1):
-        yield e
-        t2 = datetime.datetime.now()
-        if (t2 - t1).total_seconds() > 60 or (log_hundred_percent and i == size and (t2 - t0).total_seconds() > 10):
-            t1 = datetime.datetime.now()
-            tdiff = t2 - t0
-            j = float(i)
-            if estimate:
-                tail = " (total estimated time: %s)" % (datetime.timedelta(seconds=tdiff.total_seconds() * size / j),)
-            else:
-                tail = ""
-
-            logger.info(
-                "[%.02f%%] %d/%d %s processed in %s%s",
-                (j / size * 100.0),
-                i,
-                size,
-                qualifier,
-                tdiff,
-                tail,
-            )
-
-
-class SelfPrint(object):
-    """Class that will return a self representing string. Used to evaluate domains."""
-
-    def __init__(self, name):
-        self.__name = name
-
-    def __getattr__(self, attr):
-        return SelfPrint("%r.%s" % (self, attr))
-
-    def __call__(self, *args, **kwargs):
-        s = []
-        for a in args:
-            s.append(repr(a))
-        for k, v in kwargs.items():
-            s.append("%s=%r" % (k, v))
-        return SelfPrint("%r(%s)" % (self, ", ".join(s)))
-
-    def __add__(self, other):
-        return SelfPrint("%r + %r" % (self, other))
-
-    def __radd__(self, other):
-        return SelfPrint("%r + %r" % (other, self))
-
-    def __sub__(self, other):
-        return SelfPrint("%r - %r" % (self, other))
-
-    def __rsub__(self, other):
-        return SelfPrint("%r - %r" % (other, self))
-
-    def __mul__(self, other):
-        return SelfPrint("%r * %r" % (self, other))
-
-    def __rmul__(self, other):
-        return SelfPrint("%r * %r" % (other, self))
-
-    def __div__(self, other):
-        return SelfPrint("%r / %r" % (self, other))
-
-    def __rdiv__(self, other):
-        return SelfPrint("%r / %r" % (other, self))
-
-    def __floordiv__(self, other):
-        return SelfPrint("%r // %r" % (self, other))
-
-    def __rfloordiv__(self, other):
-        return SelfPrint("%r // %r" % (other, self))
-
-    def __mod__(self, other):
-        return SelfPrint("%r %% %r" % (self, other))
-
-    def __rmod__(self, other):
-        return SelfPrint("%r %% %r" % (other, self))
-
-    def __repr__(self):
-        return self.__name
-
-    __str__ = __repr__
-
-
-class SelfPrintEvalContext(collections.defaultdict):
-    """Evaluation Context that will return a SelfPrint object for all non-literal object"""
-
-    def __init__(self, *args, **kwargs):
-        super(SelfPrintEvalContext, self).__init__(None, *args, **kwargs)
-
-    def __missing__(self, key):
-        return SelfPrint(key)
 
 
 @contextmanager
