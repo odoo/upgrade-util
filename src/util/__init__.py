@@ -4,4 +4,5 @@ from .helpers import *
 from .misc import *
 from .orm import *
 from .pg import *
+from .report import *
 from .util import *
