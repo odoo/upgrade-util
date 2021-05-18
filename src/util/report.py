@@ -7,6 +7,8 @@ from textwrap import dedent
 import lxml
 from docutils.core import publish_string
 
+from .helpers import _validate_model
+
 # python3 shims
 try:
     basestring
@@ -201,3 +203,13 @@ def announce(
         poster(body=message, partner_ids=[user.partner_id.id], **kw)
     except Exception:
         _logger.warning("Cannot announce message", exc_info=True)
+
+
+def get_anchor_link_to_record(model, id, name, action_id=None):
+    _validate_model(model)
+    return '<a target="_blank" href="web?debug=1#view_type=form&amp;model=%s&amp;action=%s&amp;id=%s">%s</a>' % (
+        model,
+        action_id or "",
+        id,
+        name,
+    )
