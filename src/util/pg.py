@@ -20,7 +20,8 @@ try:
 except ImportError:
     from openerp.sql_db import db_connect
 
-from .exceptions import MigrationError, SleepyDeveloperError
+from .exceptions import MigrationError
+from .helpers import _validate_table
 from .misc import log_progress
 
 _logger = logging.getLogger(__name__)
@@ -42,12 +43,6 @@ def savepoint(cr):
     #       I take the bet it won't be problematic...
     with cr.savepoint():
         yield
-
-
-def _validate_table(table):
-    if "." in table:
-        raise SleepyDeveloperError("`{}` seems to be a model name instead of table name".format(table))
-    return table
 
 
 if ThreadPoolExecutor is None:
