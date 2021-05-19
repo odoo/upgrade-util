@@ -16,6 +16,7 @@ import lxml
 import psycopg2
 
 from .. import inherit
+from .const import ENVIRON, NEARLYWARN
 from .exceptions import SleepyDeveloperError
 from .helpers import (
     _dashboard_actions,
@@ -91,13 +92,6 @@ _logger = logging.getLogger(__name__.rpartition(".")[0])
 
 _INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 
-# migration environ, used to share data between scripts
-ENVIRON = {
-    "__renamed_fields": collections.defaultdict(set),
-}
-
-NEARLYWARN = 25  # between info and warning; appear on runbot build page
-odoo.netsvc.LEVEL_COLOR_MAPPING[NEARLYWARN] = (odoo.netsvc.YELLOW, odoo.netsvc.DEFAULT)
 
 # python3 shims
 try:
