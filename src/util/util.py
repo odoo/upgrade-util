@@ -15,7 +15,6 @@ from operator import itemgetter
 import lxml
 import psycopg2
 
-from .. import inherit
 from .const import ENVIRON, NEARLYWARN
 from .exceptions import SleepyDeveloperError
 from .helpers import (
@@ -27,6 +26,7 @@ from .helpers import (
     table_of_model,
 )
 from .indirect_references import indirect_references
+from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext, chunks, log_progress, version_gte
 from .orm import env
 from .pg import (
@@ -379,7 +379,7 @@ def _remove_records(cr, model, ids, deactivate=False, active_field="active"):
 
     ids = tuple(ids)
 
-    for inh in _for_each_inherit(cr, model, skip=()):
+    for inh in for_each_inherit(cr, model, skip=()):
         if inh.via:
             table = table_of_model(cr, inh.model)
             if not column_exists(cr, table, inh.via):
@@ -1377,36 +1377,6 @@ def force_migration_of_fresh_module(cr, module, init=True):
         odoo.tools.config["init"][module] = "oh yeah!"
 
 
-def _get_base_version(cr):
-    # base_version is normaly computed in `base/0.0.0/pre-base_version.py` (and symlinks)
-    # However, if theses scripts are used to upgrade custom modules afterward (like the P.S. do),
-    # as the `base` module not being updated, the *base_version* MUST be set as an environment variable.
-    bv = ENVIRON.get("__base_version")
-    if bv:
-        return bv
-    # trust env variable if set
-    bv = os.getenv("ODOO_BASE_VERSION")
-    if bv:
-        bv = ENVIRON["__base_version"] = parse_version(bv)
-    else:
-        cr.execute("SELECT latest_version FROM ir_module_module WHERE name='base' AND state='to upgrade'")
-        # Let it fail if called outside update of `base` module.
-        bv = ENVIRON["__base_version"] = parse_version(cr.fetchone()[0])
-    return bv
-
-
-def _for_each_inherit(cr, model, skip):
-    if skip == "*":
-        return
-    base_version = _get_base_version(cr)
-    for inh in inherit.inheritance_data.get(model, []):
-        if inh.model in skip:
-            continue
-        if inh.born <= base_version:
-            if inh.dead is None or base_version < inh.dead:
-                yield inh
-
-
 def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
     _validate_model(model)
     if fieldname == "id":
@@ -1543,7 +1513,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         remove_column(cr, table, fieldname, cascade=cascade)
 
     # remove field on inherits
-    for inh in _for_each_inherit(cr, model, skip_inherit):
+    for inh in for_each_inherit(cr, model, skip_inherit):
         remove_field(cr, inh.model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
 
 
@@ -1565,7 +1535,7 @@ def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
         """,
         [model, fieldname],
     )
-    for inh in _for_each_inherit(cr, model, skip_inherit):
+    for inh in for_each_inherit(cr, model, skip_inherit):
         remove_field_metadata(cr, inh.model, fieldname, skip_inherit=skip_inherit)
 
 
@@ -1590,7 +1560,7 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
             [name, old_module],
         )
     # move field on inherits
-    for inh in _for_each_inherit(cr, model, skip_inherit):
+    for inh in for_each_inherit(cr, model, skip_inherit):
         move_field_to_module(cr, inh.model, fieldname, old_module, new_module, skip_inherit=skip_inherit)
 
 
@@ -1703,7 +1673,7 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
         update_field_references(cr, old, new, only_models=(model,), domain_adapter=domain_adapter, skip_inherit="*")
 
     # rename field on inherits
-    for inh in _for_each_inherit(cr, model, skip_inherit):
+    for inh in for_each_inherit(cr, model, skip_inherit):
         rename_field(cr, inh.model, old, new, update_references=update_references, skip_inherit=skip_inherit)
 
 
@@ -1914,7 +1884,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
     adapt_domains(cr, model, field, field, adapter=adapter, skip_inherit="*")
 
     # rename field on inherits
-    for inh in _for_each_inherit(cr, model, skip_inherit):
+    for inh in for_each_inherit(cr, model, skip_inherit):
         change_field_selection_values(cr, inh.model, field, mapping=mapping, skip_inherit=skip_inherit)
 
 
@@ -2746,7 +2716,7 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
             adapt_related(cr, model, old, new, skip_inherit="*")
 
         inherited_models = tuple(
-            inh.model for model in only_models for inh in _for_each_inherit(cr, model, skip_inherit)
+            inh.model for model in only_models for inh in for_each_inherit(cr, model, skip_inherit)
         )
         if inherited_models:
             update_field_references(
@@ -3001,7 +2971,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
                 act.set("domain", unicode(domain))
 
     # down on inherits
-    for inh in _for_each_inherit(cr, target_model, skip_inherit):
+    for inh in for_each_inherit(cr, target_model, skip_inherit):
         adapt_domains(cr, inh.model, old, new, adapter, skip_inherit=skip_inherit)
 
 
@@ -3032,7 +3002,7 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
     # TODO adapt paths in email templates?
 
     # down on inherits
-    for inh in _for_each_inherit(cr, target_model, skip_inherit):
+    for inh in for_each_inherit(cr, target_model, skip_inherit):
         adapt_related(cr, inh.model, old, new, skip_inherit=skip_inherit)
 
 
