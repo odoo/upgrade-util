@@ -2,6 +2,7 @@
 from .const import *
 from .domains import *
 from .exceptions import *
+from .fields import *
 from .helpers import *
 from .indirect_references import *
 from .inherit import *
