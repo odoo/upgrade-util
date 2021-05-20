@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from .const import *
+from .domains import *
 from .exceptions import *
 from .helpers import *
 from .indirect_references import *
