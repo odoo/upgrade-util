@@ -7,5 +7,6 @@ from .inherit import *
 from .misc import *
 from .orm import *
 from .pg import *
+from .records import *
 from .report import *
 from .util import *
