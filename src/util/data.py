@@ -34,8 +34,8 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
             cr.execute("SELECT count(*) FROM ir_model_fields WHERE ttype = 'many2many' AND relation_table = %s", [ft])
             [is_many2many] = cr.fetchone()
         if not is_many2many:
-            model = model_of_table(cr, ft)
-            if model:
+            f_model = model_of_table(cr, ft)
+            if f_model:
                 cr.execute(
                     """
                         SELECT count(*)
@@ -44,7 +44,7 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
                            AND name = %s
                            AND ttype = 'many2one'
                     """,
-                    [model, fc],
+                    [f_model, fc],
                 )
                 [is_many2one] = cr.fetchone()
         assert (
