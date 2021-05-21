@@ -2,7 +2,6 @@
 # Utility functions for migration scripts
 
 
-import logging
 import sys
 from contextlib import contextmanager
 
@@ -29,9 +28,6 @@ except ImportError:
         @contextmanager
         def manage_env():
             yield
-
-
-_logger = logging.getLogger(__name__.rpartition(".")[0])
 
 
 # python3 shims

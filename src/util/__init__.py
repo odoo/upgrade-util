@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import logging
+
 from .const import *
 from .data import *
 from .domains import *
@@ -16,3 +18,5 @@ from .records import *
 from .report import *
 from .specific import *
 from .util import *
+
+_logger = logging.getLogger(__name__.rpartition(".")[0])
