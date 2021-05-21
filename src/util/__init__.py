@@ -7,6 +7,7 @@ from .helpers import *
 from .indirect_references import *
 from .inherit import *
 from .misc import *
+from .models import *
 from .orm import *
 from .pg import *
 from .records import *
