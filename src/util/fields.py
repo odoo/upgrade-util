@@ -580,7 +580,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
 
 
 def is_field_anonymized(cr, model, field):
-    from .util import module_installed
+    from .modules import module_installed
 
     _validate_model(model)
     if not module_installed(cr, "anonymization"):
