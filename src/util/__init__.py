@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from .const import *
+from .data import *
 from .domains import *
 from .exceptions import *
 from .fields import *
