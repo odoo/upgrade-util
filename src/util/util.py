@@ -56,13 +56,6 @@ def main(func, version=None):
         func(cr, version)
 
 
-def is_saas(cr):
-    """Return whether the current installation has saas modules installed or not"""
-    # this is shitty, I know - but the one above me is as shitty so ¯\_(ツ)_/¯
-    cr.execute("SELECT true FROM ir_module_module WHERE name like 'saas_%' AND state='installed'")
-    return bool(cr.fetchone())
-
-
 def dbuuid(cr):
     cr.execute(
         """
