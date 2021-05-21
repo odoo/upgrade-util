@@ -6,9 +6,6 @@ import logging
 import sys
 from contextlib import contextmanager
 
-from .orm import env
-from .pg import get_columns
-
 try:
 
     from odoo.sql_db import db_connect
@@ -86,39 +83,6 @@ def dispatch_by_dbuuid(cr, version, callbacks):
         func = callbacks[uuid]
         _logger.info("calling dbuuid-specific function `%s`", func.__name__)
         func(cr, version)
-
-
-@contextmanager
-def no_fiscal_lock(cr):
-    env(cr)["res.company"].invalidate_cache()
-    columns = [col for col in get_columns(cr, "res_company")[0] if col.endswith("_lock_date")]
-    assert columns
-    set_val = ", ".join("{} = NULL".format(col) for col in columns)
-    returns = ", ".join("old.{}".format(col) for col in columns)
-    cr.execute(
-        """
-            UPDATE res_company c
-               SET {}
-              FROM res_company old
-             WHERE old.id = c.id
-         RETURNING {}, old.id
-        """.format(
-            set_val, returns
-        )
-    )
-    data = cr.fetchall()
-    yield
-    set_val = ", ".join("{} = %s".format(col) for col in columns)
-    cr.executemany(
-        """
-            UPDATE res_company
-               SET {}
-             WHERE id = %s
-        """.format(
-            set_val
-        ),
-        data,
-    )
 
 
 __all__ = list(locals())
