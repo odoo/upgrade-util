@@ -2712,7 +2712,9 @@ def convert_field_to_property(
     else:
         where_clause = "{field} != %(default_value)s".format(field=field)
 
-    if type != "many2one":
+    if type == "boolean":
+        value_select = "%s::integer" % field
+    elif type != "many2one":
         value_select = field
     else:
         # for m2o, the store value is a refrence field, so in format `model,id`
@@ -2759,7 +2761,7 @@ def convert_field_to_property(
              WHERE NOT EXISTS(SELECT 1
                                 FROM ir_property
                                WHERE fields_id=%(fields_id)s
-                                 AND COALESCE(company_id, 0) = COALESCE(cte.company, 0)
+                                 AND company_id IS NOT DISTINCT FROM cte.company
                                  AND res_id=cte.res_id)
     """.format(
             **locals()
@@ -2790,6 +2792,10 @@ def convert_field_to_property(
             )
 
     remove_column(cr, table, field, cascade=True)
+
+
+# alias with a name related to the new API to declare property fields (company_dependent=True attribute)
+make_field_company_dependent = convert_field_to_property
 
 
 def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_field=None):
