@@ -7,4 +7,4 @@ except ImportError:
 
 
 def migrate(cr, version):
-    util._get_base_version(cr)
+    util.inherit._get_base_version(cr)

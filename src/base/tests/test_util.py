@@ -9,6 +9,7 @@ from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
+from odoo.addons.base.maintenance.migrations.util.domains import _adapt_one_domain
 
 
 class TestAdaptOneDomain(UnitTestCase):
@@ -22,11 +23,11 @@ class TestAdaptOneDomain(UnitTestCase):
         # no adapter
         domain = [("partner_id.user_id.partner_id.user_id.partner_id", "=", False)]
         match_domain = [("partner_id.friend_id.partner_id.friend_id.partner_id", "=", False)]
-        new_domain = util._adapt_one_domain(self.cr, "res.partner", "user_id", "friend_id", "res.users", domain)
+        new_domain = _adapt_one_domain(self.cr, "res.partner", "user_id", "friend_id", "res.users", domain)
         self.assertEqual(match_domain, new_domain)
 
         # with adapter, verify it's not called
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.assertEqual(match_domain, new_domain)
@@ -39,12 +40,12 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = [("partner_id.user_id.partner_id.user_id", "=", False)]
         match_domain = [("partner_id.friend_id.partner_id.friend_id", "=", False)]
 
-        new_domain = util._adapt_one_domain(self.cr, "res.partner", "user_id", "friend_id", "res.users", domain)
+        new_domain = _adapt_one_domain(self.cr, "res.partner", "user_id", "friend_id", "res.users", domain)
         self.assertEqual(match_domain, new_domain)
 
         # with adapter, verify it's called even if nothing was changed on the path
         self.mock_adapter.return_value = domain  # adapter won't update anything
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "user_id", "res.users", domain, adapter=self.mock_adapter
         )  # even if new==old the adapter must be called
         self.mock_adapter.assert_called_once()
@@ -55,7 +56,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         match_domain = [("partner_id.friend_id.partner_id.friend_id", "=", False)]
         self.mock_adapter.return_value = domain  # adapter won't update anything
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_once()
@@ -70,7 +71,7 @@ class TestAdaptOneDomain(UnitTestCase):
         # '&' domain
         domain = ["&", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["&", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[1], False, False)
@@ -80,7 +81,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["|", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[1], True, False)
@@ -90,7 +91,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["!", ("partner_id.user_id", "=", 1)]
         match_domain = ["!", ("partner_id.friend_id", "=", 2)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[1], False, True)
@@ -100,7 +101,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["|", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[2], True, True)
@@ -110,7 +111,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["|", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[2], True, True)
@@ -126,7 +127,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["!", "!", ("partner_id.user_id", "=", 1)]
         match_domain = ["!", "!", ("partner_id.friend_id", "=", 2)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, False)
@@ -136,7 +137,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["!", "!", "!", ("partner_id.user_id", "=", 1)]
         match_domain = ["!", "!", "!", ("partner_id.friend_id", "=", 2)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, True)
@@ -146,7 +147,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["|", "!", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", "!", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, True, False)
@@ -156,7 +157,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["&", "!", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["&", "!", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, False)
@@ -166,7 +167,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["|", "&", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["|", "&", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, False)
@@ -175,7 +176,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["&", "|", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["&", "|", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, True, False)
@@ -184,7 +185,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["|", "&", "!", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["|", "&", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, True)
@@ -193,7 +194,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.reset_mock()
         domain = ["&", "|", "!", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["&", "|", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
-        new_domain = util._adapt_one_domain(
+        new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, True, True)
