@@ -30,6 +30,7 @@ from .pg import (
     column_type,
     explode_query_range,
     parallel_execute,
+    pg_text2html,
     remove_column,
     savepoint,
     table_exists,
@@ -366,6 +367,16 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
     # rename field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
         rename_field(cr, inh.model, old, new, update_references=update_references, skip_inherit=skip_inherit)
+
+
+def convert_field_to_html(cr, model, field, skip_inherit=()):
+    _validate_model(model)
+    table = table_of_model(cr, model)
+    cr.execute('UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field)))
+
+    for inh in for_each_inherit(cr, model, skip_inherit):
+        if not inh.via:
+            convert_field_to_html(inh.model, field, skip_inherit=skip_inherit)
 
 
 def convert_field_to_property(
