@@ -170,7 +170,17 @@ def pg_html_escape(s, quote=True):
 def pg_text2html(s):
     return r"""
         CASE WHEN TRIM(COALESCE({src}, '')) ~ '^<.+</\w+>$' THEN {src}
-             ELSE CONCAT('<p>', replace({esc}, E'\n', '<br>'), '</p>')
+             ELSE CONCAT(
+                '<p>',
+                replace(REGEXP_REPLACE({esc},
+                                       -- regex from https://blog.codinghorror.com/the-problem-with-urls/
+                                       -- double the %% to allow this code chunk to be used in parameterized queries
+                                       'https?://[-A-Za-z0-9+&@#/%%?=~_()|!:,.;]*[-A-Za-z0-9+&@#/%%=~_()|]',
+                                       '<a href="\&" target="_blank" rel="noreferrer noopener">\&</a>',
+                                       'g'),
+                        E'\n',
+                        '<br>'),
+                '</p>')
          END
     """.format(
         src=s, esc=pg_html_escape(s)

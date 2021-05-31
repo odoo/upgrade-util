@@ -271,3 +271,31 @@ class TestIterBrowse(UnitTestCase):
 
         expected = (len(ids) + chunk_size - 1) // chunk_size
         self.assertEqual(write.call_count, expected)
+
+
+class TestPG(UnitTestCase):
+    @parametrize(
+        [
+            ("test", "<p>test</p>"),
+            ("<p>test</p>", "<p>test</p>"),
+            ("<div>test</div>", "<div>test</div>"),
+            # escapings
+            ("r&d", "<p>r&amp;d</p>"),
+            ("!<(^_^)>!", "<p>!&lt;(^_^)&gt;!</p>"),
+            ("'quoted'", "<p>&#x27;quoted&#x27;</p>"),
+            # and with links
+            (
+                "Go to https://upgrade.odoo.com/?debug=1&version=14.0 and follow the instructions.",
+                '<p>Go to <a href="https://upgrade.odoo.com/?debug=1&amp;version=14.0"'
+                ' target="_blank" rel="noreferrer noopener">https://upgrade.odoo.com/?debug=1&amp;version=14.0</a> and'
+                " follow the instructions.</p>",
+            ),
+        ]
+    )
+    def test_pg_text2html(self, value, expected):
+        cr = self.env.cr
+        uid = self.env.user.id
+        cr.execute("UPDATE res_users SET signature=%s WHERE id=%s", [value, uid])
+        cr.execute("SELECT {} FROM res_users WHERE id=%s".format(util.pg_text2html("signature")), [uid])
+        result = cr.fetchone()[0]
+        self.assertEqual(result, expected)
