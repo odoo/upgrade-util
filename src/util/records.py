@@ -215,7 +215,7 @@ else:
 # fmt:on
 
 
-def remove_record(cr, name, deactivate=False, active_field="active"):
+def remove_record(cr, name):
     if isinstance(name, basestring):
         if "." not in name:
             raise ValueError("Please use fully qualified name <module>.<name>")
@@ -250,10 +250,10 @@ def remove_record(cr, name, deactivate=False, active_field="active"):
         _logger.log(NEARLYWARN, "Removing menu %r", name)
         return remove_menus(cr, [res_id])
 
-    return _remove_records(cr, model, [res_id], deactivate=deactivate, active_field=active_field)
+    return _remove_records(cr, model, [res_id])
 
 
-def _remove_records(cr, model, ids, deactivate=False, active_field="active"):
+def _remove_records(cr, model, ids):
     if not ids:
         return
 
@@ -275,18 +275,11 @@ def _remove_records(cr, model, ids, deactivate=False, active_field="active"):
                 _remove_records(cr, inh.model, [rid for rid, in cr.fetchall()])
 
     table = table_of_model(cr, model)
-    try:
-        with savepoint(cr):
-            cr.execute('DELETE FROM "{}" WHERE id IN %s'.format(table), [ids])
-    except Exception:
-        if not deactivate or not active_field:
-            raise
-        cr.execute('UPDATE "{}" SET "{}" = false WHERE id IN %s'.format(table, active_field), [ids])
-    else:
-        for ir in indirect_references(cr, bound_only=True):
-            query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
-            cr.execute(query, [model, ids])
-        _rm_refs(cr, model, ids)
+    cr.execute('DELETE FROM "{}" WHERE id IN %s'.format(table), [ids])
+    for ir in indirect_references(cr, bound_only=True):
+        query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
+        cr.execute(query, [model, ids])
+    _rm_refs(cr, model, ids)
 
     if model == "res.groups":
         # A group is gone, the auto-generated view `base.user_groups_view` is outdated.
@@ -597,7 +590,11 @@ def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=Fa
         cr.execute("UPDATE {} SET write_uid=%s, write_date=%s WHERE id=%s".format(table), write_data)
 
 
-def delete_unused(cr, *xmlids):
+def delete_unused(cr, *xmlids, **kwargs):
+    deactivate = kwargs.pop("deactivate", False)
+    if kwargs:
+        raise TypeError("delete_unused() got an unexpected keyword argument %r" % kwargs.popitem()[0])
+
     select_xids = " UNION ".join(
         [
             cr.mogrify("SELECT %s::varchar as module, %s::varchar as name", [module, name]).decode()
@@ -670,6 +667,11 @@ def delete_unused(cr, *xmlids):
         for tid in ids:
             remove_record(cr, (model, tid))
             deleted.append(res_id_to_xmlid[tid])
+
+        if deactivate:
+            deactivate_ids = tuple(set(res_id_to_xmlid.keys()) - set(ids))
+            if deactivate_ids:
+                cr.execute('UPDATE "{}" SET active = false WHERE id IN %s'.format(table), [deactivate_ids])
 
     return deleted
 
