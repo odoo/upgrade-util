@@ -251,7 +251,8 @@ class TestIterBrowse(UnitTestCase):
         chunk_size = 10
 
         Country = type(self.env["res.country"])
-        with mock.patch.object(Country, "_read", autospec=True, side_effect=Country._read) as read:
+        func = "_read" if util.version_gte("saas~12.5") else "read"
+        with mock.patch.object(Country, func, autospec=True, side_effect=getattr(Country, func)) as read:
             for c in util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size):
                 c.name
         expected = (len(ids) + chunk_size - 1) // chunk_size

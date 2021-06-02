@@ -7,7 +7,7 @@ import re
 
 import odoo
 from odoo import api, release
-from odoo.tests.common import BaseCase, MetaCase, TransactionCase, get_db_name, tagged
+from odoo.tests.common import BaseCase, MetaCase, TransactionCase, get_db_name
 from odoo.tools import config
 from odoo.tools.parse_version import parse_version
 
@@ -63,8 +63,33 @@ def parametrize(argvalues):
     return decorator
 
 
-@tagged("upgrade")
-class UnitTestCase(TransactionCase):
+def _create_meta(sequence, *tags):
+    class UpgradeMetaCase(MetaCase):
+        def __init__(self, name, bases, attrs):
+            # Setting test_tags in __init_subclass__ could work, but BaseCase will overide them in __init__.
+            # we need to set test_tags after BaseCase __init__
+            super().__init__(name, bases, attrs)
+            self.test_sequence = sequence
+            self.test_tags = {"post_install", "upgrade"} | set(tags)
+            self.test_class = name
+
+            if self.__module__.startswith("odoo.upgrade."):
+                self.test_module = self.__module__.split(".")[2]
+            elif self.__module__.startswith("odoo.addons.base.maintenance.migrations"):
+                self.test_module = self.__module__.split(".")[5]
+
+        def __dir__(self):
+            # since UpgradeCase and IntegrityCase are common classes intended to be overloaded,
+            # we dont want the default test_prepare and test_check to be executed when imported.
+            # This hack avoids tests to be executed if imported
+            if self in (UpgradeCase, IntegrityCase):
+                return []
+            return super().__dir__()
+
+    return UpgradeMetaCase("UpgradeMetaCase", (), {})
+
+
+class UnitTestCase(TransactionCase, _create_meta(10, "upgrade_unit")):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -208,28 +233,8 @@ def change_version(version_str):
     return version_decorator
 
 
-class UpgradeMetaCase(MetaCase):
-    def __init__(self, name, bases, attrs):
-        # Setting test_tags in __init_subclass__ could work, but Basecase will ovveride them in __init__.
-        # wee need to set test_tags after Base case __init__
-        super(UpgradeMetaCase, self).__init__(name, bases, attrs)
-        self.test_sequence = 10
-        self.test_tags = {"post_install", "upgrade", "upgrade_case"}
-        self.test_class = name
-        if self.__module__.startswith("odoo.upgrade."):
-            self.test_module = self.__module__.split(".")[2]
-
-    def __dir__(self):
-        # since UpgradeCase and IntegrityCase are common classes intended to be overloaded,
-        # we dont want the default test_prepare and test_check to be executed when imported.
-        # This hack avoids tests to be executed if imported
-        if self in (UpgradeCase, IntegrityCase):
-            return []
-        return super().__dir__()
-
-
 # pylint: disable=inherit-non-class
-class UpgradeCase(UpgradeCommon, UpgradeMetaCase("DummyCase", (object,), {})):
+class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
     """
     Test case to modify data in origin version, and assert in target version.
     User must define a "prepare" and a "check" method.
@@ -259,16 +264,8 @@ class UpgradeCase(UpgradeCommon, UpgradeMetaCase("DummyCase", (object,), {})):
         self.cr.commit()
 
 
-class IntegrityMetaCase(UpgradeMetaCase):
-    def __init__(self, name, bases, attrs):
-        super(IntegrityMetaCase, self).__init__(name, bases, attrs)
-        self.test_sequence = 20
-        self.test_tags -= {"upgrade_case"}
-        self.test_tags |= {"integrity_case"}
-
-
 # pylint: disable=inherit-non-class
-class IntegrityCase(UpgradeCommon, IntegrityMetaCase("DummyCase", (object,), {})):
+class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
     """
     Test case to check invariant through any version
     User must define a "invariant" method.
