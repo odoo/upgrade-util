@@ -11,6 +11,7 @@ py3_only_patterns = [
     "tools/*.py",
     # tests are only run from version 12. python2 compatibility is not needed.
     "src/testing.py",
+    "src/util/snippets.py",
     "src/*/tests/*.py",
 ]
 py3_files = []
