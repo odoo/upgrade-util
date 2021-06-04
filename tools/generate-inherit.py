@@ -131,6 +131,9 @@ VIRTUAL_INHERITS = {
         Inherit("account.online.link", born=Version("12.0"), dead=Version("14.0")),
         Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0")),
     ],
+    "studio.mixin": [
+        Inherit(model="ir.default", born=Version("14.0"), dead=Version("saas-14.2")),
+    ],
 }
 
 
