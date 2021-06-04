@@ -14,6 +14,13 @@ from typing import Dict, NamedTuple, Optional, Set, Tuple
 
 import black
 
+try:
+    from black.nodes import Visitor
+except ImportError:
+    # old black version
+    from black import Visitor
+
+
 MODELS = ["osv", "osv_memory", "Model", "TransientModel", "AbstractModel"]
 MODELS += [".".join(x).lstrip(".") for x in itertools.product(["openerp", "odoo", ""], ["osv", "models"], MODELS)]
 
@@ -144,7 +151,7 @@ def _read_python_source(filename):
 
 
 @dataclass
-class Visitor(black.Visitor):
+class OdooVisitor(Visitor):
     inh: Dict[str, Set[Tuple[str, str]]] = field(default_factory=lambda: defaultdict(set))
 
     def to_str(self, node):
@@ -264,7 +271,7 @@ def main():
     for version in VERSIONS:
         # if version.name != "saas-3":
         #     continue
-        visitor = Visitor()
+        visitor = OdooVisitor()
 
         for model, virtuals in VIRTUAL_INHERITS.items():
             for virtual in virtuals:
@@ -336,7 +343,7 @@ inheritance_data = frozendict({result!r})
 #     node = black.lib2to3_parse(code)
 
 #     black.DebugVisitor.show(node)
-#     # v = Visitor()
+#     # v = OdooVisitor()
 #     # list(v.visit(node))
 #     # print(v.inh)
 
