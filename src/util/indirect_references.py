@@ -63,6 +63,7 @@ def indirect_references(cr, bound_only=False):
         IR("mailing_trace", "model", "res_id"),
         IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id", set_unknown=True),
         IR("mailing_mailing", None, None, "mailing_model_id", set_unknown=True),
+        IR("marketing_campaign", "model_name", None, set_unknown=True),  # stored related
         IR("project_project", "alias_model", None, set_unknown=True),
         IR("rating_rating", "res_model", "res_id", "res_model_id"),
         IR("rating_rating", "parent_res_model", "parent_res_id", "parent_res_model_id"),
