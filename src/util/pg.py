@@ -112,10 +112,8 @@ def explode_query(cr, query, num_buckets=8, prefix=""):
     if num_buckets < 1:
         raise ValueError("num_buckets should be greater than zero")
     parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
-    return [
-        cr.mogrify(query.format(parallel_filter=parallel_filter), [num_buckets, index]).decode()
-        for index in range(num_buckets)
-    ]
+    query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
+    return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
 def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
@@ -139,9 +137,9 @@ def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
         query += sep_kw + "{parallel_filter}"
 
     parallel_filter = "{prefix}id BETWEEN %s AND %s".format(prefix=prefix)
+    query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
     return [
-        cr.mogrify(query.format(parallel_filter=parallel_filter), [index, index + bucket_size - 1]).decode()
-        for index in range(min_id, max_id, bucket_size)
+        cr.mogrify(query, [index, index + bucket_size - 1]).decode() for index in range(min_id, max_id, bucket_size)
     ]
 
 
