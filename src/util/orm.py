@@ -10,9 +10,9 @@ except ImportError:
     from mock import patch
 
 try:
-    from odoo import SUPERUSER_ID, release
+    from odoo import SUPERUSER_ID, modules, release
 except ImportError:
-    from openerp import SUPERUSER_ID, release
+    from openerp import SUPERUSER_ID, release, modules
 
 from .exceptions import MigrationError
 from .helpers import table_of_model
@@ -183,7 +183,6 @@ def custom_module_field_as_manual(env, rollback=True):
 
     !!! Rollback might be deactivated with the `rollback` parameter but for internal purpose ONLY !!!
     """
-
     # 1. Convert models which are not in the registry to `manual` models
     #    and list the models that were converted, to restore them back afterwards.
     models = list(env.registry.models)
@@ -201,7 +200,8 @@ def custom_module_field_as_manual(env, rollback=True):
     updated_model_ids, custom_models = zip(*updated_models) if updated_models else [[], []]
 
     # 2. Convert fields which are not in the registry to `manual` fields
-    #    and list the fields that were converted, to restore them back afterwards.
+    # and list the fields that were converted, to restore them back afterwards.
+    # Also temporarily disable rules (ir.rule) that come from custom modules.
     updated_field_ids = []
 
     # 2.1 Convert fields not in the registry of models already in the registry.
@@ -238,6 +238,28 @@ def custom_module_field_as_manual(env, rollback=True):
             (model, tuple(reserved_words)),
         )
         updated_field_ids += [r[0] for r in env.cr.fetchall()]
+
+    # 2.3 Temporarily disable rules that come from custom modules
+    standard_modules = modules.get_modules()
+
+    env.cr.execute(
+        """
+        WITH custom_rules AS (
+                SELECT r.id
+                  FROM ir_rule r
+             LEFT JOIN ir_model_data d ON d.model = 'ir.rule' AND d.res_id = r.id
+                 WHERE COALESCE(d.module, '') NOT IN %s
+                   AND r.active
+                 )
+        UPDATE ir_rule r
+           SET active = false
+          FROM custom_rules c
+         WHERE r.id = c.id
+     RETURNING r.id
+         """,
+        (tuple(standard_modules),),
+    )
+    disabled_ir_rule_ids = [r[0] for r in env.cr.fetchall()]
 
     # 3. Alter fields which won't work by just changing their `state` to `manual`,
     #    because information from their Python source is missing.
@@ -364,6 +386,8 @@ def custom_module_field_as_manual(env, rollback=True):
             env.cr.execute("UPDATE ir_model SET state = 'base' WHERE id IN %s", (tuple(updated_model_ids),))
         if updated_field_ids:
             env.cr.execute("UPDATE ir_model_fields SET state = 'base' WHERE id IN %s", (tuple(updated_field_ids),))
+        if disabled_ir_rule_ids:
+            env.cr.execute("UPDATE ir_rule SET active = 't' WHERE id IN %s", (tuple(disabled_ir_rule_ids),))
         for field_id, selection in updated_selection_fields:
             env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
         for field_id, on_delete in updated_many2one_fields:
