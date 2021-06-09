@@ -372,7 +372,8 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
 def convert_field_to_html(cr, model, field, skip_inherit=()):
     _validate_model(model)
     table = table_of_model(cr, model)
-    cr.execute('UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field)))
+    query = 'UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field))
+    parallel_execute(cr, explode_query_range(cr, query, table=table))
 
     for inh in for_each_inherit(cr, model, skip_inherit):
         if not inh.via:
