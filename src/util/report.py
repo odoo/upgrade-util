@@ -72,6 +72,7 @@ def announce_migration_report(cr):
     render = e["ir.qweb"].render if hasattr(e["ir.qweb"], "render") else e["ir.qweb"]._render
     message = render(report, values=values).decode("utf-8")
     if message.strip():
+        message = message.replace("{", "{{").replace("}", "}}")
         kw = {}
         # If possible, post the migration report message to administrators only.
         admin_channel = get_admin_channel(cr)
