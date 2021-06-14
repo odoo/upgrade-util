@@ -208,6 +208,11 @@ def column_type(cr, table, column):
     return nfo[0] if nfo else None
 
 
+def column_nullable(cr, table, column):
+    nfo = _column_info(cr, table, column)
+    return nfo and nfo[1]
+
+
 def column_updatable(cr, table, column):
     nfo = _column_info(cr, table, column)
     return nfo and nfo[2]
