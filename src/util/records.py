@@ -23,7 +23,15 @@ from .helpers import _ir_values_value, _validate_model, model_of_table, table_of
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit
 from .misc import parse_version, version_gte
-from .pg import _validate_table, column_exists, column_updatable, get_columns, get_fk, savepoint, table_exists
+from .pg import (
+    _get_unique_indexes_with,
+    _validate_table,
+    column_exists,
+    column_updatable,
+    get_columns,
+    get_fk,
+    table_exists,
+)
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -783,25 +791,50 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     for ir in indirect_references(cr, bound_only=True):
         if ir.table in ignores:
             continue
-        upd = ""
+        res_model_upd = []
         if ir.res_model:
-            upd += '"{ir.res_model}" = %(model_dst)s,'
+            res_model_upd.append('"{ir.res_model}" = %(model_dst)s')
         if ir.res_model_id:
-            upd += '"{ir.res_model_id}" = (SELECT id FROM ir_model WHERE model=%(model_dst)s),'
-        upd = upd.format(ir=ir)
+            res_model_upd.append('"{ir.res_model_id}" = (SELECT id FROM ir_model WHERE model=%(model_dst)s)')
+        upd = ", ".join(res_model_upd).format(ir=ir)
+        res_model_whr = " AND ".join(res_model_upd).format(ir=ir)
         whr = ir.model_filter(placeholder="%(model_src)s")
 
+        jmap_expr = "\"{ir.res_id}\" = ('{jmap}'::json->>t.{ir.res_id}::varchar)::int4".format(**locals())
+
         query = """
-            UPDATE "{ir.table}"
-               SET {upd}
-                   "{ir.res_id}" = ('{jmap}'::json->>{ir.res_id}::varchar)::int4
+            UPDATE "{ir.table}" t
+               SET {upd},
+                   {jmap_expr}
              WHERE {whr}
                AND {ir.res_id} IN %(old)s
-        """.format(
-            **locals()
-        )
+        """
 
-        cr.execute(query, locals())
+        unique_indexes = []
+        if ir.res_model:
+            unique_indexes += _get_unique_indexes_with(cr, ir.table, ir.res_id, ir.res_model)
+        if ir.res_model_id:
+            unique_indexes += _get_unique_indexes_with(cr, ir.table, ir.res_id, ir.res_model_id)
+        if unique_indexes:
+            conditions = []
+            for _, uniq_cols in unique_indexes:
+                uniq_cols = set(uniq_cols) - set([ir.res_id, ir.res_model, ir.res_model_id])
+                conditions.append(
+                    """
+                        NOT EXISTS(SELECT 1 FROM {ir.table} WHERE {res_model_whr} AND {jmap_expr} AND %(ands)s)
+                    """
+                    % {"ands": "AND".join('"%s"=t."%s"' % (col, col) for col in uniq_cols)}
+                )
+            query = """
+                    %s
+                    AND %s;
+                DELETE FROM {ir.table} WHERE {whr} AND {ir.res_id} IN %%(old)s;
+            """ % (
+                query,
+                "AND".join(conditions),
+            )
+
+        cr.execute(query.format(**locals()), locals())
 
     # reference fields
     cmap, cmap_keys = genmap("%s,%%d" % model_src, "%s,%%d" % model_dst)
