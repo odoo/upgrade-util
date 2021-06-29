@@ -200,6 +200,31 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.assert_called_with(term, True, True)
         self.assertEqual(match_domain, new_domain)
 
+    @parametrize(
+        [
+            # first and last position in path at the same time
+            ("partner_id", "res.users"),
+            # first and last position in path
+            ("partner_id.user_id.partner_id", "res.users"),
+            # last position
+            ("user_id.partner_id", "res.partner"),
+            # middle
+            ("user_id.partner_id.user.id", "res.partner"),
+            # last position, longer domain
+            ("company_id.partner_id.user_id.partner_id", "res.partner"),
+        ]
+    )
+    def test_force_adapt(self, left, model, target_model="res.users", old="partner_id"):
+        # simulate the adapter used for removal of a field
+        # this is the main use case for force_adapt=True
+        self.mock_adapter.return_value = [TRUE_LEAF]
+        domain = [(left, "=", False)]
+        res = _adapt_one_domain(
+            self.cr, target_model, old, "ignored", model, domain, adapter=self.mock_adapter, force_adapt=True
+        )
+        self.mock_adapter.assert_called_once()
+        self.assertEqual(res, self.mock_adapter.return_value)
+
 
 class TestRemoveFieldDomains(UnitTestCase):
     @parametrize(

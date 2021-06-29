@@ -139,7 +139,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         return [expression.TRUE_LEAF]
 
     # clean domains
-    adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit)
+    adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
 
     cr.execute(
         """

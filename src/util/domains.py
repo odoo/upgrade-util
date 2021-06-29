@@ -107,7 +107,7 @@ def _get_domain_fields(cr):
             yield df
 
 
-def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
+def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
     if not adapter:
         adapter = lambda leaf, _, __: [leaf]
 
@@ -199,8 +199,10 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
 
         leaf = expression.normalize_leaf(element)
         path = leaf[0].split(".")
-        if path[-1] == old and valid_path_to(cr, path[:-1], model, target_model):
-            # adapt only when {old} field is the last part of left path
+        # force_adapt=True -> always adapt if found anywhere on left path
+        # otherwise adapt only when {old} field is the last part of left path
+        search_range = range(len(path)) if force_adapt else [-1]
+        if any(path[i] == old and valid_path_to(cr, path[:i], model, target_model) for i in search_range):
             dom = [clean_term(term) for term in adapter(leaf, is_or, neg)]
         else:
             dom = [clean_term(leaf)]
@@ -217,7 +219,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None):
     return final_dom
 
 
-def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
+def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adapt=False):
     """
     Replace {old} by {new} in all domains for model {model} using an adapter callback.
 
@@ -230,6 +232,9 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
     {negated} ("!").
 
     Note that the {adapter} is called ony on leafs that use the {old} field of {model}.
+
+    {force_adapt} will run the adapter on all leaves having the removed field in the path. Useful
+    when deleting a field (in which case {new} is ignored).
     """
     _validate_model(model)
     target_model = model
@@ -247,7 +252,9 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
             [match_old],
         )
         for id_, model, domain in cr.fetchall():
-            domain = _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=adapter)
+            domain = _adapt_one_domain(
+                cr, target_model, old, new, model, domain, adapter=adapter, force_adapt=force_adapt
+            )
             if domain:
                 cr.execute(
                     "UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df), [unicode(domain), id_]
@@ -266,10 +273,12 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=()):
             if not cr.rowcount:
                 continue
             [act_model] = cr.fetchone()
-            domain = _adapt_one_domain(cr, target_model, old, new, act_model, act.get("domain"), adapter=adapter)
+            domain = _adapt_one_domain(
+                cr, target_model, old, new, act_model, act.get("domain"), adapter=adapter, force_adapt=force_adapt
+            )
             if domain:
                 act.set("domain", unicode(domain))
 
     # down on inherits
     for inh in for_each_inherit(cr, target_model, skip_inherit):
-        adapt_domains(cr, inh.model, old, new, adapter, skip_inherit=skip_inherit)
+        adapt_domains(cr, inh.model, old, new, adapter, skip_inherit=skip_inherit, force_adapt=force_adapt)
