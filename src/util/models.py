@@ -127,6 +127,7 @@ def remove_model(cr, model, drop_table=True):
         [(IMD_FIELD_PATTERN % (model_underscore, "%")).replace("_", r"\_")],
     )
     cr.execute("DELETE FROM ir_model_data WHERE model = %s", [model])
+    cr.execute("UPDATE ir_model_fields SET relation = '_unknown' WHERE relation = %s", [model])
 
     table = table_of_model(cr, model)
     if drop_table:
