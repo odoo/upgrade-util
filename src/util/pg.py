@@ -250,8 +250,7 @@ def create_column(cr, table, column, definition, **kwargs):
             cr.execute(create_query)
         else:
             cr.execute(create_query + " DEFAULT %s", [default])
-            if definition != "bool":
-                cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
+            cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
         return True
 
 
