@@ -370,6 +370,8 @@ def get_index_on(cr, table, *columns):
     """
     return an optional IndexInfo recors
     NOTE: column order is respected
+
+    Prefer primary keys over other indexes as the caller may want to verify PK existence before create one
     """
 
     _validate_table(table)
@@ -402,6 +404,8 @@ def get_index_on(cr, table, *columns):
               GROUP BY 1, 2, 3, 4, 5
           ) idx
          WHERE attrs = %s
+      ORDER BY indisprimary DESC
+         FETCH FIRST ROW ONLY
     """.format(
             position
         ),
