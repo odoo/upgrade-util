@@ -207,20 +207,21 @@ def remove_theme(cr, theme, base_theme=None):
 
 
 def _update_view_key(cr, old, new):
-    # update view key for renamed & merged modules
+    # update view key for renamed & merged modules, also handle multi-website
+    # COWed views.
+    # View key is not always equal to it's xml_id (eg when created through a
+    # website.page record, the key is the page xml_id suffixed by `_view`)
     if not column_exists(cr, "ir_ui_view", "key"):
         return
+    like_old = old.replace("_", r"\_").replace("%", r"\%")
     cr.execute(
         """
-        UPDATE ir_ui_view v
-           SET key = CONCAT(%s, '.', x.name)
-          FROM ir_model_data x
-         WHERE x.model = 'ir.ui.view'
-           AND x.res_id = v.id
-           AND x.module = %s
-           AND v.key = CONCAT(x.module, '.', x.name)
-    """,
-        [new, old],
+        UPDATE ir_ui_view
+           SET key = concat('{new}', right(key, -length('{old}')))
+         WHERE key LIKE '{like_old}.%'
+    """.format(
+            old=old, new=new, like_old=like_old
+        )
     )
 
 
