@@ -49,6 +49,8 @@ def table_of_model(cr, model):
         # and a named m2m in >=saas~13
         # and renamed as a "normal" model table in >= saas~14.3
         {gte_saas13_lte_saas14_3} mail.notification mail_message_res_partner_needaction_rel
+
+        project.task.stage.personal project_task_user_rel
     """.format(
                 gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#"
             )
@@ -99,6 +101,7 @@ def model_of_table(cr, table):
         data_merge_group    data_merge.group
         data_merge_record   data_merge.record
 
+        project_task_user_rel project.task.stage.personal
     """.format(
                 action_report_model="ir.actions.report" if version_gte("10.saas~17") else "ir.actions.report.xml",
                 gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#",
