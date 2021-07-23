@@ -173,12 +173,7 @@ class UpgradeCommon(BaseCase):
             current_version = parse_version(release.series)
             if current_version >= parse_version("%s.%s" % self.change_version):
                 return
-            # find previous major version
-            if sub_version != 0:  # 12.4 -> 12.0
-                sub_version = 0
-            else:  # 13.0 -> 12.0
-                version -= 1
-            if current_version < parse_version("%s.%s" % (version, sub_version)):
+            if current_version < parse_version("%s.%s" % get_previous_major(version, sub_version)):
                 return
 
         key = self.key
@@ -198,12 +193,7 @@ class UpgradeCommon(BaseCase):
             current_version = parse_version(release.series)
             if current_version < parse_version("%s.%s" % self.change_version):
                 return
-            # find the next major version
-            if sub_version != 0:  # 12.4 -> 13.0 (non inclusive)
-                version += 1
-                sub_version = 0
-            # else: 13.0 will only be checked in 13.0
-            if current_version > parse_version("%s.%s" % (version, sub_version)):
+            if current_version > parse_version("%s.%s" % get_next_major(version, sub_version)):
                 return
 
         key = self.key
@@ -231,6 +221,30 @@ def change_version(version_str):
         return obj
 
     return version_decorator
+
+
+# helpers to get the version on which a test is expected to run depending on the value specified with the `change_version` decorator
+FAKE_MAJORS = [(12, 3)]  # non dot-zero versions which will run tests
+
+
+def get_next_major(major, minor):
+    for fake in FAKE_MAJORS:
+        if major == fake[0] and minor < fake[1]:
+            return fake
+    if minor != 0:
+        major += 1
+    return major, 0
+
+
+def get_previous_major(major, minor):
+    if minor == 0:
+        major -= 1
+
+    for fake in FAKE_MAJORS:
+        if major == fake[0] and (minor == 0 or minor > fake[1]):
+            return fake
+
+    return major, 0
 
 
 # pylint: disable=inherit-non-class
