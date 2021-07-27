@@ -47,6 +47,15 @@ except NameError:
 _logger = logging.getLogger(__name__)
 IMD_FIELD_PATTERN = "field_%s__%s" if version_gte("saas~11.2") else "field_%s_%s"
 
+_CONTEXT_KEYS_TO_CLEAN = (
+    "group_by",
+    "pivot_measures",
+    "pivot_column_groupby",
+    "pivot_row_groupby",
+    "graph_groupbys",
+    "orderedBy",
+)
+
 
 def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     """
@@ -78,15 +87,6 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
 
     ENVIRON["__renamed_fields"][model].add(fieldname)
 
-    keys_to_clean = (
-        "group_by",
-        "pivot_measures",
-        "pivot_column_groupby",
-        "pivot_row_groupby",
-        "graph_groupbys",
-        "orderedBy",
-    )
-
     def filter_value(key, value):
         if key == "orderedBy" and isinstance(value, dict):
             res = {k: (filter_value(None, v) if k == "name" else v) for k, v in value.items()}
@@ -101,20 +101,32 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             return value
 
     def clean_context(context):
-        changed = False
-        context = safe_eval(context, SelfPrintEvalContext(), nocopy=True)
         if not isinstance(context, dict):
-            return context, changed
-        for key in keys_to_clean:
+            return False
+
+        changed = False
+        for key in _CONTEXT_KEYS_TO_CLEAN:
             if context.get(key):
                 context_part = [filter_value(key, e) for e in context[key]]
                 changed |= context_part != context[key]
                 context[key] = [e for e in context_part if e is not None]
-        return context, changed
+
+        for vt in {"pivot", "graph", "cohort"}:
+            key = "{}_measure".format(vt)
+            if key in context:
+                new_value = filter_value(key, context[key])
+                changed |= context[key] != new_value
+                context[key] = new_value if new_value is not None else "id"
+
+            if vt in context:
+                changed |= clean_context(context[vt])
+
+        return changed
 
     # clean dashboard's contexts
     for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
-        context, changed = clean_context(action.get("context", "{}"))
+        context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext(), nocopy=True)
+        changed = clean_context(context)
         action.set("context", unicode(context))
         if changed:
             add_to_migration_reports(
@@ -127,7 +139,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         [model, r"\y{}\y".format(fieldname)],
     )
     for id_, name, context in cr.fetchall():
-        context, changed = clean_context(context or "{}")
+        context = safe_eval(context or "{}", SelfPrintEvalContext(), nocopy=True)
+        changed = clean_context(context)
         cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
         if changed:
             add_to_migration_reports(("ir.filters", id_, name), "Filters/Dashboards")
@@ -753,19 +766,26 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
         parts[0] = new
         return ":".join(parts)
 
-    keys_to_clean = (
-        "group_by",
-        "pivot_measures",
-        "pivot_column_groupby",
-        "pivot_row_groupby",
-        "graph_groupbys",
-        "orderedBy",
-    )
+    def adapt_dict(d):
+        # adapt (in place) dictionary values
+        if not isinstance(d, dict):
+            return
+
+        for key in _CONTEXT_KEYS_TO_CLEAN:
+            if d.get(key):
+                d[key] = [adapt_value(key, e) for e in d[key]]
+
+        for vt in {"pivot", "graph", "cohort"}:
+            key = "{}_measure".format(vt)
+            if key in d:
+                d[key] = adapt_value(key, d[key])
+
+            if vt in d:
+                adapt_dict(d[vt])
+
     for _, act in _dashboard_actions(cr, match, def_old, *only_models or ()):
         context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
-        for key in keys_to_clean:
-            if context.get(key):
-                context[key] = [adapt_value(key, e) for e in context[key]]
+        adapt_dict(context)
 
         if def_old in context:
             context[def_new] = context.pop(def_old)
