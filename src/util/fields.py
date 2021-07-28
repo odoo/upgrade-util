@@ -3,7 +3,6 @@ import base64
 import json
 import logging
 import re
-from operator import itemgetter
 
 import psycopg2
 
@@ -151,10 +150,46 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     """,
         [model, fieldname],
     )
-    cr.execute("DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id", (model, fieldname))
-    fids = tuple(map(itemgetter(0), cr.fetchall()))
-    if fids:
-        cr.execute("DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s", ("ir.model.fields", fids))
+
+    # drop m2m table if needed
+    if drop_column and column_exists(cr, "ir_model_fields", "relation_table"):  # appears in version 9.0
+        # verify that there aren't any other m2m pointing to the relation table
+        cr.execute(
+            """
+                SELECT relation_table
+                  FROM ir_model_fields
+                 WHERE relation_table = (
+                        SELECT relation_table
+                          FROM ir_model_fields
+                         WHERE model = %s
+                           AND name = %s
+                           AND ttype = 'many2many'
+                       )
+                   AND ttype = 'many2many'
+              GROUP BY relation_table
+                HAVING count(*) = 1
+            """,
+            [model, fieldname],
+        )
+        for (m2m_rel,) in cr.fetchall():
+            cr.execute('DROP TABLE IF EXISTS "{}" CASCADE'.format(m2m_rel))
+            cr.execute(
+                "DELETE FROM ir_model_relation r USING ir_model m WHERE m.id = r.model AND r.name = %s", [m2m_rel]
+            )
+
+    # remove the ir.model.fields entry (and its xmlid)
+    cr.execute(
+        """
+            WITH del AS (
+                DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id
+            )
+            DELETE FROM ir_model_data
+                  USING del
+                  WHERE model = 'ir.model.fields'
+                    AND res_id = del.id
+        """,
+        [model, fieldname],
+    )
 
     # cleanup translations
     cr.execute(
