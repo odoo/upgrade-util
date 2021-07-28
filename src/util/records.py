@@ -31,6 +31,7 @@ from .pg import (
     get_columns,
     get_fk,
     table_exists,
+    target_of,
 )
 from .report import add_to_migration_reports
 
@@ -752,6 +753,12 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 """
                     % query
                 )
+                if target_of(cr, table, col2)[:2] == target_of(cr, table, fk)[:2]:
+                    # a m2m on itself, remove the self referencing entries
+                    # It only handle 1-level recursions. For multi-level recursions, it should be handled manually.
+                    # We can't decide which link to break.
+                    # XXX: add a warning?
+                    query += "DELETE FROM {table} WHERE {fk} IN %(new)s AND {fk} = {col2};"
 
             cr.execute(query.format(table=table, fk=fk, jmap=jmap, col2=col2), dict(new=new, old=old))
 
