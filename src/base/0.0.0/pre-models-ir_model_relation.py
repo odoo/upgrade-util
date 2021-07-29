@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from odoo import api, models
 
+from odoo.addons.base.maintenance.migrations import util
+
 try:
     from odoo.addons.base.models import ir_model as _ignore  # noqa
 except ImportError:
@@ -32,3 +34,15 @@ class ModelRelation(models.Model):
         """
 
         self.env.cr.execute(query)
+
+        gone_m2m = util.ENVIRON.get("_gone_m2m")
+        if gone_m2m:
+            query = """
+                SELECT table_name
+                  FROM information_schema.tables
+                 WHERE table_name IN %s
+            """
+            self.env.cr.execute(query, [tuple(gone_m2m)])
+            back_m2m = "\n".join(" - %s via %s" % (tn, gone_m2m[tn]) for tn, in self.env.cr.fetchall())
+            if back_m2m:
+                raise util.MigrationError("The following m2m relations have respawn:\n%s" % back_m2m)

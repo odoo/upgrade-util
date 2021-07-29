@@ -176,6 +176,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             cr.execute(
                 "DELETE FROM ir_model_relation r USING ir_model m WHERE m.id = r.model AND r.name = %s", [m2m_rel]
             )
+            ENVIRON.setdefault("_gone_m2m", {})[m2m_rel] = "%s:%s" % (model, fieldname)
 
     # remove the ir.model.fields entry (and its xmlid)
     cr.execute(
