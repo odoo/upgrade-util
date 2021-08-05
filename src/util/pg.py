@@ -181,7 +181,7 @@ def pg_text2html(s):
                 '</p>')
          END
     """.format(
-        src=s, esc=pg_html_escape(s)
+        src=s, esc=pg_html_escape(s, quote=False)
     )
 
 

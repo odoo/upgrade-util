@@ -307,7 +307,7 @@ class TestPG(UnitTestCase):
             # escapings
             ("r&d", "<p>r&amp;d</p>"),
             ("!<(^_^)>!", "<p>!&lt;(^_^)&gt;!</p>"),
-            ("'quoted'", "<p>&#x27;quoted&#x27;</p>"),
+            ("'quoted'", "<p>'quoted'</p>"),
             # and with links
             (
                 "Go to https://upgrade.odoo.com/?debug=1&version=14.0 and follow the instructions.",
