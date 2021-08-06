@@ -7,7 +7,15 @@ from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .misc import chunks, log_progress
-from .pg import _get_unique_indexes_with, column_exists, column_updatable, remove_constraint, table_exists, view_exists
+from .pg import (
+    _get_unique_indexes_with,
+    column_exists,
+    column_updatable,
+    get_m2m_tables,
+    remove_constraint,
+    table_exists,
+    view_exists,
+)
 from .records import _remove_records, _rm_refs, remove_view, replace_record_references_batch
 from .report import add_to_migration_reports
 
@@ -29,7 +37,7 @@ def _unknown_model_id(cr):
     return result
 
 
-def remove_model(cr, model, drop_table=True):
+def remove_model(cr, model, drop_table=True, ignore_m2m=()):
     _validate_model(model)
     model_underscore = model.replace(".", "_")
     chunk_size = 1000
@@ -89,6 +97,19 @@ def remove_model(cr, model, drop_table=True):
             if column_exists(cr, tbl, "model_id"):
                 cr.execute("DELETE FROM {0} WHERE model_id=%s".format(tbl), [mod_id])
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
+
+        # remove m2m tables
+        if ignore_m2m != "*":
+            tables = get_m2m_tables(cr, table_of_model(cr, model))
+            ignore = set(ignore_m2m)
+            for table_name in tables:
+                if table_name in ignore:
+                    _logger.info("remove_model(%r): m2m table %r explicitly ignored", model, table_name)
+                    continue
+                _logger.info("remove_model(%r): dropping m2m table %r", model, table_name)
+                cr.execute('DROP TABLE "{}" CASCADE'.format(table_name))
+                ENVIRON.setdefault("_gone_m2m", {})[table_name] = model
+
         cr.execute("DELETE FROM ir_model_constraint WHERE model=%s RETURNING id", (mod_id,))
         if cr.rowcount:
             ids = tuple(c for c, in cr.fetchall())
@@ -317,7 +338,7 @@ def rename_model(cr, old, new, rename_table=True):
     )
 
 
-def merge_model(cr, source, target, drop_table=True, fields_mapping=None):
+def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore_m2m=()):
     _validate_model(source)
     _validate_model(target)
     cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))
@@ -377,7 +398,7 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None):
             query = "UPDATE {t} t SET {c}=%(new)s WHERE {w} AND {c}=%(old)s".format(t=ir.table, c=ir.res_model, w=where)
             cr.execute(query, dict(new=target, old=source))
 
-    remove_model(cr, source, drop_table=drop_table)
+    remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
 
 def remove_inherit_from_model(cr, model, inherit, keep=()):

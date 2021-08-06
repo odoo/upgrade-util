@@ -705,3 +705,37 @@ def fix_wrong_m2o(cr, table, column, target, value=None):
         ),
         [value],
     )
+
+
+def get_m2m_tables(cr, table):
+    """
+    Returns a list of m2m tables associated with `table`.
+
+    We identify as m2m table all tables that have only two columns, both of which are FKs.
+    This function will return m2m tables for which one Fk points to `table`
+    """
+    _validate_table(table)
+    query = """
+        WITH two_cols AS (
+                SELECT t.oid
+                  FROM pg_class t
+                  JOIN pg_attribute a ON a.attrelid=t.oid
+                 WHERE t.relkind='r' AND a.attnum>0
+                 GROUP BY t.oid
+                HAVING count(*)=2
+               )
+        SELECT DISTINCT t.relname
+          FROM pg_class t
+          JOIN two_cols tc ON t.oid=tc.oid
+          JOIN pg_attribute a1 ON a1.attrelid=t.oid AND a1.attnum>0
+          JOIN pg_constraint c1 ON c1.conrelid=t.oid AND c1.contype='f' AND a1.attnum=any(c1.conkey)
+               AND array_length(c1.conkey, 1)=1
+          JOIN pg_attribute a2 ON a2.attrelid=t.oid AND a2.attnum>0 AND a1.attnum!=a2.attnum
+          JOIN pg_constraint c2 ON c2.conrelid=t.oid AND c2.contype='f' AND a2.attnum=any(c2.conkey)
+               AND array_length(c1.conkey, 1)=1
+          JOIN pg_class the_table ON c1.confrelid=the_table.oid
+         WHERE the_table.relkind='r' AND the_table.relname=%s
+    """
+
+    cr.execute(query, [table])
+    return [row[0] for row in cr.fetchall()]
