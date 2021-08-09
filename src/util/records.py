@@ -727,7 +727,8 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
 
         column_read, cast_write = _ir_values_value(cr)
 
-        for table, fk, _, _ in get_fk(cr, table_of_model(cr, model_src)):
+        model_src_table = table_of_model(cr, model_src)
+        for table, fk, _, _ in get_fk(cr, model_src_table):
             if table in ignores:
                 continue
             query = """
@@ -753,7 +754,8 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 """
                     % query
                 )
-                if target_of(cr, table, col2)[:2] == target_of(cr, table, fk)[:2]:
+                col2_info = target_of(cr, table, col2)  # col2 may not be a FK
+                if col2_info and col2_info[:2] == (model_src_table, "id"):
                     # a m2m on itself, remove the self referencing entries
                     # It only handle 1-level recursions. For multi-level recursions, it should be handled manually.
                     # We can't decide which link to break.
