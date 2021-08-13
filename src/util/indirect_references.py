@@ -52,6 +52,7 @@ def indirect_references(cr, bound_only=False):
         IR("email_template", "model", None, set_unknown=True),  # stored related
         IR("mail_template", "model", None, set_unknown=True),  # model renamed in saas~6
         IR("mail_activity", "res_model", "res_id", "res_model_id"),
+        IR("mail_activity_type", "res_model", None),
         IR("mail_alias", None, "alias_force_thread_id", "alias_model_id"),
         IR("mail_alias", None, "alias_parent_thread_id", "alias_parent_model_id"),
         IR("mail_followers", "res_model", "res_id"),
