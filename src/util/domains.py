@@ -107,6 +107,27 @@ def _get_domain_fields(cr):
             yield df
 
 
+def _valid_path_to(cr, path, from_, to):
+    model = from_
+    while path:
+        field = path.pop(0)
+        cr.execute(
+            """
+            SELECT relation
+              FROM ir_model_fields
+             WHERE model = %s
+               AND name = %s
+        """,
+            [model, field],
+        )
+        if not cr.rowcount:
+            # unknown field. Maybe an old domain. Cannot validate it.
+            return False
+        [model] = cr.fetchone()
+
+    return model == to
+
+
 def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
     if not adapter:
         adapter = lambda leaf, _, __: [leaf]
@@ -129,30 +150,10 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
             _logger.log(NEARLYWARN, "Invalid %r domain: %r: %s", model, domain, oops)
             return None
 
-    def valid_path_to(cr, path, from_, to):
-        model = from_
-        while path:
-            field = path.pop(0)
-            cr.execute(
-                """
-                SELECT relation
-                  FROM ir_model_fields
-                 WHERE model = %s
-                   AND name = %s
-            """,
-                [model, field],
-            )
-            if not cr.rowcount:
-                # unknown field. Maybe an old domain. Cannot validate it.
-                return False
-            [model] = cr.fetchone()
-
-        return model == to
-
     def clean_path(left):
         path = left.split(".")
         for idx in range(1, len(path) + 1):
-            if path[-idx] == old and valid_path_to(cr, path[:-idx], model, target_model):
+            if path[-idx] == old and _valid_path_to(cr, path[:-idx], model, target_model):
                 path[-idx] = new
         return ".".join(path)
 
@@ -202,7 +203,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
         # force_adapt=True -> always adapt if found anywhere on left path
         # otherwise adapt only when {old} field is the last part of left path
         search_range = range(len(path)) if force_adapt else [-1]
-        if any(path[i] == old and valid_path_to(cr, path[:i], model, target_model) for i in search_range):
+        if any(path[i] == old and _valid_path_to(cr, path[:i], model, target_model) for i in search_range):
             dom = [clean_term(term) for term in adapter(leaf, is_or, neg)]
         else:
             dom = [clean_term(leaf)]
