@@ -165,20 +165,21 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     )
 
     # remove this field from dependencies of other fields
-    cr.execute(
-        "SELECT id,model,depends FROM ir_model_fields WHERE state='manual' AND depends ~ %s",
-        [r"\m{}\M".format(fieldname)],
-    )
-    for id, from_model, deps in cr.fetchall():
-        parts = []
-        for part in deps.split(","):
-            path = part.strip().split(".")
-            if not any(
-                path[i] == fieldname and _valid_path_to(cr, path[:i], from_model, model) for i in range(len(path))
-            ):
-                parts.append(part)
-        if len(parts) != len(deps.split(",")):
-            cr.execute("UPDATE ir_model_fields SET depends=%s WHERE id=%s", [", ".join(parts) or None, id])
+    if column_exists(cr, "ir_model_fields", "depends"):
+        cr.execute(
+            "SELECT id,model,depends FROM ir_model_fields WHERE state='manual' AND depends ~ %s",
+            [r"\m{}\M".format(fieldname)],
+        )
+        for id, from_model, deps in cr.fetchall():
+            parts = []
+            for part in deps.split(","):
+                path = part.strip().split(".")
+                if not any(
+                    path[i] == fieldname and _valid_path_to(cr, path[:i], from_model, model) for i in range(len(path))
+                ):
+                    parts.append(part)
+            if len(parts) != len(deps.split(",")):
+                cr.execute("UPDATE ir_model_fields SET depends=%s WHERE id=%s", [", ".join(parts) or None, id])
 
     # drop m2m table if needed
     if drop_column and column_exists(cr, "ir_model_fields", "relation_table"):  # appears in version 9.0
