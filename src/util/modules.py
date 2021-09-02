@@ -308,16 +308,18 @@ def merge_module(cr, old, into, without_deps=False):
     if not without_deps:
         cr.execute(
             """
-            INSERT INTO ir_module_module_dependency(module_id, name)
-            SELECT module_id, %s
-              FROM ir_module_module_dependency d
-             WHERE name=%s
+            UPDATE ir_module_module_dependency d
+               SET name = %s
+              FROM ir_module_module m
+             WHERE m.id = d.module_id
+               AND d.name = %s
+               AND m.name != %s
                AND NOT EXISTS(SELECT 1
                                 FROM ir_module_module_dependency o
                                WHERE o.module_id = d.module_id
-                                 AND o.name=%s)
-        """,
-            [into, old, into],
+                                 AND o.name = %s)
+            """,
+            [into, old, into, into],
         )
 
     cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING state", [old])
