@@ -170,6 +170,16 @@ class iter_browse(object):
 
         return caller
 
+    def create(self, values):
+        ids = []
+        for sub_values in chunks(values, self._chunk_size, fmt=list):
+            ids += self._model.create(sub_values).ids
+            next(self._end(), None)
+        args = self._cr_uid + (ids,)
+        return iter_browse(
+            self._model, *args, chunk_size=self._chunk_size, logger=self._logger, strategy=self._strategy
+        )
+
 
 @contextmanager
 def custom_module_field_as_manual(env, rollback=True):
