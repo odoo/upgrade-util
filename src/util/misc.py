@@ -5,6 +5,7 @@ Misc standalone functions.
 
 import collections
 import datetime
+import functools
 import os
 import re
 from contextlib import contextmanager
@@ -28,6 +29,19 @@ except NameError:
     unicode = str
 
 
+def _cached(func):
+    sentinel = object()
+
+    @functools.wraps(func)
+    def wrapper():
+        result = getattr(func, "_result", sentinel)
+        if result == sentinel:
+            result = func._result = func()
+        return result
+
+    return wrapper
+
+
 # copied from odoo as older OpenERP versions doesn't have it
 def str2bool(s, default=None):
     s = unicode(s).lower()
@@ -46,6 +60,7 @@ def version_gte(version):
     return parse_version(release.serie) >= parse_version(version)
 
 
+@_cached
 def has_enterprise():
     """Return whernever the current installation has enterprise addons availables"""
     # NOTE should always return True as customers need Enterprise to migrate or
@@ -57,6 +72,7 @@ def has_enterprise():
     return bool(get_module_path("delivery_fedex", downloaded=False, display_warning=False))
 
 
+@_cached
 def has_design_themes():
     """Return whernever the current installation has theme addons availables"""
     if os.getenv("ODOO_HAS_DESIGN_THEMES"):
@@ -64,6 +80,7 @@ def has_design_themes():
     return bool(get_module_path("theme_yes", downloaded=False, display_warning=False))
 
 
+@_cached
 def on_CI():
     return str2bool(os.getenv("MATT", "0")) or str2bool(os.getenv("CI", "0"))
 
