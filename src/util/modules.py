@@ -493,6 +493,37 @@ def module_auto_install(cr, module, auto_install):
     cr.execute("UPDATE ir_module_module SET auto_install = %s WHERE name = %s", [auto_install is not False, module])
 
 
+def trigger_auto_install(cr, module):
+    _assert_modules_exists(cr, module)
+    dep_match = "true"
+    if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
+        dep_match = "d.auto_install_required = true"
+
+    query = """
+        WITH to_install AS (
+            SELECT m.id
+              FROM ir_module_module_dependency d
+              JOIN ir_module_module m ON m.id = d.module_id
+              JOIN ir_module_module md ON md.name = d.name
+             WHERE m.name = %s
+               AND m.state = 'uninstalled'
+               AND m.auto_install = true
+               AND {}
+          GROUP BY m.id
+            HAVING bool_and(md.state IN %s)
+        )
+        UPDATE ir_module_module m
+           SET state = 'to install'
+          FROM to_install t
+         WHERE t.id = m.id
+    """.format(
+        dep_match
+    )
+
+    cr.execute(query, [module, INSTALLED_MODULE_STATES])
+    return bool(cr.rowcount)
+
+
 def new_module(cr, module, deps=(), auto_install=False):
     if deps:
         _assert_modules_exists(cr, *deps)
