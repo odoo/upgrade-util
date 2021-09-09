@@ -1,7 +1,4 @@
 import logging
-import os
-
-from odoo.tools.misc import str2bool
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import IntegrityCase
@@ -33,6 +30,6 @@ class TestTablesHavePK(IntegrityCase):
             tables = "\n".join(" - %s" % t for t, in cr.fetchall())
             msg = "Some tables doesn't have any primary key:\n{}".format(tables)
             _logger.error(msg)  # trigger an error on runbot
-            if str2bool(os.getenv("MATT", "0")):
+            if util.on_CI():
                 # and on upgradeci
                 raise AssertionError(msg)

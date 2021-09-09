@@ -28,6 +28,18 @@ except NameError:
     unicode = str
 
 
+# copied from odoo as older OpenERP versions doesn't have it
+def str2bool(s, default=None):
+    s = unicode(s).lower()
+    y = "y yes 1 true t on".split()
+    n = "n no 0 false f off".split()
+    if s not in (y + n):
+        if default is None:
+            raise ValueError("Use 0/1/yes/no/true/false/on/off")
+        return bool(default)
+    return s in y
+
+
 def version_gte(version):
     if "-" in version:
         raise SleepyDeveloperError("version cannot contains dash")
@@ -50,6 +62,10 @@ def has_design_themes():
     if os.getenv("ODOO_HAS_DESIGN_THEMES"):
         return True
     return bool(get_module_path("theme_yes", downloaded=False, display_warning=False))
+
+
+def on_CI():
+    return str2bool(os.getenv("MATT", "0")) or str2bool(os.getenv("CI", "0"))
 
 
 def splitlines(s):
