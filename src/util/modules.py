@@ -13,8 +13,10 @@ except ImportError:
     from openerp.tools.func import frame_codeinfo
 
 from .const import NEARLYWARN
+from .exceptions import MigrationError
 from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _validate_model
+from .misc import on_CI
 from .models import delete_model
 from .orm import env
 from .pg import column_exists
@@ -495,35 +497,44 @@ def new_module(cr, module, deps=(), auto_install=False):
     if deps:
         _assert_modules_exists(cr, *deps)
 
-    cr.execute("SELECT count(1) FROM ir_module_module WHERE name = %s", [module])
-    if cr.fetchone()[0]:
+    cr.execute("SELECT id FROM ir_module_module WHERE name = %s", [module])
+    if cr.rowcount:
         # Avoid duplicate entries for module which is already installed,
         # even before it has become standard module in new version
         # Also happen for modules added afterward, which should be added by multiple series.
-        return
+        # But we should force the dependencies
+        mod_id = cr.fetchone()[0]
 
-    if deps and auto_install and not module.startswith("test_"):
-        to_check = deps if auto_install is True else auto_install
-        state = "to install" if modules_installed(cr, *to_check) else "uninstalled"
+        # In CI, it should not happen. Let it crash.
+        if on_CI():
+            raise MigrationError("New module %r already defined" % (module,))
+
+        _logger.warning("New module %r already defined. Resetting dependencies.", module)
+        cr.execute("DELETE FROM ir_module_module_dependency WHERE module_id = %s", [mod_id])
+
     else:
-        state = "uninstalled"
-    cr.execute(
-        """
-        INSERT INTO ir_module_module (name, state, demo)
-             VALUES (%s, %s, (SELECT demo FROM ir_module_module WHERE name='base'))
-          RETURNING id
-    """,
-        [module, state],
-    )
-    (new_id,) = cr.fetchone()
+        if deps and auto_install and not module.startswith("test_"):
+            to_check = deps if auto_install is True else auto_install
+            state = "to install" if modules_installed(cr, *to_check) else "uninstalled"
+        else:
+            state = "uninstalled"
+        cr.execute(
+            """
+            INSERT INTO ir_module_module (name, state, demo)
+                 VALUES (%s, %s, (SELECT demo FROM ir_module_module WHERE name='base'))
+              RETURNING id
+            """,
+            [module, state],
+        )
+        (new_id,) = cr.fetchone()
 
-    cr.execute(
-        """
-        INSERT INTO ir_model_data (name, module, noupdate, model, res_id)
-             VALUES ('module_'||%s, 'base', 't', 'ir.module.module', %s)
-    """,
-        [module, new_id],
-    )
+        cr.execute(
+            """
+            INSERT INTO ir_model_data (name, module, noupdate, model, res_id)
+                 VALUES ('module_'||%s, 'base', 't', 'ir.module.module', %s)
+            """,
+            [module, new_id],
+        )
 
     for dep in deps:
         new_module_dep(cr, module, dep)
