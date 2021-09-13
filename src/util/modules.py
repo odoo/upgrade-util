@@ -248,7 +248,7 @@ def rename_module(cr, old, new):
     )
 
 
-def merge_module(cr, old, into, without_deps=False):
+def merge_module(cr, old, into, update_dependers=True):
     """Move all references of module `old` into module `into`"""
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
@@ -306,8 +306,8 @@ def merge_module(cr, old, into, without_deps=False):
     _up("data", old, into)
     cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [into, old])
 
-    # update dependencies
-    if not without_deps:
+    # update dependencies of modules that depends on $old
+    if update_dependers:
         cr.execute(
             """
             UPDATE ir_module_module_dependency d
