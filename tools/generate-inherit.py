@@ -128,6 +128,11 @@ VIRTUAL_INHERITS = {
     ],
     "l10n_cl.edi.util": [
         Inherit("stock.picking", born=Version("14.0"), dead=Version("saas-14.2")),
+        Inherit(model="l10n_cl.daily.sales.book", born=Version("14.0"), dead=Version("saas-14.3"), via=None),
+    ],
+    "l10n_es.sii.account.tax.mixin": [
+        Inherit(model="account.tax", born=Version("14.0"), dead=Version("saas-14.4"), via=None),
+        Inherit(model="account.tax.template", born=Version("14.0"), dead=Version("saas-14.4"), via=None),
     ],
     "l10n_mx.trial.report": [
         Inherit("l10n_mx.trial.closing.report", born=Version("saas-11.1"), dead=Version("saas-12.2")),
@@ -139,6 +144,7 @@ VIRTUAL_INHERITS = {
     "mail.activity.mixin": [Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0"))],
     "mail.thread": [
         Inherit("account.online.link", born=Version("12.0"), dead=Version("14.0")),
+        Inherit(model="l10n_cl.daily.sales.book", born=Version("14.0"), dead=Version("saas-14.3"), via=None),
         Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0")),
     ],
     "studio.mixin": [
