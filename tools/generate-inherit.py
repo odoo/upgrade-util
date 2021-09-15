@@ -2,6 +2,7 @@
 
 import io
 import itertools
+import logging
 import subprocess
 import sys
 import tokenize
@@ -21,6 +22,15 @@ except ImportError:
     # old black version
     from black import Visitor
 
+
+logging.basicConfig(
+    level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
+if sys.stderr.isatty():
+    logging.addLevelName(logging.INFO, "\033[1;32m\033[1;49mINFO\033[0m")
+    logging.addLevelName(logging.CRITICAL, "\033[1;37m\033[1;41mCRITICAL\033[0m")
+
+logger = logging.getLogger(__name__)
 
 MODELS = ["osv", "osv_memory", "Model", "TransientModel", "AbstractModel"]
 MODELS += [".".join(x).lstrip(".") for x in itertools.product(["openerp", "odoo", ""], ["osv", "models"], MODELS)]
@@ -268,6 +278,7 @@ def checkout(wd: Path, repo: Repo, version: Version) -> bool:
 
 def main():
     wd = Path("/tmp/inh")  # TODO make it configurable
+    logger.info("⚙️  Initialize repositories")
     init_repos(wd)
 
     result = defaultdict(list)
@@ -285,7 +296,7 @@ def main():
         for repo in REPOSITORIES:
             if not checkout(wd, repo, version):
                 continue
-            print(f"🔎 Process {repo.name} at version {version.name}", file=sys.stderr, flush=True)
+            logger.info("🔎 Process %s at version %s", repo.name, version.name)
             r = wd / repo.name
             for pyfile in r.glob("**/*.py"):
                 fname = str(pyfile.relative_to(wd))
@@ -296,7 +307,7 @@ def main():
                 try:
                     list(visitor.visit(node))
                 except Exception:
-                    print(f"💥 Cannot parse {pyfile} ({repo.name} {version.name})", file=sys.stderr, flush=True)
+                    logger.critical("💥 Cannot parse %s (%s %s)", pyfile, repo.name, version.name)
                     raise
 
         if not visitor.inh:
