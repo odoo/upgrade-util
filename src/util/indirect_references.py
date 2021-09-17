@@ -46,8 +46,14 @@ def indirect_references(cr, bound_only=False):
         IR("wkf_triggers", "model", None),
         IR("ir_model_fields_anonymization", "model_name", None),
         IR("ir_model_fields_anonymization_migration_fix", "model_name", None),
-        IR("base_import_import", "res_model", None),
+        IR("base_import_mapping", "res_model", None),
         IR("calendar_event", "res_model", "res_id"),  # new in saas~18
+        IR("data_cleaning_model", "res_model_name", None),
+        IR("data_cleaning_record", "res_model_name", "res_id"),
+        IR("data_cleaning_rule", "res_model_name", None),
+        IR("data_merge_group", "res_model_name", None),
+        IR("data_merge_model", "res_model_name", None),
+        IR("data_merge_record", "res_model_name", "res_id"),
         IR("documents_document", "res_model", "res_id"),
         IR("email_template", "model", None, set_unknown=True),  # stored related
         IR("mail_template", "model", None, set_unknown=True),  # model renamed in saas~6
@@ -65,9 +71,17 @@ def indirect_references(cr, bound_only=False):
         IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id", set_unknown=True),
         IR("mailing_mailing", None, None, "mailing_model_id", set_unknown=True),
         IR("marketing_campaign", "model_name", None, set_unknown=True),  # stored related
+        IR("marketing_participant", "model_name", "res_id", "model_id", set_unknown=True),
+        IR("payment_transaction", None, "callback_res_id", "callback_model_id"),
         IR("project_project", "alias_model", None, set_unknown=True),
+        # IR("pos_blackbox_be_log", "model_name", None),  # ACTUALLY NOT. We need to keep records intact, even when renaming a model
+        IR("quality_point", "worksheet_model_name", None),
         IR("rating_rating", "res_model", "res_id", "res_model_id"),
         IR("rating_rating", "parent_res_model", "parent_res_id", "parent_res_model_id"),
+        IR("snailmail_letter", "model", "res_id", set_unknown=True),
+        IR("sms_template", "model", None),
+        IR("studio_approval_rule", "model_name", None),
+        IR("studio_approval_entry", "model", "res_id"),
         IR("timer_timer", "res_model", "res_id"),
         IR("worksheet_template", "res_model", None),
     ]
@@ -89,6 +103,9 @@ def indirect_references(cr, bound_only=False):
             continue
 
         yield ir
+
+    # XXX Once we will get the model field of `many2one_reference` fields in the database, we should get them also
+    # (and filter the one already hardcoded)
 
 
 def generate_indirect_reference_cleaning_queries(cr, ir):
