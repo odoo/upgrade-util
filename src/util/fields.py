@@ -34,7 +34,7 @@ from .pg import (
     savepoint,
     table_exists,
 )
-from .report import add_to_migration_reports
+from .report import add_to_migration_reports, get_anchor_link_to_record
 
 # python3 shims
 try:
@@ -751,31 +751,45 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
     cr.execute(q, p)
 
     # ir.action.server
+    # Modifying server action is dangerous.
+    # The search pattern can be anywhere in the code, leading to invalid codes.
+    # Moreover, limiting to some models will ignore some SA that should be modified.
+    # Just search for the potential SA that need update.
     col_prefix = ""
     if not column_exists(cr, "ir_act_server", "condition"):
         col_prefix = "--"  # sql comment the line
-    q = """
-        UPDATE ir_act_server s
-           SET {col_prefix} condition = regexp_replace(condition, %(old)s, %(new)s, 'g'),
-               code = regexp_replace(code, %(old)s, %(new)s, 'g')
-    """
-    if only_models:
-        q += """
-          FROM ir_model m
-         WHERE m.id = s.model_id
-           AND m.model IN %(models)s
-           AND
-        """
-    else:
-        q += " WHERE "
 
-    q += """s.state = 'code'
-           AND (
-              s.code ~ %(old)s
-              {col_prefix} OR s.condition ~ %(old)s
-           )
+    q = """
+        SELECT id, name
+          FROM ir_act_server
+         WHERE state = 'code'
+           AND (code ~ %(old)s
+                {col_prefix} OR condition ~ %(old)s
+               )
     """
     cr.execute(q.format(col_prefix=col_prefix), p)
+    if cr.rowcount:
+        li = "".join(
+            "<li>{}</li>".format(get_anchor_link_to_record("ir.actions.server", aid, aname))
+            for aid, aname in cr.fetchall()
+        )
+        model_text = "All models"
+        if only_models:
+            model_text = "Models " + ", ".join("<kbd>{}</kbd>".format(m) for m in only_models)
+        add_to_migration_reports(
+            """
+<details>
+  <summary>
+    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions may need update.
+  </summary>
+  <ul>{li}</ul>
+</details>
+            """.format(
+                **locals()
+            ),
+            category="Fields renamed",
+            format="html",
+        )
 
     # mail.alias
     if column_exists(cr, "mail_alias", "alias_defaults"):
