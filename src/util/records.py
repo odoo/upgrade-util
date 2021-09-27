@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from operator import itemgetter
 
 import lxml
+from psycopg2.extras import execute_values
 
 try:
     from odoo import release
@@ -707,6 +708,10 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     else:
         _validate_model(model_dst)
 
+    id_update = any(k != v for k, v in id_mapping.items())
+    nop = (not id_update) and (model_src == model_dst)
+    assert nop is False
+
     ignores = [_validate_table(table) for table in ignores]
     if not replace_xmlid:
         ignores.append("ir_model_data")
@@ -796,6 +801,12 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                         [model, fk, smap_keys],
                     )
 
+    cr.execute("CREATE TEMP TABLE _upgrade_rrr_old_ids(id int PRIMARY KEY)")
+    execute_values(cr, "INSERT INTO _upgrade_rrr_old_ids VALUES %s", [(id,) for id in old])
+
+    cr.execute("SELECT id FROM ir_model WHERE model=%s", [model_dst])
+    model_dest_id = cr.fetchone()[0]
+
     # indirect references
     for ir in indirect_references(cr, bound_only=True):
         if ir.table in ignores:
@@ -804,19 +815,25 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         if ir.res_model:
             res_model_upd.append('"{ir.res_model}" = %(model_dst)s')
         if ir.res_model_id:
-            res_model_upd.append('"{ir.res_model_id}" = (SELECT id FROM ir_model WHERE model=%(model_dst)s)')
+            res_model_upd.append('"{ir.res_model_id}" = %(model_dest_id)s')
         upd = ", ".join(res_model_upd).format(ir=ir)
         res_model_whr = " AND ".join(res_model_upd).format(ir=ir)
         whr = ir.model_filter(placeholder="%(model_src)s")
 
-        jmap_expr = "\"{ir.res_id}\" = ('{jmap}'::json->>t.{ir.res_id}::varchar)::int4".format(**locals())
+        if not id_update:
+            jmap_expr = "true"  # no-op
+            jmap_expr_upd = ""
+        else:
+            jmap_expr = "\"{ir.res_id}\" = ('{jmap}'::json->>t.{ir.res_id}::varchar)::int4".format(**locals())
+            jmap_expr_upd = "," + jmap_expr
 
         query = """
             UPDATE "{ir.table}" t
-               SET {upd},
-                   {jmap_expr}
+               SET {upd}
+                   {jmap_expr_upd}
+              FROM _upgrade_rrr_old_ids
              WHERE {whr}
-               AND {ir.res_id} IN %(old)s
+               AND _upgrade_rrr_old_ids.id = {ir.res_id}
         """
 
         unique_indexes = []
@@ -837,13 +854,14 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             query = """
                     %s
                     AND %s;
-                DELETE FROM {ir.table} WHERE {whr} AND {ir.res_id} IN %%(old)s;
+                DELETE FROM {ir.table} USING _upgrade_rrr_old_ids WHERE {whr} AND {ir.res_id} = _upgrade_rrr_old_ids.id;
             """ % (
                 query,
                 "AND".join(conditions),
             )
 
         cr.execute(query.format(**locals()), locals())
+    cr.execute("DROP TABLE IF EXISTS _upgrade_rrr_old_ids")
 
     # reference fields
     cmap, cmap_keys = genmap("%s,%%d" % model_src, "%s,%%d" % model_dst)
