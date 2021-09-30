@@ -128,13 +128,16 @@ def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
     if min_id is None:
         return []  # empty table
 
-    if ((max_id - min_id + 1) * 0.9) <= bucket_size:
-        # If there is less than `bucket_size` records (with a 10% tolerance), no need to explode the query
-        return [query.format(parallel_filter="true")]
-
     if "{parallel_filter}" not in query:
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
+
+    if ((max_id - min_id + 1) * 0.9) <= bucket_size:
+        # If there is less than `bucket_size` records (with a 10% tolerance), no need to explode the query.
+        # Force usage of `prefix` in the query to validate it correctness.
+        # If we don't the query may only be valid if there is no split. It avoid scripts to pass the CI but fail in production.
+        parallel_filter = "{prefix}id IS NOT NULL".format(prefix=prefix)
+        return [query.format(parallel_filter=parallel_filter)]
 
     parallel_filter = "{prefix}id BETWEEN %s AND %s".format(prefix=prefix)
     query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
