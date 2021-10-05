@@ -603,10 +603,8 @@ inheritance_data = frozendict(
             ),
         ],
         "l10n_es.sii.account.tax.mixin": [
-            Inherit(model="account.tax", born=parse_version("14.0"), dead=parse_version("saas~14.5"), via=None),
-            Inherit(
-                model="account.tax.template", born=parse_version("14.0"), dead=parse_version("saas~14.5"), via=None
-            ),
+            Inherit(model="account.tax", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="account.tax.template", born=parse_version("14.0"), dead=None, via=None),
         ],
         "l10n_es_reports.aeat.boe.export.wizard": [
             Inherit(
