@@ -8,9 +8,11 @@ from operator import itemgetter
 try:
     import odoo
     from odoo.tools.func import frame_codeinfo
+    from odoo.tools.misc import topological_sort
 except ImportError:
     import openerp as odoo
     from openerp.tools.func import frame_codeinfo
+    from openerp.tools.misc import topological_sort
 
 from .const import NEARLYWARN
 from .exceptions import MigrationError
@@ -605,6 +607,46 @@ def force_upgrade_of_fresh_module(cr, module, init=True):
 
 # for compatibility
 force_migration_of_fresh_module = force_upgrade_of_fresh_module
+
+
+def modules_auto_discovery(cr, force_installs=None):
+    # Cursor, Optional[Dict[str, Union[bool, Callable]]] -> None
+    if force_installs is None:
+        force_installs = {}
+
+    cr.execute(
+        """
+            SELECT m.name, array_agg(d.name)
+              FROM ir_module_module m
+         LEFT JOIN ir_module_module_dependency d ON d.module_id = m.id
+          GROUP BY m.name
+        """
+    )
+    existing = dict(cr.fetchall())
+
+    graph = {}
+    for module in odoo.modules.get_modules():
+        manifest = odoo.modules.load_information_from_description_file(module)
+        graph[module] = (set(manifest["depends"]), manifest["auto_install"])
+
+    for module in topological_sort({k: v[0] for k, v in graph.items()}):
+        deps, auto_install = graph[module]
+        if module not in existing:
+            new_module(cr, module, deps=deps, auto_install=auto_install)
+        else:
+            current_deps = set(existing[module])
+            plus = deps - current_deps
+            minus = current_deps - deps
+            if plus or minus:
+                module_deps_diff(cr, module, plus=plus, minus=minus)
+            module_auto_install(cr, module, auto_install)
+
+        force = force_installs.get(module)
+        if callable(force):
+            force = force(cr)
+
+        if force:
+            force_install_module(cr, module)
 
 
 def move_model(cr, model, from_module, to_module, move_data=False):
