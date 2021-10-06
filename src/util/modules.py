@@ -573,9 +573,9 @@ def new_module(cr, module, deps=(), auto_install=False):
     module_auto_install(cr, module, auto_install)
 
 
-def force_migration_of_fresh_module(cr, module, init=True):
-    """It may appear that new (or forced installed) modules need a migration script to grab data
-    form other module. (we cannot add a pre-init hook on the fly)
+def force_upgrade_of_fresh_module(cr, module, init=True):
+    """It may appear that new (or forced installed) modules need an upgrade script to grab data
+    from another module. (we cannot add a pre-init hook on the fly)
 
     Being in init mode may make sens in some situations (when?) but has the nasty side effect
     of not respecting noupdate flags (in xml file nor in ir_model_data) which can be quite
@@ -601,6 +601,10 @@ def force_migration_of_fresh_module(cr, module, init=True):
         # Force module in `init` mode beside its state is forced to `to upgrade`
         # See http://git.io/vnF7O
         odoo.tools.config["init"][module] = "oh yeah!"
+
+
+# for compatibility
+force_migration_of_fresh_module = force_upgrade_of_fresh_module
 
 
 def move_model(cr, model, from_module, to_module, move_data=False):
