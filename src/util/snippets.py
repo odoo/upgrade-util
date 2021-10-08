@@ -35,6 +35,7 @@ def add_snippet_names(cr, table, column, snippets, select_query):
 
     for res_id, regex_matches, arch in it:
         regex_matches = [match[0] for match in regex_matches]
+        arch = arch.replace("\r", "")  # otherwise html parser below will transform \r -> &#13;
         body = html.fromstring(arch, parser=utf8_parser)
         changed = False
         for snippet in snippets:
