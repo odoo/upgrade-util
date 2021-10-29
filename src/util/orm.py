@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import logging
+import re
 from contextlib import contextmanager
 from itertools import chain
 from operator import itemgetter
+from textwrap import dedent
 
 try:
     from unittest.mock import patch
@@ -89,6 +91,25 @@ def guess_admin_id(cr):
     """
     )
     return cr.fetchone()[0] or SUPERUSER_ID
+
+
+def create_cron(cr, name, model, code, interval=(1, "hours")):
+    # (Cursor, str, str, str, Tuple[int, str]) -> None
+    cr.execute("SELECT id FROM ir_model WHERE model = %s", [model])
+    model_id = cr.fetchone()[0]
+    xid = "__upgrade__.cron_" + re.sub(name.lower(), r"\W+", "_")
+    number, unit = interval
+    # TODO handle version <=10.saas-14
+    cron = {
+        "name": "Post Upgrade: %s" % (name,),
+        "model_id": model_id,
+        "state": "code",
+        "code": dedent(code),
+        "interval_number": number,
+        "interval_type": unit,
+        "numbercall": -1,
+    }
+    env(cr)["ir.model.data"]._update("ir.cron", "__upgrade__", cron, xml_id=xid, noupdate=True)
 
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
