@@ -97,7 +97,7 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
     # (Cursor, str, str, str, Tuple[int, str]) -> None
     cr.execute("SELECT id FROM ir_model WHERE model = %s", [model])
     model_id = cr.fetchone()[0]
-    xid = "__upgrade__.cron_" + re.sub(name.lower(), r"\W+", "_")
+    xid = "__upgrade__.cron_" + re.sub(r"\W+", "_", name.lower())
     number, unit = interval
     # TODO handle version <=10.saas-14
     cron = {
@@ -109,7 +109,14 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
         "interval_type": unit,
         "numbercall": -1,
     }
-    env(cr)["ir.model.data"]._update("ir.cron", "__upgrade__", cron, xml_id=xid, noupdate=True)
+
+    e = env(cr)
+    data = dict(module="__upgrade__", xml_id=xid, values=cron, noupdate=True)
+    if hasattr(e["ir.cron"], "_load_records"):
+        e["ir.cron"]._load_records([data])
+    else:
+        # < saas-11.5
+        e["ir.model.data"]._update("ir.cron", **data)
 
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):

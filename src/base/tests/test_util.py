@@ -324,3 +324,14 @@ class TestPG(UnitTestCase):
         cr.execute("SELECT {} FROM res_users WHERE id=%s".format(util.pg_text2html("signature")), [uid])
         result = cr.fetchone()[0]
         self.assertEqual(result, expected)
+
+
+class TestORM(UnitTestCase):
+    def test_create_cron(self):
+        cr = self.env.cr
+        util.create_cron(cr, "Test cron creation don't fail", "res.partner", "answer = 42")
+
+        cron_id = util.ref(cr, "__upgrade__.cron_test_cron_creation_don_t_fail")
+        self.assertIsNotNone(cron_id)
+        cron = self.env["ir.cron"].browse(cron_id)
+        self.assertEqual(cron.code, "answer = 42")
