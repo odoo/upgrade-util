@@ -63,7 +63,7 @@ def _remove_safe(expression):
 
 
 def _transform_to_t_out(expression):
-    return str(Markup('<t t-out="{}"></t>').format(_remove_safe(expression)))
+    return str(Markup('<t t-out="{}"/>').format(_remove_safe(expression)))
 
 
 def convert_jinja_to_inline(string):
@@ -158,7 +158,7 @@ def convert_jinja_to_qweb(string):
         result = func(result)
 
     # Make sure the html is correct
-    result = lxml.html.tostring(lxml.html.fragment_fromstring(result, create_parent="div"), encoding="unicode")
+    result = lxml.etree.tostring(lxml.html.fragment_fromstring(result, create_parent="div"), encoding="unicode")
 
     # Remove the parent div
     result = result[5:-6]
