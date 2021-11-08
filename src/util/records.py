@@ -916,3 +916,23 @@ def ensure_mail_alias_mapping(cr, model, record_xmlid, alias_xmlid, alias_name):
             model,
             {"alias_id": alias_id},
         )
+
+
+def remove_act_window_view_mode(cr, model, view_mode):
+    cr.execute(
+        """
+            DELETE FROM ir_act_window
+                  WHERE view_mode = %s
+                    AND res_model = %s
+        """,
+        [view_mode, model],
+    )
+    cr.execute(
+        """
+            UPDATE ir_act_window
+               SET view_mode = ARRAY_TO_STRING(ARRAY_REMOVE(STRING_TO_ARRAY(view_mode, ','), %s), ',')
+             WHERE res_model = %s
+               AND %s = ANY(STRING_TO_ARRAY(view_mode, ','))
+        """,
+        [view_mode, model, view_mode],
+    )
