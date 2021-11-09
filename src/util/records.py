@@ -366,7 +366,7 @@ def _rm_refs(cr, model, ids=None):
         )
 
 
-def if_unchanged(cr, xmlid, callback, interval="1 minute"):
+def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
     assert "." in xmlid
     module, _, name = xmlid.partition(".")
     cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
@@ -388,7 +388,7 @@ def if_unchanged(cr, xmlid, callback, interval="1 minute"):
         [res_id, interval],
     )
     if not cr.rowcount:
-        callback(cr, xmlid)
+        callback(cr, xmlid, **kwargs)
 
 
 def remove_menus(cr, menu_ids):
