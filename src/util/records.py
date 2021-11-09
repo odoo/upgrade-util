@@ -554,7 +554,9 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     return res_id
 
 
-def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=False, from_module=None):
+def update_record_from_xml(
+    cr, xmlid, reset_write_metadata=True, force_create=False, from_module=None, reset_translations=()
+):
     from .modules import get_manifest
 
     # Force update of a record from xml file to bypass the noupdate flag
@@ -581,7 +583,7 @@ def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=Fa
         return
     else:
         # The xmlid doesn't already exists, nothing to reset
-        reset_write_metadata = noupdate = False
+        reset_write_metadata = noupdate = reset_translations = False
 
     write_data = None
     if reset_write_metadata:
@@ -611,6 +613,17 @@ def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=Fa
         force_noupdate(cr, xmlid, True)
     if reset_write_metadata and write_data:
         cr.execute("UPDATE {} SET write_uid=%s, write_date=%s WHERE id=%s".format(table), write_data)
+
+    if reset_translations:
+        cr.execute(
+            """
+                DELETE FROM ir_translation
+                      WHERE type = 'model'
+                        AND name IN %s
+                        AND res_id = %s
+            """,
+            [tuple("{},{}".format(model, f) for f in reset_translations), res_id],
+        )
 
 
 def delete_unused(cr, *xmlids, **kwargs):
