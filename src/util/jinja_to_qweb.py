@@ -334,6 +334,9 @@ def verify_upgraded_jinja_fields(cr):
             qweb_fields,
             templates_converted,
         ) in templates_to_check[table_name]:
+            if model_name not in env:
+                # custom model not loaded yet. Ignore
+                continue
             model = env[model_name]
             record = model.with_context({"active_test": False}).search([], limit=1, order="id")
 
