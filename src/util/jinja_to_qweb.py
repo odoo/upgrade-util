@@ -512,7 +512,7 @@ def _render_template_jinja(env, template_txt, model, res_id):
             env, amount, currency, lang_code
         ),
         "format_duration": lambda value: tools.format_duration(value),
-        "user": {},
+        "user": env.user,
         "ctx": {},
         "is_html_empty": is_html_empty,
     }
