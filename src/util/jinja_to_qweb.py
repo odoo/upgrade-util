@@ -501,22 +501,16 @@ def _render_template_jinja(env, template_txt, model, res_id):
 
     record = env[model].browse([res_id])
     variables = {
-        "format_date": lambda date, date_format=False, lang_code=False: format_date(env, date, date_format, lang_code),
-        "format_datetime": lambda dt, tz=False, dt_format=False, lang_code=False: format_datetime(
-            env, dt, tz, dt_format, lang_code
-        ),
-        "format_time": lambda time, tz=False, time_format=False, lang_code=False: format_time(
-            env, time, tz, time_format, lang_code
-        ),
-        "format_amount": lambda amount, currency, lang_code=False: tools.format_amount(
-            env, amount, currency, lang_code
-        ),
-        "format_duration": lambda value: tools.format_duration(value),
+        "format_date": functools.partial(format_date, env),
+        "format_datetime": functools.partial(format_datetime, env),
+        "format_time": functools.partial(format_time, env),
+        "format_amount": functools.partial(tools.format_amount, env),
+        "format_duration": tools.format_duration,
         "user": env.user,
         "ctx": {},
         "is_html_empty": is_html_empty,
+        "object": record,
     }
-    variables["object"] = record
 
     safe_eval.check_values(variables)
     render_result = template.render(variables)
