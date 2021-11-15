@@ -19,7 +19,7 @@ from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
 
-REMOVE_SAFE_REGEX = re.compile(r"\s*\|\s*safe\s*$", re.IGNORECASE)
+REMOVE_SAFE_REGEX = re.compile(r"\s*\|\s*safe\s*", re.IGNORECASE)
 
 JINJA_EXPRESSION = r"""
 \$\{
@@ -59,7 +59,7 @@ templates_to_check = {}
 
 
 def _remove_safe(expression):
-    return re.sub(REMOVE_SAFE_REGEX, "", expression).strip()
+    return re.sub(REMOVE_SAFE_REGEX, " ", expression).strip()
 
 
 def _transform_to_t_out(expression):
