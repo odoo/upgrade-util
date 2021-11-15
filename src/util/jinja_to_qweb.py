@@ -253,6 +253,7 @@ def upgrade_jinja_fields(
     )
 
     templates_to_check[table_name] = []
+    model = model_of_table(cr, table_name)
 
     for data in cr.dictfetchall():
         _logger.info("process %s(%s) %s", table_name, data["id"], data[name_field])
@@ -284,17 +285,6 @@ def upgrade_jinja_fields(
                 field_values + [data["id"]],
             )
 
-            model = model_of_table(cr, table_name)
-            cr.execute(
-                """
-                    DELETE FROM ir_translation
-                          WHERE type = 'model'
-                            AND name IN %s
-                            AND res_id = %s
-                """,
-                [tuple(f"{model},{f}" for f in fields), data["id"]],
-            )
-
         # prepare data to check later
 
         # only for mailing.mailing
@@ -319,6 +309,16 @@ def upgrade_jinja_fields(
                 templates_converted,
             )
         )
+
+    cr.execute(
+        r"""
+            DELETE FROM ir_translation
+                  WHERE type = 'model'
+                    AND name = ANY(%s)
+                    AND src ~ '(\$\{|%%\s*(if|for))'
+        """,
+        [[f"{model},{f}" for f in inline_template_fields + qweb_fields]],
+    )
 
 
 def verify_upgraded_jinja_fields(cr):
