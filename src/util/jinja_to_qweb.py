@@ -185,7 +185,7 @@ def _get_for(matchobj):
 
 
 def _replace_for(string):
-    reg = re.compile(r"^(\s*)%\s*for((?:(?! in ).)*?) in (.*?):?$", re.IGNORECASE | re.MULTILINE)
+    reg = re.compile(r"^(\s*)%\s*for((?:(?! in ).)*?) in (.*?):?\s*$", re.IGNORECASE | re.MULTILINE)
     return reg.sub(_get_for, string)
 
 
@@ -199,7 +199,7 @@ def _get_if(matchobj):
 
 
 def _replace_if(string):
-    reg = re.compile(r"^(\s*)%\s*if(.*?):?$", re.IGNORECASE | re.MULTILINE)
+    reg = re.compile(r"^(\s*)%\s*if(.*?):?\s*$", re.IGNORECASE | re.MULTILINE)
     return reg.sub(_get_if, string)
 
 
@@ -210,7 +210,7 @@ def _get_elif(matchobj):
 
 
 def _replace_elif(string):
-    reg = re.compile(r"^(\s*)%\s*elif(.*?):?$", re.IGNORECASE | re.MULTILINE)
+    reg = re.compile(r"^(\s*)%\s*elif(.*?):?\s*$", re.IGNORECASE | re.MULTILINE)
     return reg.sub(_get_elif, string)
 
 
