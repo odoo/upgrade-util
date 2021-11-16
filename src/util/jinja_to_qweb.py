@@ -376,6 +376,7 @@ def verify_upgraded_jinja_fields(cr):
                     </details>
                 """,
                 "Jinja upgrade",
+                format="html",
             )
         field_errors = dict(filter(lambda x: bool(x[1]), field_errors.items()))
 
@@ -398,6 +399,7 @@ def verify_upgraded_jinja_fields(cr):
                     </details>
                 """,
                 "Jinja upgrade",
+                format="html",
             )
 
 
