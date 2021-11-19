@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import re
 
 from lxml import etree, html
 from psycopg2.extensions import quote_ident
@@ -88,3 +89,37 @@ def get_html_fields(cr):
         table = util.table_of_model(cr, model)
         if util.table_exists(cr, table) and util.column_exists(cr, table, column):
             yield table, quote_ident(column, cr._cnx)
+
+
+def parse_style(attr):
+    """
+    Converts an HTML style attribute's text into a dict mapping property names to property values.
+
+    :param str attr: value of an HTML style attribute
+    :return: dict of CSS property values per property name
+    """
+    # Captures two groups:
+    # - identifier: sequence of word character or hyphen that is followed by a colon
+    # - value: sequence of:
+    #   - any non semicolon character or
+    #   - sequence of any non single quote character or escaped single quote
+    #     surrounded by single quotes or
+    #   - sequence of any non double quote character or escaped double quote
+    #     surrounded by double quotes
+    regex = r"""
+        ([\w\-]+)\s*:\s*((?:[^;\"']|'(?:[^']|(?:\\'))*'|\"(?:[^\"]|(?:\\\"))*\")+)
+    """.strip()
+    return dict(re.findall(regex, attr))
+
+
+def format_style(styles):
+    """
+    Converts a dict of CSS property names to property values into an HTML style attribute string.
+
+    :param dict styles: CSS property value per property name
+    :return: str HTML style attribute
+    """
+    style = "; ".join(["%s: %s" % entry for entry in styles.items()])
+    if len(style) > 0 and style[-1] != ";":
+        style += ";"
+    return style
