@@ -879,3 +879,27 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 ),
                 [cmap_keys],
             )
+
+
+def ensure_mail_alias_mapping(cr, model, record_xmlid, alias_xmlid, alias_name):
+    _validate_model(model)
+
+    cr.execute("SELECT id FROM ir_model WHERE model = %s", [model])
+    (model_id,) = cr.fetchone()
+    alias_id = ensure_xmlid_match_record(
+        cr,
+        alias_xmlid,
+        "mail.alias",
+        {
+            "alias_name": alias_name,
+            "alias_parent_model_id": model_id,
+        },
+    )
+
+    if alias_id:
+        ensure_xmlid_match_record(
+            cr,
+            record_xmlid,
+            model,
+            {"alias_id": alias_id},
+        )
