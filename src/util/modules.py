@@ -9,10 +9,16 @@ try:
     import odoo
     from odoo.tools.func import frame_codeinfo
     from odoo.tools.misc import topological_sort
+
+    try:
+        from odoo.modules import get_manifest
+    except ImportError:
+        from odoo.modules import load_information_from_description_file as get_manifest
 except ImportError:
     import openerp as odoo
     from openerp.tools.func import frame_codeinfo
     from openerp.tools.misc import topological_sort
+    from openerp.modules import load_information_from_description_file as get_manifest
 
 from .const import NEARLYWARN
 from .exceptions import MigrationError
@@ -626,7 +632,7 @@ def modules_auto_discovery(cr, force_installs=None):
 
     graph = {}
     for module in odoo.modules.get_modules():
-        manifest = odoo.modules.load_information_from_description_file(module)
+        manifest = get_manifest(module)
         graph[module] = (set(manifest["depends"]), manifest["auto_install"])
 
     for module in topological_sort({k: v[0] for k, v in graph.items()}):

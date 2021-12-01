@@ -10,12 +10,10 @@ from psycopg2.extras import execute_values
 
 try:
     from odoo import release
-    from odoo.modules.module import load_information_from_description_file
     from odoo.tools.convert import xml_import
     from odoo.tools.misc import file_open
 except ImportError:
     from openerp import release
-    from openerp.modules.module import load_information_from_description_file
     from openerp.tools.convert import xml_import
     from openerp.tools.misc import file_open
 
@@ -544,6 +542,8 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
 
 def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=False, from_module=None):
+    from .modules import get_manifest
+
     # Force update of a record from xml file to bypass the noupdate flag
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
@@ -581,7 +581,7 @@ def update_record_from_xml(cr, xmlid, reset_write_metadata=True, force_create=Fa
     new_root = lxml.etree.fromstring("<openerp><data/></openerp>")
 
     from_module = from_module or module
-    manifest = load_information_from_description_file(from_module)
+    manifest = get_manifest(from_module)
     for f in manifest.get("data", []):
         if not f.endswith(".xml"):
             continue
