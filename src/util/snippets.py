@@ -54,15 +54,16 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
     Will search for all the snippets in the fields mentionned (should be html fields) and add
     the corresponding data-snippet on them.
     """
-    select_query = cr.mogrify(
+    query = cr.mogrify(
         f"""
             SELECT id, array((SELECT regexp_matches({column}, %(regex)s, 'g'))), {column}
               FROM {table}
              WHERE {column} ~ %(regex)s
         """,
         dict(regex=regex),
-    )
-    add_snippet_names(cr, table, column, snippets, select_query)
+    ).decode()
+    for select_query in util.explode_query_range(cr, query, table=table):
+        add_snippet_names(cr, table, column, snippets, select_query)
 
 
 def get_regex_from_snippets_list(snippets):
