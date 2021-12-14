@@ -25,12 +25,17 @@ _logger = logging.getLogger(__name__)
 def _unknown_model_id(cr):
     result = getattr(_unknown_model_id, "result", None)
     if result is None:
+        order = column_exists(cr, "ir_model", "order")
+        extra_columns = ', "order"' if order else ""
+        extra_values = ", 'id'" if order else ""
         cr.execute(
             """
-                INSERT INTO ir_model(name, model)
-                     SELECT 'Unknown', '_unknown'
+                INSERT INTO ir_model(name, model{})
+                     SELECT 'Unknown', '_unknown'{}
                       WHERE NOT EXISTS (SELECT 1 FROM ir_model WHERE model = '_unknown')
-            """
+            """.format(
+                extra_columns, extra_values
+            )
         )
         cr.execute("SELECT id FROM ir_model WHERE model = '_unknown'")
         _unknown_model_id.result = result = cr.fetchone()[0]
