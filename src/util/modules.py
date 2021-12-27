@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-import collections
+try:
+    from collections.abc import Sequence, Set
+except ImportError:
+    from collections import Sequence, Set
 import logging
 import os
 from inspect import currentframe
@@ -451,7 +454,7 @@ def new_module_dep(cr, module, new_dep):
 
 
 def remove_module_deps(cr, module, old_deps):
-    assert isinstance(old_deps, (collections.Sequence, collections.Set)) and not isinstance(old_deps, basestring)
+    assert isinstance(old_deps, (Sequence, Set)) and not isinstance(old_deps, basestring)
     # As the goal is to have dependencies removed, the objective is reached even when they don't exist.
     # Therefore, we don't need to assert their existence (at the cost of missing typos).
     cr.execute(
