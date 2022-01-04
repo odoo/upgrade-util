@@ -179,7 +179,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
             arch = lxml.etree.fromstring(arch)
             yield arch
             cr.execute(
-                "UPDATE ir_ui_view SET {arch}=%s WHERE id=%s".format(arch=arch_col),
+                "UPDATE ir_ui_view SET {arch}=%s, active=true WHERE id=%s".format(arch=arch_col),
                 [lxml.etree.tostring(arch, encoding="unicode"), view_id],
             )
 
