@@ -1027,6 +1027,7 @@ inheritance_data = frozendict(
             Inherit(model="quality.check", born=parse_version("9.saas~12"), dead=None, via=None),
             Inherit(model="quality.point", born=parse_version("9.saas~12"), dead=None, via=None),
             Inherit(model="repair.order", born=parse_version("saas~11.2"), dead=None, via=None),
+            Inherit(model="res.company", born=parse_version("saas~15.1"), dead=None, via=None),
             Inherit(model="res.partner", born=parse_version("7.0"), dead=parse_version("saas~12.4"), via=None),
             Inherit(model="sale.order", born=parse_version("7.0"), dead=None, via=None),
             Inherit(model="sale.subscription", born=parse_version("9.0"), dead=None, via=None),
@@ -1111,9 +1112,11 @@ inheritance_data = frozendict(
             ),
         ],
         "pad.common": [
-            Inherit(model="note.note", born=parse_version("7.0"), dead=None, via=None),
-            Inherit(model="project.project", born=parse_version("saas~13.5"), dead=None, via=None),
-            Inherit(model="project.task", born=parse_version("7.0"), dead=None, via=None),
+            Inherit(model="note.note", born=parse_version("7.0"), dead=parse_version("saas~15.1"), via=None),
+            Inherit(
+                model="project.project", born=parse_version("saas~13.5"), dead=parse_version("saas~15.1"), via=None
+            ),
+            Inherit(model="project.task", born=parse_version("7.0"), dead=parse_version("saas~15.1"), via=None),
         ],
         "payment.acquirer.onboarding.wizard": [
             Inherit(
@@ -1834,7 +1837,12 @@ inheritance_data = frozendict(
             Inherit(model="marketing.campaign", born=parse_version("10.saas~18"), dead=None, via="utm_campaign_id"),
         ],
         "utm.medium": [
-            Inherit(model="social.account", born=parse_version("saas~12.5"), dead=None, via="utm_medium_id")
+            Inherit(
+                model="social.account",
+                born=parse_version("saas~12.5"),
+                dead=parse_version("saas~15.1"),
+                via="utm_medium_id",
+            )
         ],
         "utm.mixin": [
             Inherit(model="account.invoice", born=parse_version("9.saas~8"), dead=parse_version("saas~12.4"), via=None),
