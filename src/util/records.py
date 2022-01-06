@@ -18,7 +18,7 @@ except ImportError:
     from openerp.tools.misc import file_open
 
 from .const import NEARLYWARN
-from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
+from .helpers import _get_theme_models, _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit
 from .misc import parse_version, version_gte
@@ -266,6 +266,19 @@ def _remove_records(cr, model, ids):
         return
 
     ids = tuple(ids)
+
+    # remove theme model's copy_ids
+    theme_copy_model = _get_theme_models().get(model)
+    if theme_copy_model:
+        cr.execute(
+            'SELECT id FROM "{}" WHERE theme_template_id IN %s'.format(table_of_model(cr, theme_copy_model)),
+            [ids],
+        )
+        if theme_copy_model == "ir.ui.view":
+            for (view_id,) in cr.fetchall():
+                remove_view(cr, view_id=view_id)
+        else:
+            _remove_records(cr, theme_copy_model, [rid for rid, in cr.fetchall()])
 
     for inh in for_each_inherit(cr, model, skip=()):
         if inh.via:

@@ -179,3 +179,13 @@ def _dashboard_actions(cr, arch_match, *models):
             "UPDATE ir_ui_view_custom SET arch = %s WHERE id = %s",
             [lxml.etree.tostring(dash, encoding="unicode"), dash_id],
         )
+
+
+def _get_theme_models():
+    return {
+        "theme.ir.ui.view": "ir.ui.view",
+        "theme.ir.asset": "ir.asset",
+        "theme.website.page": "website.page",
+        "theme.website.menu": "website.menu",
+        "theme.ir.attachment": "ir.attachment",
+    }
