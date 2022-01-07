@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from .helpers import _validate_table
+from .pg import column_exists, table_exists
+from .report import add_to_migration_reports
+
 _logger = logging.getLogger(__name__)
 
 
@@ -34,3 +38,31 @@ def dispatch_by_dbuuid(cr, version, callbacks):
         func = callbacks[uuid]
         _logger.info("calling dbuuid-specific function `%s`", func.__name__)
         func(cr, version)
+
+
+def rename_custom_table(cr, table_name, new_table_name, custom_module=None, report_details=""):
+    _validate_table(table_name)
+    _validate_table(new_table_name)
+    if not table_exists(cr, table_name):
+        return
+    cr.execute('ALTER TABLE "{}" RENAME TO "{}"'.format(table_name, new_table_name))
+    module_details = " from module '{}'".format(custom_module) if custom_module else ""  # noqa
+    add_to_migration_reports(
+        category="Custom tables/columns",
+        message="The custom table '{table_name}'{module_details} was renamed to '{new_table_name}'. {report_details}".format(
+            **locals()
+        ),
+    )
+
+
+def rename_custom_column(cr, table_name, col_name, new_col_name, custom_module=None, report_details=""):
+    _validate_table(table_name)
+    if not column_exists(cr, table_name, col_name):
+        return
+    cr.execute('ALTER TABLE "{}" RENAME COLUMN "{}" TO "{}"'.format(table_name, col_name, new_col_name))
+    module_details = " from module '{}'".format(custom_module) if custom_module else ""  # noqa
+    add_to_migration_reports(
+        category="Custom tables/columns",
+        message="The custom column '{col_name}' of the table '{table_name}'{module_details} was renamed to '{new_col_name}'."
+        " {report_details}".format(**locals()),
+    )
