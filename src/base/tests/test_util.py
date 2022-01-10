@@ -335,3 +335,14 @@ class TestORM(UnitTestCase):
         self.assertIsNotNone(cron_id)
         cron = self.env["ir.cron"].browse(cron_id)
         self.assertEqual(cron.code, "answer = 42")
+
+
+class TestHelpers(UnitTestCase):
+    def test_model_table_convertion(self):
+        cr = self.env.cr
+        for model in self.env.registry:
+            if model in ("ir.actions.act_window_close",):
+                continue
+            table = util.table_of_model(cr, model)
+            self.assertEqual(table, self.env[model]._table)
+            self.assertEqual(util.model_of_table(cr, table), model)

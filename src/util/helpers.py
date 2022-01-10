@@ -81,25 +81,12 @@ def model_of_table(cr, table):
         wkf_triggers   workflow.triggers
         wkf_workitem   workflow.workitem
 
-        ir_config_parameter  ir.config_parameter
-
-        documents_request_wizard documents.request_wizard
-
-        hr_payslip_worked_days hr.payslip.worked_days
-        stock_package_level stock.package_level
-
-        survey_user_input survey.user_input
-        survey_user_input_line survey.user_input_line
+        _unknown  _unknown
 
         mail_mass_mailing_contact_list_rel mail.mass_mailing.list_contact_rel
         mailing_contact_list_rel           mailing.contact.subscription
         # Not a real model until saas~13
         {gte_saas13_lte_saas14_3} mail_message_res_partner_needaction_rel mail.notification
-
-        data_merge_rule     data_merge.rule
-        data_merge_model    data_merge.model
-        data_merge_group    data_merge.group
-        data_merge_record   data_merge.record
 
         project_task_user_rel project.task.stage.personal
     """.format(
@@ -108,7 +95,30 @@ def model_of_table(cr, table):
             )
         )
     )
-    return exceptions.get(table, table.replace("_", "."))
+    try:
+        return exceptions[table]
+    except KeyError:
+        cr.execute(
+            """
+            SELECT model
+              FROM ir_model
+             WHERE replace(model, '.', '_') = %s
+            """,
+            [table],
+        )
+        candidates = [m for m, in cr.fetchall()]
+        if candidates:
+            if len(candidates) > 1:
+                _logger.critical("cannot determine model of table %r. Multiple candidates: %r", table, candidates)
+            return candidates[0]
+
+        fallback = table.replace("_", ".")
+        _logger.critical(
+            "cannot determine model of table %r. No candidates found in the `ir_model` table. Fallback to %r",
+            table,
+            fallback,
+        )
+        return fallback
 
 
 def _validate_model(model):
