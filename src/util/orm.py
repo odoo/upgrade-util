@@ -119,7 +119,8 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
         e["ir.model.data"]._update("ir.cron", **data)
 
 
-def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
+def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="flush"):
+    assert strategy in {"flush", "commit"}
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
     flush = getattr(Model, "flush", lambda: None)
@@ -139,7 +140,10 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
             else:
                 Model.env.add_to_compute(field, records)
         records.recompute()
-        flush()
+        if strategy == "commit":
+            cr.commit()
+        else:
+            flush()
         records.invalidate_cache()
 
 
