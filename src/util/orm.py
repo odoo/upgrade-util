@@ -173,7 +173,7 @@ class iter_browse(object):
             self._model.env.cr.commit()
         else:
             self._flush()
-            self._model.invalidate_cache(*self._cr_uid)
+        self._model.invalidate_cache(*self._cr_uid)
         if 0:
             yield
 
