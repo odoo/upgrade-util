@@ -65,7 +65,7 @@ def parametrize(argvalues):
 
 def _create_meta(sequence, *tags):
     class UpgradeMetaCase(MetaCase):
-        def __init__(self, name, bases, attrs):
+        def __init__(self, name, bases, attrs, **kwargs):
             # Setting test_tags in __init_subclass__ could work, but BaseCase will overide them in __init__.
             # we need to set test_tags after BaseCase __init__
             super().__init__(name, bases, attrs)
@@ -77,14 +77,6 @@ def _create_meta(sequence, *tags):
                 self.test_module = self.__module__.split(".")[2]
             elif self.__module__.startswith("odoo.addons.base.maintenance.migrations"):
                 self.test_module = self.__module__.split(".")[5]
-
-        def __dir__(self):
-            # since UpgradeCase and IntegrityCase are common classes intended to be overloaded,
-            # we dont want the default test_prepare and test_check to be executed when imported.
-            # This hack avoids tests to be executed if imported
-            if self in (UpgradeCase, IntegrityCase):
-                return []
-            return super().__dir__()
 
     return UpgradeMetaCase("UpgradeMetaCase", (), {})
 
@@ -101,8 +93,8 @@ class UnitTestCase(TransactionCase, _create_meta(10, "upgrade_unit")):
 class UpgradeCommon(BaseCase):
     __initialized = False
 
-    def __init_subclass__(cls):
-        cls.change_version = (None, None)
+    change_version = (None, None)
+    _abstract = True
 
     @property
     def key(self):
@@ -168,6 +160,8 @@ class UpgradeCommon(BaseCase):
     # could be reworked that to either call prepare or check in a unique test_method
     # -> but in this case impossible to filter on prepare or check with test_tags
     def test_prepare(self):
+        if self._abstract:
+            return
         (version, sub_version) = self.change_version
         if version is not None:
             current_version = parse_version(release.series)
@@ -188,6 +182,8 @@ class UpgradeCommon(BaseCase):
         self._set_value(self.key, value)  # prepare has been called, even if value is null
 
     def test_check(self):
+        if self._abstract:
+            return
         (version, sub_version) = self.change_version
         if version is not None:
             current_version = parse_version(release.series)
@@ -269,8 +265,9 @@ class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
 
     """
 
-    def __init_subclass__(cls):  # should be in metaCase for python2.7 compatibility?
-        if not hasattr(cls, "prepare") or not hasattr(cls, "check"):
+    def __init_subclass__(cls, abstract=False):
+        cls._abstract = abstract
+        if not abstract and (not hasattr(cls, "prepare") or not hasattr(cls, "check")):
             _logger.error("%s (UpgradeCase) must define prepare and check methods", cls.__name__)
 
     def test_prepare(self):
@@ -290,8 +287,9 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
 
     message = "Invariant check fail"
 
-    def __init_subclass__(cls):
-        if not hasattr(cls, "invariant"):
+    def __init_subclass__(cls, abstract=False):
+        cls._abstract = abstract
+        if not abstract and not hasattr(cls, "invariant"):
             _logger.error("%s (IntegrityCase) must define an invariant method", cls.__name__)
 
     # IntegrityCase should not alterate database:
