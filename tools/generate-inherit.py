@@ -142,14 +142,22 @@ VIRTUAL_INHERITS = {
         Inherit("account.invoice", born=Version("saas-11.1"), dead=Version("saas-12.5")),
         Inherit("account.payment", born=Version("saas-11.1"), dead=Version("saas-12.2")),
     ],
-    "mail.activity.mixin": [Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0"))],
+    "mail.activity.mixin": [
+        Inherit("l10n_lu.yearly.tax.report.manual", born=Version("13.0"), dead=Version("15.0")),
+        Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0")),
+    ],
     "mail.thread": [
         Inherit("account.online.link", born=Version("12.0"), dead=Version("14.0")),
         Inherit(model="l10n_cl.daily.sales.book", born=Version("14.0"), dead=Version("saas-14.3"), via=None),
+        Inherit("l10n_lu.yearly.tax.report.manual", born=Version("13.0"), dead=Version("15.0")),
         Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0")),
     ],
     "studio.mixin": [
         Inherit(model="ir.default", born=Version("14.0"), dead=Version("saas-14.2")),
+    ],
+    "google.gmail.mixin": [
+        Inherit(model="fetchmail.server", born=Version("12.0"), dead=Version("15.0"), via=None),
+        Inherit(model="ir.mail_server", born=Version("12.0"), dead=Version("15.0"), via=None),
     ],
 }
 

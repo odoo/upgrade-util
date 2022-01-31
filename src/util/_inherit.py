@@ -433,6 +433,10 @@ inheritance_data = frozendict(
             Inherit(model="calendar.event", born=parse_version("saas~13.4"), dead=None, via=None),
             Inherit(model="calendar.recurrence", born=parse_version("saas~13.4"), dead=None, via=None),
         ],
+        "google.gmail.mixin": [
+            Inherit(model="fetchmail.server", born=parse_version("12.0"), dead=None, via=None),
+            Inherit(model="ir.mail_server", born=parse_version("12.0"), dead=None, via=None),
+        ],
         "hr.employee.base": [
             Inherit(model="hr.employee", born=parse_version("saas~12.4"), dead=None, via=None),
             Inherit(model="hr.employee.public", born=parse_version("saas~12.4"), dead=None, via=None),
@@ -741,6 +745,7 @@ inheritance_data = frozendict(
             Inherit(model="hr.payslip", born=parse_version("saas~12.5"), dead=None, via=None),
             Inherit(model="hr.referral.reward", born=parse_version("saas~12.5"), dead=None, via=None),
             Inherit(model="ir.attachment", born=parse_version("saas~11.5"), dead=parse_version("saas~12.1"), via=None),
+            Inherit(model="l10n_lu.yearly.tax.report.manual", born=parse_version("13.0"), dead=None, via=None),
             Inherit(model="l10n_uk.vat.obligation", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="lunch.supplier", born=parse_version("saas~12.2"), dead=None, via=None),
             Inherit(model="mailing.mailing", born=parse_version("saas~12.5"), dead=None, via=None),
@@ -975,6 +980,7 @@ inheritance_data = frozendict(
             Inherit(model="idea.idea", born=parse_version("7.0"), dead=parse_version("7.saas~2"), via=None),
             Inherit(model="ir.attachment", born=parse_version("saas~11.5"), dead=parse_version("saas~12.1"), via=None),
             Inherit(model="l10n_cl.daily.sales.book", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="l10n_lu.yearly.tax.report.manual", born=parse_version("13.0"), dead=None, via=None),
             Inherit(model="l10n_uk.vat.obligation", born=parse_version("10.0"), dead=None, via=None),
             Inherit(model="lunch.supplier", born=parse_version("saas~12.2"), dead=None, via=None),
             Inherit(model="mail.blacklist", born=parse_version("saas~11.5"), dead=None, via=None),
