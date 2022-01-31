@@ -32,6 +32,10 @@ if sys.stderr.isatty():
 
 logger = logging.getLogger(__name__)
 
+if int(black.__version__.split(".")[0]) >= 22:
+    logger.critical("Too recent version of `black`. Please install version 21.12b0 in order to parse python2 code.")
+    sys.exit(1)
+
 MODELS = ["osv", "osv_memory", "Model", "TransientModel", "AbstractModel"]
 MODELS += [".".join(x).lstrip(".") for x in itertools.product(["openerp", "odoo", ""], ["osv", "models"], MODELS)]
 
