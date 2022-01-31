@@ -7,11 +7,11 @@ repos:
         language: script
 
   - repo: https://github.com/psf/black
-    rev: 21.8b0
+    rev: 22.1.0
     hooks:
       - id: black
   - repo: https://github.com/pycqa/isort
-    rev: 5.9.3
+    rev: 5.10.1
     hooks:
       - id: isort
   - repo: https://gitlab.com/pycqa/flake8
@@ -23,7 +23,7 @@ repos:
           - flake8-logging-format
           - flake8-implicit-str-concat
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.0.1
+    rev: v4.1.0
     hooks:
     - id: check-xml
     - id: check-yaml
