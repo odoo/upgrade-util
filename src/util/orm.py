@@ -16,6 +16,7 @@ try:
 except ImportError:
     from openerp import SUPERUSER_ID, release, modules
 
+from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_gte
@@ -119,14 +120,22 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
         e["ir.model.data"]._update("ir.cron", **data)
 
 
-def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="flush"):
-    assert strategy in {"flush", "commit"}
+_TRACKING_ATTR = "tracking" if version_gte("saas~12.2") else "track_visibility"
+
+
+def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto"):
+    assert strategy in {"flush", "commit", "auto"}
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
     flush = getattr(Model, "flush", lambda: None)
     if ids is None:
         cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
         ids = tuple(map(itemgetter(0), cr.fetchall()))
+
+    if strategy == "auto":
+        big_table = len(ids) > BIG_TABLE_THRESHOLD
+        any_tracked_field = any(getattr(Model._fields[f], _TRACKING_ATTR, False) for f in fields)
+        strategy = "commit" if big_table and any_tracked_field else "flush"
 
     size = (len(ids) + chunk_size - 1) / chunk_size
     qual = "%s %d-bucket" % (model, chunk_size) if chunk_size != 1 else model
