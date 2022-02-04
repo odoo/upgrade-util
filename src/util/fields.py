@@ -622,7 +622,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
     table = table_of_model(cr, model)
 
     if column_exists(cr, table, field):
-        query = "UPDATE {table} SET {field}= %s::json->>{field} WHERE {field} IN %s".format(table=table, field=field)
+        query = "UPDATE {table} SET {field}= %s::jsonb->>{field} WHERE {field} IN %s".format(table=table, field=field)
         queries = [
             cr.mogrify(q, [json.dumps(mapping), tuple(mapping)]).decode()
             for q in explode_query_range(cr, query, table=table)

@@ -751,7 +751,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 continue
             query = """
                 UPDATE {table} t
-                   SET {fk} = ('{jmap}'::json->>{fk}::varchar)::int4
+                   SET {fk} = ('{jmap}'::jsonb->>{fk}::varchar)::int4
                  WHERE {fk} IN %(old)s
             """
 
@@ -789,7 +789,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 if table_exists(cr, "ir_values"):
                     query = """
                          UPDATE ir_values
-                            SET value = {cast[0]} '{pmap}'::json->>({col}) {cast[2]}
+                            SET value = {cast[0]} '{pmap}'::jsonb->>({col}) {cast[2]}
                           WHERE key='default'
                             AND model=%s
                             AND name=%s
@@ -802,7 +802,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                     cr.execute(
                         """
                         UPDATE ir_default d
-                           SET json_value = '{smap}'::json->>json_value
+                           SET json_value = '{smap}'::jsonb->>json_value
                           FROM ir_model_fields f
                          WHERE f.id = d.field_id
                            AND f.model = %s
@@ -837,7 +837,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             jmap_expr = "true"  # no-op
             jmap_expr_upd = ""
         else:
-            jmap_expr = "\"{ir.res_id}\" = ('{jmap}'::json->>t.{ir.res_id}::varchar)::int4".format(**locals())
+            jmap_expr = "\"{ir.res_id}\" = ('{jmap}'::jsonb->>t.{ir.res_id}::varchar)::int4".format(**locals())
             jmap_expr_upd = "," + jmap_expr
 
         query = """
@@ -885,7 +885,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             cr.execute(
                 """
                     UPDATE "{table}"
-                       SET "{column}" = '{cmap}'::json->>"{column}"
+                       SET "{column}" = '{cmap}'::jsonb->>"{column}"
                      WHERE "{column}" IN %s
             """.format(
                     table=table, column=column, cmap=cmap

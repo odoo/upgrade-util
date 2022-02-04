@@ -375,7 +375,7 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
               JOIN ir_model_fields mf2
                 ON mf1.model=%s
                AND mf2.model=%s
-               AND mf2.name=('{jmap}'::json ->> mf1.name::varchar)::varchar
+               AND mf2.name=('{jmap}'::jsonb ->> mf1.name::varchar)::varchar
             """.format(
                 jmap=json.dumps(fields_mapping)
             ),
