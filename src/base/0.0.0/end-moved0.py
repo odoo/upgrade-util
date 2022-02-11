@@ -14,7 +14,14 @@ def migrate(cr, version):
     moved_fields = set(tuple(moved) for moved in cr.fetchall()) - util.ENVIRON["moved0"]
 
     remaining_fields = []
+    moved_ignore = (  # ignore tables created after moved0 to avoir error
+        "account_payment_pre_backup",
+        "account_bank_statement_line_pre_backup",
+    )
     for f in moved_fields:
+        if f[0] in moved_ignore:
+            continue
+
         # if the moved column is empty, just remove it
         cr.execute("SELECT EXISTS(SELECT 1 FROM {0} WHERE {1} IS NOT NULL)".format(*f))
 
