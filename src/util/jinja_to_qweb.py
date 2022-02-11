@@ -244,16 +244,16 @@ def upgrade_jinja_fields(
     sql_where_qweb_fields = [field + r"~ '(\$\{|%\s*(if|for))'" for field in qweb_fields]
     sql_where_fields = " OR ".join(sql_where_inline_fields + sql_where_qweb_fields)
 
+    templates_to_check[table_name] = []
+    model = model_of_table(cr, table_name)
+
     cr.execute(
         f"""
         SELECT id, {name_field}, {sql_fields}
-        FROM {table_name}
-        WHERE {sql_where_fields}
+          FROM {table_name}
+         WHERE {sql_where_fields}
         """
     )
-
-    templates_to_check[table_name] = []
-    model = model_of_table(cr, table_name)
 
     for data in cr.dictfetchall():
         _logger.info("process %s(%s) %s", table_name, data["id"], data[name_field])
