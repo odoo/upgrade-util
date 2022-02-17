@@ -11,7 +11,9 @@ from .pg import (
     _get_unique_indexes_with,
     column_exists,
     column_updatable,
+    explode_query_range,
     get_m2m_tables,
+    parallel_execute,
     remove_constraint,
     table_exists,
     view_exists,
@@ -430,6 +432,7 @@ def remove_inherit_from_model(cr, model, inherit, keep=()):
             table = table_of_model(cr, relation)
             irs = [ir for ir in indirect_references(cr) if ir.table == table]
             for ir in irs:
-                query = 'DELETE FROM "{}" WHERE {}'.format(ir.table, ir.model_filter())
-                cr.execute(query, [model])
+                query = 'DELETE FROM "{}" WHERE ({})'.format(ir.table, ir.model_filter())
+                query = cr.mogrify(query, [model]).decode()
+                parallel_execute(cr, explode_query_range(cr, query, table=ir.table))
         remove_field(cr, model, field)
