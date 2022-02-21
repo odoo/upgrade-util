@@ -397,36 +397,37 @@ def custom_module_field_as_manual(env, rollback=True):
     # 3.5 patches
     # 3.5.1 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
     # models that have been converted to manual have a too long name, and we dont have the `_table` info.
-    with patch("odoo.models.check_pg_name", lambda name: None):
-        # 3.5.2: `display_name` is added automatically, as a base field, and depends on the field `name`
-        # Sometimes, a custom model has no `name` field or it couldn't be loaded (e.g. an invalid `related`)
-        # Mark it as manual so its skipped on loading fail.
-        from odoo.models import BaseModel
+    if version_gte("9.0"):
+        with patch("odoo.models.check_pg_name", lambda name: None):
+            # 3.5.2: `display_name` is added automatically, as a base field, and depends on the field `name`
+            # Sometimes, a custom model has no `name` field or it couldn't be loaded (e.g. an invalid `related`)
+            # Mark it as manual so its skipped on loading fail.
+            from odoo.models import BaseModel
 
-        try:
-            origin_add_magic_fields = BaseModel._add_magic_fields
+            try:
+                origin_add_magic_fields = BaseModel._add_magic_fields
 
-            def _add_magic_fields(self):
-                res = origin_add_magic_fields(self)
-                if self._custom and "display_name" in self._fields:
-                    self._fields["display_name"].manual = True
-                return res
+                def _add_magic_fields(self):
+                    res = origin_add_magic_fields(self)
+                    if self._custom and "display_name" in self._fields:
+                        self._fields["display_name"].manual = True
+                    return res
 
-            def patch_display_name():
-                return patch.object(BaseModel, "_add_magic_fields", _add_magic_fields)
+                def patch_display_name():
+                    return patch.object(BaseModel, "_add_magic_fields", _add_magic_fields)
 
-        except AttributeError:
-            # Since saas-14.4, _add_magic_fields() no longer exists.  Moreover,
-            # '_rec_name' is automatically fixed when the field it refers to is
-            # dropped from the model's class.  Therefore, 'display_name' no
-            # longer needs to become manual.
-            @contextmanager
-            def patch_display_name():
-                yield
+            except AttributeError:
+                # Since saas-14.4, _add_magic_fields() no longer exists.  Moreover,
+                # '_rec_name' is automatically fixed when the field it refers to is
+                # dropped from the model's class.  Therefore, 'display_name' no
+                # longer needs to become manual.
+                @contextmanager
+                def patch_display_name():
+                    yield
 
-        with patch_display_name():
-            # 4. Reload the registry with the models and fields converted to manual.
-            env.registry.setup_models(env.cr)
+            with patch_display_name():
+                # 4. Reload the registry with the models and fields converted to manual.
+                env.registry.setup_models(env.cr)
 
     # 5. Do the operation.
     yield
