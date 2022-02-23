@@ -11,6 +11,7 @@ from .pg import (
     _get_unique_indexes_with,
     column_exists,
     column_updatable,
+    disable_constraints,
     explode_query_range,
     get_m2m_tables,
     parallel_execute,
@@ -424,6 +425,7 @@ def remove_inherit_from_model(cr, model, inherit, keep=()):
     """,
         [inherit, list(keep)],
     )
+    self_referencing_constraints = {"mail_message": ["mail_message_parent_id_fkey"]}
     for field, ftype, relation, store in cr.fetchall():
         if ftype.endswith("2many") and store:
             # for mixin, x2many are filtered by their model.
@@ -434,5 +436,6 @@ def remove_inherit_from_model(cr, model, inherit, keep=()):
             for ir in irs:
                 query = 'DELETE FROM "{}" WHERE ({})'.format(ir.table, ir.model_filter())
                 query = cr.mogrify(query, [model]).decode()
-                parallel_execute(cr, explode_query_range(cr, query, table=ir.table))
+                with disable_constraints(cr, ir.table, *self_referencing_constraints.get(ir.table, [])):
+                    parallel_execute(cr, explode_query_range(cr, query, table=ir.table))
         remove_field(cr, model, field)

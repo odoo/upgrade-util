@@ -51,7 +51,6 @@ if ThreadPoolExecutor is None:
         for query in log_progress(queries, logger, qualifier="queries", size=len(queries)):
             cr.execute(query)
 
-
 else:
 
     def parallel_execute(cr, queries, logger=_logger):
@@ -742,3 +741,32 @@ def get_m2m_tables(cr, table):
 
     cr.execute(query, [table])
     return [row[0] for row in cr.fetchall()]
+
+
+@contextmanager
+def disable_constraints(cr, table_name, *constraint_names):
+    _validate_table(table_name)
+    if not constraint_names:
+        yield
+        return
+
+    cr.execute(
+        """
+        SELECT conname,
+               pg_get_constraintdef(oid)
+          FROM pg_constraint
+         WHERE conrelid::regclass = %s::regclass
+           AND conname in %s
+        """,
+        [table_name, tuple(constraint_names)],
+    )
+    if not cr.rowcount:
+        yield
+        return
+
+    constraints_info = cr.fetchall()
+    for constraint_name, _ in constraints_info:
+        cr.execute('ALTER TABLE "{}" DROP CONSTRAINT "{}"'.format(table_name, constraint_name))
+    yield
+    for constraint_name, constraint_def in constraints_info:
+        cr.execute('ALTER TABLE "{}" ADD CONSTRAINT "{}" {}'.format(table_name, constraint_name, constraint_def))
