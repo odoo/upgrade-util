@@ -60,6 +60,17 @@ def version_gte(version):
     return parse_version(release.serie) >= parse_version(version)
 
 
+def version_between(a, b):
+    """
+    Bounds are inclusives.
+    Equivalent to:
+        current_version >= a AND current_version <= b
+    """
+    if "-" in a + b:
+        raise SleepyDeveloperError("version cannot contains dash")
+    return parse_version(a) <= parse_version(release.serie) <= parse_version(b)
+
+
 @_cached
 def has_enterprise():
     """Return whernever the current installation has enterprise addons availables"""
@@ -126,7 +137,6 @@ try:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
-
 
 except ImportError:
     # python2 version
