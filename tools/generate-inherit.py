@@ -370,7 +370,7 @@ Inherit = namedtuple("Inherit", "model born dead via")  # NOTE: dead is non-incl
 inheritance_data = frozendict({result!r})
 """
 
-    with open(pyproject, "r") as fp:
+    with open(pyproject, "rb") as fp:
         line_length = tomli.load(fp)["tool"]["black"]["line-length"]
     mode = black.FileMode(target_versions={black.TargetVersion.PY27}, line_length=line_length)
     print(black.format_str(output, mode=mode), end="")
