@@ -606,6 +606,10 @@ inheritance_data = frozendict(
                 model="l10n_co_reports.certification_report.iva", born=parse_version("10.saas~18"), dead=None, via=None
             ),
         ],
+        "l10n_eg.eta.account.tax.mixin": [
+            Inherit(model="account.tax", born=parse_version("15.0"), dead=None, via=None),
+            Inherit(model="account.tax.template", born=parse_version("15.0"), dead=None, via=None),
+        ],
         "l10n_es.sii.account.tax.mixin": [
             Inherit(model="account.tax", born=parse_version("14.0"), dead=None, via=None),
             Inherit(model="account.tax.template", born=parse_version("14.0"), dead=None, via=None),
@@ -714,6 +718,7 @@ inheritance_data = frozendict(
             Inherit(
                 model="account.asset.asset", born=parse_version("saas~12.1"), dead=parse_version("saas~12.3"), via=None
             ),
+            Inherit(model="account.batch.payment", born=parse_version("saas~15.2"), dead=None, via=None),
             Inherit(
                 model="account.invoice", born=parse_version("10.saas~14"), dead=parse_version("saas~12.4"), via=None
             ),
@@ -782,9 +787,12 @@ inheritance_data = frozendict(
                 model="stock.inventory", born=parse_version("saas~13.5"), dead=parse_version("saas~14.3"), via=None
             ),
             Inherit(model="stock.landed.cost", born=parse_version("saas~12.1"), dead=None, via=None),
+            Inherit(model="stock.lot", born=parse_version("saas~15.2"), dead=None, via=None),
             Inherit(model="stock.picking", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="stock.picking.batch", born=parse_version("saas~12.1"), dead=None, via=None),
-            Inherit(model="stock.production.lot", born=parse_version("saas~11.5"), dead=None, via=None),
+            Inherit(
+                model="stock.production.lot", born=parse_version("saas~11.5"), dead=parse_version("saas~15.2"), via=None
+            ),
             Inherit(model="survey.survey", born=parse_version("10.saas~14"), dead=None, via=None),
         ],
         "mail.address.mixin": [
@@ -898,6 +906,7 @@ inheritance_data = frozendict(
                 model="account.asset.asset", born=parse_version("8.saas~6"), dead=parse_version("saas~12.3"), via=None
             ),
             Inherit(model="account.bank.statement", born=parse_version("7.0"), dead=None, via=None),
+            Inherit(model="account.batch.payment", born=parse_version("saas~15.2"), dead=None, via=None),
             Inherit(model="account.invoice", born=parse_version("7.0"), dead=parse_version("saas~12.4"), via=None),
             Inherit(model="account.journal", born=parse_version("saas~12.2"), dead=None, via=None),
             Inherit(model="account.move", born=parse_version("10.saas~14"), dead=parse_version("10.saas~17"), via=None),
@@ -1051,10 +1060,13 @@ inheritance_data = frozendict(
                 model="stock.inventory", born=parse_version("saas~13.5"), dead=parse_version("saas~14.3"), via=None
             ),
             Inherit(model="stock.landed.cost", born=parse_version("7.saas~5"), dead=None, via=None),
+            Inherit(model="stock.lot", born=parse_version("saas~15.2"), dead=None, via=None),
             Inherit(model="stock.picking", born=parse_version("7.0"), dead=None, via=None),
             Inherit(model="stock.picking.batch", born=parse_version("10.saas~17"), dead=None, via=None),
             Inherit(model="stock.picking.wave", born=parse_version("9.0"), dead=parse_version("10.saas~17"), via=None),
-            Inherit(model="stock.production.lot", born=parse_version("7.saas~5"), dead=None, via=None),
+            Inherit(
+                model="stock.production.lot", born=parse_version("7.saas~5"), dead=parse_version("saas~15.2"), via=None
+            ),
             Inherit(model="stock.scrap", born=parse_version("saas~12.5"), dead=None, via=None),
             Inherit(model="survey.survey", born=parse_version("7.saas~4"), dead=None, via=None),
             Inherit(model="team.user", born=parse_version("9.saas~13"), dead=parse_version("saas~14.2"), via=None),
@@ -1149,6 +1161,7 @@ inheritance_data = frozendict(
             Inherit(model="project.task", born=parse_version("10.saas~18"), dead=None, via=None),
             Inherit(model="purchase.order", born=parse_version("saas~11.5"), dead=None, via=None),
             Inherit(model="sale.order", born=parse_version("10.saas~18"), dead=None, via=None),
+            Inherit(model="sale.subscription", born=parse_version("saas~15.2"), dead=None, via=None),
             Inherit(model="sign.request.item", born=parse_version("saas~13.2"), dead=None, via=None),
         ],
         "portal.share": [Inherit(model="project.share.wizard", born=parse_version("saas~14.5"), dead=None, via=None)],
@@ -1901,6 +1914,7 @@ inheritance_data = frozendict(
             Inherit(model="forum.forum", born=parse_version("saas~11.5"), dead=None, via=None),
             Inherit(model="gift.card", born=parse_version("saas~14.3"), dead=None, via=None),
             Inherit(model="product.public.category", born=parse_version("saas~11.5"), dead=None, via=None),
+            Inherit(model="product.tag", born=parse_version("saas~15.2"), dead=None, via=None),
             Inherit(
                 model="sale.coupon.program", born=parse_version("saas~11.5"), dead=parse_version("saas~13.4"), via=None
             ),
