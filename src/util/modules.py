@@ -3,6 +3,7 @@ try:
     from collections.abc import Sequence, Set
 except ImportError:
     from collections import Sequence, Set
+
 import logging
 import os
 from inspect import currentframe
@@ -23,11 +24,11 @@ except ImportError:
     from openerp.tools.misc import topological_sort
     from openerp.modules import load_information_from_description_file as get_manifest
 
-from .const import NEARLYWARN
+from .const import ENVIRON, NEARLYWARN
 from .exceptions import MigrationError
 from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _validate_model
-from .misc import on_CI
+from .misc import on_CI, version_gte
 from .models import delete_model
 from .orm import env
 from .pg import column_exists
@@ -592,6 +593,16 @@ def force_upgrade_of_fresh_module(cr, module, init=True):
     of not respecting noupdate flags (in xml file nor in ir_model_data) which can be quite
     problematic
     """
+    if version_gte("saas~14.5"):
+        # We must delay until the modules actually exists. They are added by the auto discovery process.
+        ENVIRON["__modules_auto_discovery_force_upgrades"][module] = init
+        return
+
+    return _force_upgrade_of_fresh_module(cr, module, init)
+
+
+def _force_upgrade_of_fresh_module(cr, module, init=True):
+    # Low level impemenation
     filename, _ = frame_codeinfo(currentframe(), 1)
     version = ".".join(filename.split(os.path.sep)[-2].split(".")[:2])
 
@@ -618,10 +629,12 @@ def force_upgrade_of_fresh_module(cr, module, init=True):
 force_migration_of_fresh_module = force_upgrade_of_fresh_module
 
 
-def modules_auto_discovery(cr, force_installs=None):
-    # Cursor, Optional[Dict[str, Union[bool, Callable]]] -> None
-    if force_installs is None:
-        force_installs = {}
+def _trigger_auto_discovery(cr):
+    # low level implementation.
+    # Called by `base/0.0.0/post-modules-auto-discovery.py` script.
+    # Use accumulated values for the auto_install and force_upgrade modules.
+
+    force_installs = ENVIRON["__modules_auto_discovery_force_installs"]
 
     cr.execute(
         """
@@ -650,12 +663,23 @@ def modules_auto_discovery(cr, force_installs=None):
                 module_deps_diff(cr, module, plus=plus, minus=minus)
             module_auto_install(cr, module, auto_install)
 
-        force = force_installs.get(module)
-        if callable(force):
-            force = force(cr)
-
-        if force:
+        if module in force_installs:
             force_install_module(cr, module)
+
+    for module, init in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
+        _force_upgrade_of_fresh_module(cr, module, init)
+
+
+def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
+    # Cursor, Optional[Set[str]], Optional[Set[str]] -> None
+
+    # Register the modules to force install and force upgrade
+    # The actual auto discovery is delayed in `base/0.0.0/post-modules-auto-discovery.py`
+
+    if force_installs:
+        ENVIRON["__modules_auto_discovery_force_installs"].update(force_installs)
+    if force_upgrades:
+        ENVIRON["__modules_auto_discovery_force_upgrades"].update(dict.fromkeys(force_upgrades, False))
 
 
 def move_model(cr, model, from_module, to_module, move_data=False):
