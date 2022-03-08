@@ -63,7 +63,7 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
         """,
         dict(regex=regex),
     ).decode()
-    for select_query in util.explode_query_range(cr, query, table=table):
+    for select_query in util.explode_query_range(cr, query, table=table, bucket_size=1500):
         add_snippet_names(cr, table, column, snippets, select_query)
 
 
