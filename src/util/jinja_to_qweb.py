@@ -254,7 +254,6 @@ def upgrade_jinja_fields(
          WHERE {sql_where_fields}
         """
     )
-
     for data in cr.dictfetchall():
         _logger.info("process %s(%s) %s", table_name, data["id"], data[name_field])
 
@@ -284,18 +283,6 @@ def upgrade_jinja_fields(
                 """,
                 field_values + [data["id"]],
             )
-
-            model = model_of_table(cr, table_name)
-            cr.execute(
-                """
-                    DELETE FROM ir_translation
-                          WHERE type = 'model'
-                            AND name IN %s
-                            AND res_id = %s
-                """,
-                [tuple(f"{model},{f}" for f in fields), data["id"]],
-            )
-
         # prepare data to check later
 
         # only for mailing.mailing
@@ -320,6 +307,65 @@ def upgrade_jinja_fields(
                 templates_converted,
             )
         )
+
+    _logger.info("process translations for model %s", model)
+    # NOTE: Not all translations may not be updated.
+    # Differente jinja values can give the same qweb value.
+    # `${object.company_id.name|safe}` and `${object.company_id.name}` both give `{{ object.company_id.name }}`
+    # Which will violates the unique constraint.
+    # In this case, we just ignore the update and remove the duplicated row.
+
+    inline_entries = [f"{model},{name}" for name in inline_template_fields]
+    if inline_entries:
+        cr.execute(
+            """
+            SELECT id, src, value
+              FROM ir_translation
+             WHERE name IN %s
+               AND (src LIKE '%%${%%' OR value LIKE '%%${%%')
+            """,
+            [tuple(inline_entries)],
+        )
+        for tid, src, value in cr.fetchall():
+            converted_src = convert_jinja_to_inline(src) if src else ""
+            converted_value = convert_jinja_to_inline(value) if value else ""
+            cr.execute(
+                """DO $$
+                     BEGIN
+                       UPDATE ir_translation SET src=%s, value=%s WHERE id=%s;
+                     EXCEPTION WHEN unique_violation THEN
+                       DELETE FROM ir_translation WHERE id=%s;
+                     END;
+                   $$
+                """,
+                [converted_src, converted_value, tid, tid],
+            )
+
+    qweb_entries = [f"{model},{name}" for name in qweb_fields]
+    if qweb_entries:
+        cr.execute(
+            r"""
+            SELECT id, src, value
+              FROM ir_translation
+             WHERE name IN %s
+               AND (src ~ '(\$\{|%%\s*(if|for))' OR value ~ '(\$\{|%%\s*(if|for))')
+            """,
+            [tuple(qweb_entries)],
+        )
+        for tid, src, value in cr.fetchall():
+            converted_src = convert_jinja_to_qweb(src) if src else ""
+            converted_value = convert_jinja_to_qweb(value) if value else ""
+            cr.execute(
+                """DO $$
+                     BEGIN
+                       UPDATE ir_translation SET src=%s, value=%s WHERE id=%s;
+                     EXCEPTION WHEN unique_violation THEN
+                       DELETE FROM ir_translation WHERE id=%s;
+                     END;
+                   $$
+                """,
+                [converted_src, converted_value, tid, tid],
+            )
 
 
 def verify_upgraded_jinja_fields(cr):
