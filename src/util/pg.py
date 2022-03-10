@@ -97,12 +97,23 @@ else:
                 pass
 
 
-def explode_query(cr, query, num_buckets=8, prefix=""):
+def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     """
     Explode a query to multiple queries that can be executed in parallel
 
     Use modulo stategy to separate queries in buckets
     """
+    if prefix is not None:
+        if alias is not None:
+            raise ValueError("Cannot use both `alias` and deprecated `prefix` arguments.")
+        _logger.getChild("explode_query").warning(
+            "The `prefix` argument is deprecated. Use the `alias` argument instead."
+        )
+    elif alias is not None:
+        prefix = alias + "."
+    else:
+        prefix = ""
+
     if "{parallel_filter}" not in query:
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
@@ -115,12 +126,22 @@ def explode_query(cr, query, num_buckets=8, prefix=""):
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
-def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
+def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=None):
     """
     Explode a query to multiple queries that can be executed in parallel
 
     Use between stategy to separate queries in buckets
     """
+
+    if prefix is not None:
+        if alias is not None:
+            raise ValueError("Cannot use both `alias` and deprecated `prefix` arguments.")
+        _logger.getChild("explode_query_range").warning(
+            "The `prefix` argument is deprecated. Use the `alias` argument instead."
+        )
+        alias = prefix.rstrip(".")
+
+    alias = alias or table
 
     cr.execute("SELECT min(id), max(id) FROM {}".format(table))
     min_id, max_id = cr.fetchone()
@@ -135,10 +156,10 @@ def explode_query_range(cr, query, table, bucket_size=10000, prefix=""):
         # If there is less than `bucket_size` records (with a 10% tolerance), no need to explode the query.
         # Force usage of `prefix` in the query to validate it correctness.
         # If we don't the query may only be valid if there is no split. It avoid scripts to pass the CI but fail in production.
-        parallel_filter = "{prefix}id IS NOT NULL".format(prefix=prefix)
+        parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
         return [query.format(parallel_filter=parallel_filter)]
 
-    parallel_filter = "{prefix}id BETWEEN %s AND %s".format(prefix=prefix)
+    parallel_filter = "{alias}.id BETWEEN %s AND %s".format(alias=alias)
     query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
     return [
         cr.mogrify(query, [index, index + bucket_size - 1]).decode() for index in range(min_id, max_id, bucket_size)
