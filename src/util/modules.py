@@ -585,6 +585,17 @@ def new_module(cr, module, deps=(), auto_install=False):
     module_auto_install(cr, module, auto_install)
 
 
+def _caller_version(depth=2):
+    frame = currentframe()
+    version = "util"
+    while version == "util":
+        filename, _ = frame_codeinfo(frame, depth)
+        version = ".".join(filename.split(os.path.sep)[-2].split(".")[:2])
+        depth += 1
+
+    return version
+
+
 def force_upgrade_of_fresh_module(cr, module, init=True):
     """It may appear that new (or forced installed) modules need an upgrade script to grab data
     from another module. (we cannot add a pre-init hook on the fly)
@@ -593,19 +604,17 @@ def force_upgrade_of_fresh_module(cr, module, init=True):
     of not respecting noupdate flags (in xml file nor in ir_model_data) which can be quite
     problematic
     """
+    version = _caller_version()
     if version_gte("saas~14.5"):
         # We must delay until the modules actually exists. They are added by the auto discovery process.
-        ENVIRON["__modules_auto_discovery_force_upgrades"][module] = init
+        ENVIRON["__modules_auto_discovery_force_upgrades"][module] = (init, version)
         return
 
-    return _force_upgrade_of_fresh_module(cr, module, init)
+    return _force_upgrade_of_fresh_module(cr, module, init, version)
 
 
-def _force_upgrade_of_fresh_module(cr, module, init=True):
-    # Low level impemenation
-    filename, _ = frame_codeinfo(currentframe(), 1)
-    version = ".".join(filename.split(os.path.sep)[-2].split(".")[:2])
-
+def _force_upgrade_of_fresh_module(cr, module, init, version):
+    # Low level implementation
     # Force module state to be in `to upgrade`.
     # Needed for migration script execution. See http://git.io/vnF7f
     cr.execute(
@@ -666,8 +675,8 @@ def _trigger_auto_discovery(cr):
         if module in force_installs:
             force_install_module(cr, module)
 
-    for module, init in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
-        _force_upgrade_of_fresh_module(cr, module, init)
+    for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
+        _force_upgrade_of_fresh_module(cr, module, init, version)
 
 
 def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
@@ -679,7 +688,8 @@ def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
     if force_installs:
         ENVIRON["__modules_auto_discovery_force_installs"].update(force_installs)
     if force_upgrades:
-        ENVIRON["__modules_auto_discovery_force_upgrades"].update(dict.fromkeys(force_upgrades, False))
+        version = _caller_version()
+        ENVIRON["__modules_auto_discovery_force_upgrades"].update(dict.fromkeys(force_upgrades, (False, version)))
 
 
 def move_model(cr, model, from_module, to_module, move_data=False):
