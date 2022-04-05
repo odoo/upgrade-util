@@ -21,8 +21,12 @@ try:
 except ImportError:
     import openerp as odoo
     from openerp.tools.func import frame_codeinfo
-    from openerp.tools.misc import topological_sort
     from openerp.modules import load_information_from_description_file as get_manifest
+
+    try:
+        from openerp.tools.misc import topological_sort
+    except ImportError:
+        from openerp.addons.web.controllers.main import module_topological_sort as topological_sort
 
 from .const import ENVIRON, NEARLYWARN
 from .exceptions import MigrationError
