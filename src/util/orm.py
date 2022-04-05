@@ -12,9 +12,13 @@ except ImportError:
     from mock import patch
 
 try:
-    from odoo import SUPERUSER_ID, modules, release
+    from odoo import SUPERUSER_ID
+    from odoo import fields as ofields
+    from odoo import modules, release
 except ImportError:
-    from openerp import SUPERUSER_ID, release, modules
+    from openerp import SUPERUSER_ID
+    from openerp import fields as ofields
+    from openerp import modules, release
 
 from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
@@ -148,7 +152,14 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
                 records._recompute_todo(field)
             else:
                 Model.env.add_to_compute(field, records)
-        records.recompute()
+
+        old_convert = ofields.Selection.convert_to_cache
+
+        def _convert(self, value, record, validate=True):
+            return old_convert(self, value, record, False)
+
+        with patch(ofields.__name__ + ".Selection.convert_to_cache", _convert):
+            records.recompute()
         if strategy == "commit":
             cr.commit()
         else:
