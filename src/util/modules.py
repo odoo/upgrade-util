@@ -20,8 +20,8 @@ try:
         from odoo.modules import load_information_from_description_file as get_manifest
 except ImportError:
     import openerp as odoo
-    from openerp.tools.func import frame_codeinfo
     from openerp.modules import load_information_from_description_file as get_manifest
+    from openerp.tools.func import frame_codeinfo
 
     try:
         from openerp.tools.misc import topological_sort
