@@ -450,4 +450,5 @@ def custom_module_field_as_manual(env, rollback=True):
             env.registry[model]._rec_name = rec_name
 
         # 7. Reload the registry as before
+        env.clear()
         env.registry.setup_models(env.cr)
