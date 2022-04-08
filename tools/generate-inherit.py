@@ -127,6 +127,14 @@ IGNORED_FILES = [
 # Theses versions being dead and no upgrade to these versions being made, we can consider it contains some models
 # Without it, we would end with holes in inherit tree.
 VIRTUAL_INHERITS = {
+    "account.avatax": [
+        Inherit(model="account.move", born=Version("14.0"), dead=Version("15.0"), via=None),
+        Inherit(model="sale.order", born=Version("14.0"), dead=Version("15.0"), via=None),
+    ],
+    "account.avatax.unique.code": [
+        Inherit(model="account.avatax", born=Version("14.0"), dead=Version("15.0"), via=None),
+        Inherit(model="res.partner", born=Version("14.0"), dead=Version("15.0"), via=None),
+    ],
     "account.report": [
         Inherit("account.cash.flow.report", born=Version("saas-11.1"), dead=Version("saas-12.5")),
         Inherit("l10n.lu.report.partner.vat.intra", born=Version("saas-13.1"), dead=Version("saas-13.2")),
@@ -155,6 +163,10 @@ VIRTUAL_INHERITS = {
         Inherit(model="l10n_cl.daily.sales.book", born=Version("14.0"), dead=Version("saas-14.3"), via=None),
         Inherit("l10n_lu.yearly.tax.report.manual", born=Version("13.0"), dead=Version("15.0")),
         Inherit("l10n_uk.vat.obligation", born=Version("saas-15"), dead=Version("12.0")),
+    ],
+    "microsoft.outlook.mixin": [
+        Inherit(model="fetchmail.server", born=Version("12.0"), dead=Version("saas-15.3"), via=None),
+        Inherit(model="ir.mail_server", born=Version("12.0"), dead=Version("saas-15.3"), via=None),
     ],
     "studio.mixin": [
         Inherit(model="ir.default", born=Version("14.0"), dead=Version("saas-14.2")),
