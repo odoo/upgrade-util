@@ -49,6 +49,14 @@ inheritance_data = frozendict(
         "account.analytic.line": [
             Inherit(model="hr.analytic.timesheet", born=parse_version("7.0"), dead=parse_version("9.0"), via="line_id")
         ],
+        "account.avatax": [
+            Inherit(model="account.move", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="sale.order", born=parse_version("14.0"), dead=None, via=None),
+        ],
+        "account.avatax.unique.code": [
+            Inherit(model="account.avatax", born=parse_version("14.0"), dead=None, via=None),
+            Inherit(model="res.partner", born=parse_version("14.0"), dead=None, via=None),
+        ],
         "account.coa.report": [
             Inherit(model="l10n_mx.trial.report", born=parse_version("10.saas~14"), dead=None, via=None)
         ],
@@ -1111,6 +1119,10 @@ inheritance_data = frozendict(
         "microsoft.calendar.sync": [
             Inherit(model="calendar.event", born=parse_version("saas~13.5"), dead=None, via=None),
             Inherit(model="calendar.recurrence", born=parse_version("saas~13.5"), dead=None, via=None),
+        ],
+        "microsoft.outlook.mixin": [
+            Inherit(model="fetchmail.server", born=parse_version("12.0"), dead=None, via=None),
+            Inherit(model="ir.mail_server", born=parse_version("12.0"), dead=None, via=None),
         ],
         "mrp.abstract.workorder": [
             Inherit(
