@@ -6,12 +6,13 @@ import logging
 import subprocess
 import sys
 import tokenize
+from argparse import ArgumentParser, Namespace
 from ast import literal_eval
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import total_ordering
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Set, Tuple
+from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
 import black
 import tomli
@@ -92,6 +93,13 @@ class Version:
 
     def __hash__(self):
         return hash(self.name)  # Only name is relevant
+
+    @classmethod
+    def parse(cls, name):
+        name = name.replace("~", "-")
+        if not (name.startswith("saas-") or name.endswith(".0")):
+            name = name.split(".", 1)[-1]
+        return cls(name)
 
 
 @dataclass(order=True)
@@ -193,6 +201,24 @@ def _read_python_source(filename):
         f.close()
     with io.open(filename, "r", encoding=encoding, newline="") as f:
         return f.read(), encoding
+
+
+class BootstrapVisitor(Visitor):
+    result: Dict[str, List[Version]] = {}
+
+    def to_str(self, node):
+        if isinstance(node, black.Node):
+            return "".join(self.to_str(c) for c in node.children)
+        return node.value
+
+    def visit_dictsetmaker(self, node):
+        eval_context = {
+            "Inherit": Inherit,
+            "parse_version": Version.parse,
+        }
+
+        self.result = eval(f"{{ {self.to_str(node)} }}", eval_context)
+        return []
 
 
 @dataclass
@@ -307,16 +333,29 @@ def checkout(wd: Path, repo: Repo, version: Version) -> bool:
     return True
 
 
-def main():
-    wd = Path("/tmp/inh")  # TODO make it configurable
-    logger.info("⚙️  Initialize repositories")
+def bootstrap(from_file: Path):
+    logger.info("📂 Bootstraping from %s", from_file)
+    visitor = BootstrapVisitor()
+
+    code, _ = _read_python_source(from_file)
+    node = black.lib2to3_parse(code)
+
+    list(visitor.visit(node))
+    return defaultdict(list, visitor.result)
+
+
+def main(options: Namespace):
+    wd = options.working_dir
+    logger.info("⚙️  Initialize repositories into %s", wd)
     init_repos(wd)
 
-    result = defaultdict(list)
+    result = bootstrap(options.bootstrap_file) if options.bootstrap_file else defaultdict(list)
 
     for version in VERSIONS:
-        # if version.name != "saas-3":
-        #     continue
+        if not (options.from_branch <= version <= options.to_branch):
+            logger.info("⏭  Skip version %s", version.name)
+            continue
+
         visitor = OdooVisitor()
 
         for model, virtuals in VIRTUAL_INHERITS.items():
@@ -388,16 +427,34 @@ inheritance_data = frozendict({result!r})
     print(black.format_str(output, mode=mode), end="")
 
 
-# def debug():
-#     code, _ = _read_python_source("/tmp/inh/odoo/addons/website_theme_install/models/ir_module_module.py")
+# def debug(options: Namespace):
+#     from black.debug import DebugVisitor
+#     assert options.bootstrap_file
+#     code, _ = _read_python_source(options.bootstrap_file)
 #     node = black.lib2to3_parse(code)
 
-#     black.DebugVisitor.show(node)
+#     # DebugVisitor.show(node)
+#     result = bootstrap(options.bootstrap_file)
+#     print(f"inheritance_data = frozendict({result!r})")
 #     # v = OdooVisitor()
 #     # list(v.visit(node))
 #     # print(v.inh)
 
 
 if __name__ == "__main__":
-    # debug()
-    main()
+    parser = ArgumentParser(description="Regenerate `_inherit.py` from source files")
+
+    parser.add_argument("--working-dir", "-w", dest="working_dir", type=Path, default="/tmp/inh")
+    parser.add_argument("--bootstrap-file", "-b", dest="bootstrap_file", type=Path)
+
+    parser.add_argument(
+        "--from-branch", "-f", dest="from_branch", type=Version, choices=VERSIONS, default=VERSIONS[0], metavar="BRANCH"
+    )
+    parser.add_argument(
+        "--to-branch", "-t", dest="to_branch", type=Version, choices=VERSIONS, default=VERSIONS[-1], metavar="BRANCH"
+    )
+
+    options = parser.parse_args()
+
+    # debug(options)
+    main(options)
