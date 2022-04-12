@@ -170,7 +170,6 @@ def uninstall_module(cr, module):
             else:
                 remove_field(cr, model, name)
 
-    cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
     cr.execute("DELETE FROM ir_translation WHERE module=%s", [module])
     cr.execute("UPDATE ir_module_module SET state='uninstalled' WHERE name=%s", (module,))
@@ -211,8 +210,11 @@ def remove_module(cr, module):
     # are made using orm.
 
     uninstall_module(cr, module)
-    cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
+    cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING id", (module,))
+    if cr.rowcount:
+        [mod_id] = cr.fetchone()
+        cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
 
 
 def remove_theme(cr, theme, base_theme=None):
@@ -220,8 +222,11 @@ def remove_theme(cr, theme, base_theme=None):
     scripts.
     """
     uninstall_theme(cr, theme, base_theme=base_theme)
-    cr.execute("DELETE FROM ir_module_module WHERE name=%s", (theme,))
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (theme,))
+    cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING id", (theme,))
+    if cr.rowcount:
+        [mod_id] = cr.fetchone()
+        cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
 
 
 def _update_view_key(cr, old, new):
