@@ -133,11 +133,29 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
 _TRACKING_ATTR = "tracking" if version_gte("saas~12.2") else "track_visibility"
 
 
+def flush(records):
+    ((hasattr(records, "env") and getattr(records.env, "flush_all", None)) or getattr(records, "flush", lambda: None))()
+
+
+def recompute(records):
+    (
+        (hasattr(records, "env") and getattr(records.env, "_recompute_all", None))
+        or getattr(records, "recompute", lambda: None)
+    )()
+
+
+def invalidate(records, *args):
+    env = getattr(records, "env", None)
+    expected_args = 2 if env is None else 0
+    if len(args) != expected_args:
+        raise ValueError("Unexpected arguments: %r" % (args[expected_args:],))
+    ((env and getattr(records.env, "invalidate_all", None)) or records.invalidate_cache)(*args)
+
+
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto"):
     assert strategy in {"flush", "commit", "auto"}
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
-    flush = getattr(Model, "flush", lambda: None)
     if ids is None:
         cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
         ids = tuple(map(itemgetter(0), cr.fetchall()))
@@ -165,16 +183,16 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
             return old_convert(self, value, record, False)
 
         with patch(ofields.__name__ + ".Selection.convert_to_cache", _convert):
-            records.recompute()
+            recompute(records)
         if strategy == "commit":
             cr.commit()
         else:
-            flush()
-        records.invalidate_cache()
+            flush(records)
+        invalidate(records)
 
 
 class iter_browse(object):
-    __slots__ = ("_model", "_cr_uid", "_size", "_chunk_size", "_logger", "_strategy", "_flush", "_it")
+    __slots__ = ("_model", "_cr_uid", "_size", "_chunk_size", "_logger", "_strategy", "_it")
 
     def __init__(self, model, *args, **kw):
         assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
@@ -189,8 +207,6 @@ class iter_browse(object):
         if kw:
             raise TypeError("Unknow arguments: %s" % ", ".join(kw))
 
-        self._flush = getattr(model, "flush", lambda: None)
-
         self._it = chunks(ids, self._chunk_size, fmt=self._browse)
 
     def _browse(self, ids):
@@ -202,8 +218,8 @@ class iter_browse(object):
         if self._strategy == "commit":
             self._model.env.cr.commit()
         else:
-            self._flush()
-        self._model.invalidate_cache(*self._cr_uid)
+            flush(self._model)
+        invalidate(self._model, *self._cr_uid)
         if 0:
             yield
 

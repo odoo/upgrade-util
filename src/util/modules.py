@@ -34,7 +34,7 @@ from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _validate_model
 from .misc import on_CI, version_gte
 from .models import delete_model
-from .orm import env
+from .orm import env, flush
 from .pg import column_exists
 from .records import remove_menus, remove_record, remove_view
 
@@ -197,7 +197,7 @@ def uninstall_theme(cr, theme, base_theme=None):
         websites = env_["website"].search([("theme_id", "=", theme_id)])
         for website in websites:
             IrModuleModule._theme_remove(website)
-    env_["base"].flush()
+    flush(env_["base"])
     uninstall_module(cr, theme)
 
 

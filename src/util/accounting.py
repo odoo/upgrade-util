@@ -3,7 +3,7 @@ import logging
 from contextlib import contextmanager
 
 from .modules import module_installed
-from .orm import env
+from .orm import env, invalidate
 from .pg import get_columns
 from .report import add_to_migration_reports
 
@@ -12,7 +12,7 @@ _logger = logging.getLogger(__name__)
 
 @contextmanager
 def no_fiscal_lock(cr):
-    env(cr)["res.company"].invalidate_cache()
+    invalidate(env(cr)["res.company"])
     columns = [col for col in get_columns(cr, "res_company")[0] if col.endswith("_lock_date")]
     assert columns
     set_val = ", ".join("{} = NULL".format(col) for col in columns)
