@@ -389,6 +389,8 @@ def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
     )
     if not cr.rowcount:
         callback(cr, xmlid, **kwargs)
+    else:
+        force_noupdate(cr, xmlid, noupdate=True)
 
 
 def remove_menus(cr, menu_ids):
