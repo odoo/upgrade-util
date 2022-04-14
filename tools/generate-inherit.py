@@ -385,13 +385,13 @@ def main(options: Namespace):
 
         for model, children in result.items():
             for child in children:
-                if (child.model, child.via) not in visitor.inh[model] and not child.dead:
+                if (child.model, child.via) not in visitor.inh[model] and not child.dead and child.born < version:
                     child.dead = version
 
         for model, children in visitor.inh.items():
             for child, via in children:
                 for inh in result[model]:
-                    if inh.model == child and inh.via == via and not inh.dead:
+                    if inh.model == child and inh.via == via and (not inh.dead or inh.dead >= version):
                         break
                 else:
                     result[model].append(Inherit(model=child, born=version, via=via))
