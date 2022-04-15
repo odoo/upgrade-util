@@ -620,8 +620,7 @@ def update_record_from_xml(
         cr.execute(
             """
                 DELETE FROM ir_translation
-                      WHERE type = 'model'
-                        AND name IN %s
+                      WHERE name IN %s
                         AND res_id = %s
             """,
             [tuple("{},{}".format(model, f) for f in reset_translations), res_id],
