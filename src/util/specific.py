@@ -66,3 +66,28 @@ def rename_custom_column(cr, table_name, col_name, new_col_name, custom_module=N
         message="The custom column '{col_name}' of the table '{table_name}'{module_details} was renamed to '{new_col_name}'."
         " {report_details}".format(**locals()),
     )
+
+
+def reset_cowed_views(cr, xmlid, key=None):
+    if "." not in xmlid:
+        raise ValueError("Please use fully qualified name <module>.<name>")
+
+    module, _, name = xmlid.partition(".")
+    if not key:
+        key = xmlid
+    cr.execute(
+        """
+        UPDATE ir_ui_view u
+           SET arch_db = v.arch_db
+          FROM ir_ui_view v
+          JOIN ir_model_data m
+            ON m.res_id = v.id AND m.model = 'ir.ui.view'
+         WHERE u.key = %s
+           AND m.module = %s
+           AND m.name = %s
+           AND u.website_id IS NOT NULL
+        RETURNING u.id
+        """,
+        [key, module, name],
+    )
+    return set(sum(cr.fetchall(), ()))
