@@ -441,6 +441,21 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
     query = 'UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field))
     parallel_execute(cr, explode_query_range(cr, query, table=table))
 
+    # Update translations
+    wrap = None if version_gte("saas~11.5") else "p"
+    ttype = "model_terms" if version_gte("saas~11.5") else "model"
+    cr.execute(
+        r"""
+        UPDATE ir_translation
+           SET src = {}, value = {}, type = %s
+         WHERE type = 'model'
+           AND name = %s
+        """.format(
+            pg_text2html("src", wrap=wrap), pg_text2html("value", wrap=wrap)
+        ),
+        [ttype, "%s,%s" % (model, field)],
+    )
+
     for inh in for_each_inherit(cr, model, skip_inherit):
         if not inh.via:
             convert_field_to_html(inh.model, field, skip_inherit=skip_inherit)
