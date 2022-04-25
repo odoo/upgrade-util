@@ -188,11 +188,11 @@ def pg_html_escape(s, quote=True):
     return reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s)
 
 
-def pg_text2html(s):
+def pg_text2html(s, wrap="p"):
     return r"""
         CASE WHEN TRIM(COALESCE({src}, '')) ~ '^<.+</\w+>$' THEN {src}
              ELSE CONCAT(
-                '<p>',
+                '{opening_tag}',
                 replace(REGEXP_REPLACE({esc},
                                        -- regex from https://blog.codinghorror.com/the-problem-with-urls/
                                        -- double the %% to allow this code chunk to be used in parameterized queries
@@ -201,10 +201,13 @@ def pg_text2html(s):
                                        'g'),
                         E'\n',
                         '<br>'),
-                '</p>')
+                '{closing_tag}')
          END
     """.format(
-        src=s, esc=pg_html_escape(s, quote=False)
+        opening_tag="<{}>".format(wrap) if wrap else "",
+        closing_tag="</{}>".format(wrap) if wrap else "",
+        src=s,
+        esc=pg_html_escape(s, quote=False),
     )
 
 
