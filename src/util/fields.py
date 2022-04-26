@@ -593,7 +593,7 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
         data = bytes(data)
-        if re.match(br"^\d+ (bytes|[KMG]b)$", data, re.I):
+        if re.match(b"^\\d+ (bytes|[KMG]b)$", data, re.I):
             # badly saved data, no need to create an attachment.
             continue
         if not encoded:
