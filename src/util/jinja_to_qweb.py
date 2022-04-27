@@ -330,13 +330,13 @@ def upgrade_jinja_fields(
             converted_src = convert_jinja_to_inline(src) if src else ""
             converted_value = convert_jinja_to_inline(value) if value else ""
             cr.execute(
-                """DO $$
+                """DO $x47df4fbdba2c44f89a61a67221cb687b$
                      BEGIN
                        UPDATE ir_translation SET src=%s, value=%s WHERE id=%s;
                      EXCEPTION WHEN unique_violation THEN
                        DELETE FROM ir_translation WHERE id=%s;
                      END;
-                   $$
+                   $x47df4fbdba2c44f89a61a67221cb687b$
                 """,
                 [converted_src, converted_value, tid, tid],
             )
@@ -356,13 +356,13 @@ def upgrade_jinja_fields(
             converted_src = convert_jinja_to_qweb(src) if src else ""
             converted_value = convert_jinja_to_qweb(value) if value else ""
             cr.execute(
-                """DO $$
+                """DO $x47df4fbdba2c44f89a61a67221cb687b$
                      BEGIN
                        UPDATE ir_translation SET src=%s, value=%s WHERE id=%s;
                      EXCEPTION WHEN unique_violation THEN
                        DELETE FROM ir_translation WHERE id=%s;
                      END;
-                   $$
+                   $x47df4fbdba2c44f89a61a67221cb687b$
                 """,
                 [converted_src, converted_value, tid, tid],
             )
