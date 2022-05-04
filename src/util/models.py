@@ -6,6 +6,7 @@ from .const import ENVIRON
 from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
+from .inherit import for_each_inherit
 from .misc import chunks, log_progress
 from .pg import (
     _get_unique_indexes_with,
@@ -429,7 +430,7 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
 
-def remove_inherit_from_model(cr, model, inherit, keep=()):
+def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=()):
     _validate_model(model)
     _validate_model(inherit)
     cr.execute(
@@ -455,4 +456,8 @@ def remove_inherit_from_model(cr, model, inherit, keep=()):
             for ir in irs:
                 query = 'DELETE FROM "{}" WHERE ({})'.format(ir.table, ir.model_filter())
                 cr.execute(query, [model])  # cannot be executed in parallel. See git blame.
-        remove_field(cr, model, field)
+        remove_field(cr, model, field, skip_inherit="*")  # inherits will be removed by the recursive call.
+
+    # down on inherits of `model`
+    for inh in for_each_inherit(cr, model, skip_inherit):
+        remove_inherit_from_model(cr, inh.model, inherit, keep=keep, skip_inherit=skip_inherit)
