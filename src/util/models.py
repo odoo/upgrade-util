@@ -6,7 +6,7 @@ from .const import ENVIRON
 from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
-from .inherit import for_each_inherit
+from .inherit import for_each_inherit, inherit_parents
 from .misc import chunks, log_progress
 from .pg import (
     _get_unique_indexes_with,
@@ -433,18 +433,21 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
 def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=()):
     _validate_model(model)
     _validate_model(inherit)
+
+    inherit_models = {inherit} | set(inherit_parents(cr, inherit, interval="[]"))
+
     cr.execute(
         """
         SELECT name, ttype, relation, store
           FROM ir_model_fields
-         WHERE model = %s
+         WHERE model IN %s
            AND name NOT IN ('id',
                             'create_uid', 'write_uid',
                             'create_date', 'write_date',
                             '__last_update', 'display_name')
            AND name != ALL(%s)
     """,
-        [inherit, list(keep)],
+        [tuple(inherit_models), list(keep)],
     )
     for field, ftype, relation, store in cr.fetchall():
         if ftype.endswith("2many") and store:
