@@ -1,3 +1,4 @@
+import operator
 from ast import literal_eval
 
 try:
@@ -346,3 +347,44 @@ class TestHelpers(UnitTestCase):
             table = util.table_of_model(cr, model)
             self.assertEqual(table, self.env[model]._table)
             self.assertEqual(util.model_of_table(cr, table), model)
+
+
+class TestInherit(UnitTestCase):
+    @classmethod
+    def setUpClass(cls):
+        bv = util.ENVIRON.get("__base_version")
+        util.ENVIRON["__base_version"] = util.parse_version("12.0.1.3")
+        if bv:
+            cls.addClassCleanup(operator.setitem, util.ENVIRON, "__base_version", bv)
+        return super().setUpClass()
+
+    @parametrize(
+        [
+            # simple tests
+            ("do.not.exits", []),
+            ("account.common.journal.report", ["account.common.report"]),
+            # avoid duplicates
+            (
+                "product.product",
+                [
+                    "mail.activity.mixin",
+                    "mail.thread",
+                    "product.template",
+                    "rating.mixin",
+                    "website.published.multi.mixin",
+                    "website.seo.metadata",
+                ],
+            ),
+            # version boundaries
+            # ... born after 12.0, should not include it.
+            ("report.paperformat", []),
+            # ... dead before 12.0. should not be included
+            ("delivery.carrier", ["website.published.multi.mixin"]),
+            # ... dead between 12.0 and CURRENT_VERSION
+            ("crm.lead.convert2task", ["crm.partner.binding"]),
+        ]
+    )
+    def test_inherit_parents(self, model, expected):
+        cr = self.env.cr
+        result = sorted(list(util.inherit_parents(cr, model)))
+        self.assertEqual(result, sorted(expected))

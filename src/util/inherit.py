@@ -45,3 +45,19 @@ def for_each_inherit(cr, model, skip=(), interval="[)"):
             continue
         if cmp_(inh):
             yield inh
+
+
+def inherit_parents(cr, model, skip=(), interval="[)"):
+    if skip == "*":
+        return
+    skip = set(skip)
+    cmp_ = _version_comparator(cr, interval)
+    for parent, inhs in inheritance_data.items():
+        if parent in skip:
+            continue
+        for inh in inhs:
+            if inh.model == model and cmp_(inh):
+                yield parent
+                skip.add(parent)
+                for grand_parent in inherit_parents(cr, parent, skip=skip, interval=interval):
+                    yield grand_parent
