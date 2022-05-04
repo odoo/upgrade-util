@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import operator
 import os
 
 from ._inherit import inheritance_data
@@ -24,13 +25,23 @@ def _get_base_version(cr):
     return bv
 
 
-def for_each_inherit(cr, model, skip):
+def _version_comparator(cr, interval):
+    if interval not in {"[]", "()", "[)", "(]"}:
+        raise ValueError("Invalid interval: %r" % (interval,))
+
+    op_lower = operator.le if interval[0] == "[" else operator.lt
+    op_upper = operator.le if interval[1] == "]" else operator.lt
+    base_version = _get_base_version(cr)
+
+    return lambda inh: op_lower(inh.born, base_version) and (inh.dead is None or op_upper(base_version, inh.dead))
+
+
+def for_each_inherit(cr, model, skip=(), interval="[)"):
     if skip == "*":
         return
-    base_version = _get_base_version(cr)
+    cmp_ = _version_comparator(cr, interval)
     for inh in inheritance_data.get(model, []):
         if inh.model in skip:
             continue
-        if inh.born <= base_version:
-            if inh.dead is None or base_version < inh.dead:
-                yield inh
+        if cmp_(inh):
+            yield inh
