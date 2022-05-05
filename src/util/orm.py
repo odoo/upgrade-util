@@ -17,7 +17,13 @@ try:
     from odoo import modules, release
 except ImportError:
     from openerp import SUPERUSER_ID
-    from openerp import fields as ofields
+
+    try:
+        from openerp import fields as ofields
+    except ImportError:
+        # this is to allow v7.0 DBs to import this module without errors
+        # note: some functions on this module will fail (like recompute_fields)
+        ofields = None
     from openerp import modules, release
 
 from .const import BIG_TABLE_THRESHOLD
