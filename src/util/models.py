@@ -367,21 +367,44 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
     )
     field_ids_mapping = dict(cr.fetchall())
     if fields_mapping:
+        jmap = json.dumps(fields_mapping)
         cr.execute(
             """
-            SELECT mf1.id,
+            SELECT mf1.name,
+                   mf1.id,
                    mf2.id
               FROM ir_model_fields mf1
               JOIN ir_model_fields mf2
                 ON mf1.model=%s
                AND mf2.model=%s
-               AND mf2.name=('{jmap}'::jsonb ->> mf1.name::varchar)::varchar
-            """.format(
-                jmap=json.dumps(fields_mapping)
-            ),
-            [source, target],
+               AND mf2.name=(%s::jsonb ->> mf1.name::varchar)::varchar
+            """,
+            [source, target, jmap],
         )
-        field_ids_mapping.update(dict(cr.fetchall()))
+        explicit_mapping = {name: (id_s, id_t) for name, id_s, id_t in cr.fetchall()}
+        field_ids_mapping.update(explicit_mapping.values())
+        # The target fields may not yet exists. We simply update the source fields in this case.
+        missing = {s: t for s, t in fields_mapping.items() if s not in explicit_mapping}
+        if missing:
+            jmap = json.dumps(missing)
+            cr.execute(
+                """
+                    UPDATE ir_model_fields
+                       SET model = %s,
+                           model_id = %s,
+                           name = (%s::jsonb ->> name::varchar)::varchar
+                     WHERE model = %s
+                       AND name IN %s
+                 RETURNING id
+                """,
+                [target, model_ids[target], jmap, source, tuple(missing)],
+            )
+            if cr.rowcount:
+                # remove their xmlid (now invalid names). The ORM will recreate them.
+                cr.execute(
+                    "DELETE FROM ir_model_data WHERE model='ir.model.fields' AND res_id IN %s",
+                    [sum(cr.fetchall(), ())],
+                )
 
     if field_ids_mapping:
         ignores = ["ir_model_fields_group_rel", "ir_model_fields_selection"]
