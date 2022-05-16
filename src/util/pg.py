@@ -48,8 +48,11 @@ def savepoint(cr):
 if ThreadPoolExecutor is None:
 
     def parallel_execute(cr, queries, logger=_logger):
+        cnt = 0
         for query in log_progress(queries, logger, qualifier="queries", size=len(queries)):
             cr.execute(query)
+            cnt += cr.rowcount
+        return cnt
 
 else:
 
@@ -68,12 +71,12 @@ else:
             +---------------------------------------------+-------------+-------------+
         """
         if not queries:
-            return
+            return None
 
         if len(queries) == 1:
             # No need to spawn other threads
             cr.execute(queries[0])
-            return
+            return cr.rowcount
 
         max_workers = min(get_max_workers(), len(queries))
         cursor = db_connect(cr.dbname).cursor
@@ -81,20 +84,23 @@ else:
         def execute(query):
             with cursor() as cr:
                 cr.execute(query)
+                cnt = cr.rowcount
                 cr.commit()
+                return cnt
 
         cr.commit()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for _ in log_progress(
-                executor.map(execute, queries),
-                logger,
-                qualifier="queries",
-                size=len(queries),
-                estimate=False,
-                log_hundred_percent=True,
-            ):
-                pass
+            return sum(
+                log_progress(
+                    executor.map(execute, queries),
+                    logger,
+                    qualifier="queries",
+                    size=len(queries),
+                    estimate=False,
+                    log_hundred_percent=True,
+                )
+            )
 
 
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):

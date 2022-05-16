@@ -326,6 +326,18 @@ class TestPG(UnitTestCase):
         result = cr.fetchone()[0]
         self.assertEqual(result, expected)
 
+    def test_parallel_rowcount(self):
+        cr = self.env.cr
+        cr.execute("SELECT count(*) FROM res_lang")
+        [expected] = cr.fetchone()
+
+        # util.parallel_execute will `commit` the cursor and create new ones
+        # as we are in a test, we should not commit as we are in a subtransaction
+        with mock.patch.object(cr, "commit", lambda: ...):
+            query = "UPDATE res_lang SET name = name"
+            rowcount = util.parallel_execute(cr, util.explode_query(cr, query))
+        self.assertEqual(rowcount, expected)
+
 
 class TestORM(UnitTestCase):
     def test_create_cron(self):
