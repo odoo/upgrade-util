@@ -137,3 +137,104 @@ def format_style(styles):
     if len(style) > 0 and style[-1] != ";":
         style += ";"
     return style
+
+
+def html_converter(transform_callback):
+    """
+    Creates an upgrade converter for a single HTML text content.
+
+    :param func transform_callback: transforms an HTML tree and returns True if
+        a change happened
+    :return: func conversion callback
+    """
+
+    def converter(content):
+        """
+        Converts content.
+
+        :param str content: content to convert
+        :return: A tuple:
+            1) A boolean which indicates if the content changed
+            2) The updated content
+        """
+
+        # Remove `<?xml ...>` header
+        content = re.sub(r"^<\?xml .+\?>\s*", "", content.strip())
+        # Wrap in <wrap> node before parsing to preserve external comments and
+        # multi-root nodes
+        els = html.fromstring(f"<wrap>{content}</wrap>", parser=utf8_parser)
+        has_changed = transform_callback(els)
+        new_content = (
+            re.sub(r"(^<wrap>|</wrap>$)", "", etree.tostring(els, encoding="unicode").strip())
+            if has_changed
+            else content
+        )
+        return (has_changed, new_content)
+
+    return converter
+
+
+def html_selector_converter(transform_callback, selector=None):
+    """
+    Creates an upgrade converter for HTML elements that match a selector.
+
+    :param func transform_callback: transforms a selected HTML element and
+        returns True if a change happened
+    :param str selector: targets the elements to loop on
+    :return: func conversion callback
+    """
+
+    def looper(root_el):
+        return any([transform_callback(el) for el in root_el.xpath(selector)])
+
+    return html_converter(looper if selector else transform_callback)
+
+
+def convert_html_content(
+    cr,
+    converter_callback,
+    where_column="IS NOT NULL",
+    maximum_batch_size=10000,
+):
+    """
+    Converts HTML content.
+
+    :param cursor cr: database cursor
+    :param func converter_callback: conversion function that converts the HTML
+        text content and returns a tuple with a boolean that indicates whether a
+        change happened and the new content must be saved
+    :param str where_column: filtering such as
+        - "like '%abc%xyz%'"
+        - "~* '\\yabc.*xyz\\y'"
+    :param int maximum_batch_size: Maximum number of rows to fetch at once
+        before migrating them
+    """
+
+    def convert_column(cr, table, column, extra_where=""):
+        base_select_query = f"""
+            SELECT id, {column}
+            FROM {table}
+            WHERE {column} {where_column}
+            {extra_where}
+        """
+        update_query = f"""
+            UPDATE {table}
+            SET {column} = %s
+            WHERE id = %s
+        """
+
+        select_queries = (
+            (base_select_query,)
+            if maximum_batch_size is None
+            else util.explode_query_range(cr, base_select_query, table=table, bucket_size=maximum_batch_size)
+        )
+        for select_query in select_queries:
+            cr.execute(select_query)
+            for res_id, content in cr.fetchall():
+                has_changed, new_content = converter_callback(content)
+                if has_changed:
+                    cr.execute(update_query, [new_content, res_id])
+
+    convert_column(cr, "ir_ui_view", "arch_db", "AND type = 'qweb'")
+    for table, column in get_html_fields(cr):
+        convert_column(cr, table, column)
