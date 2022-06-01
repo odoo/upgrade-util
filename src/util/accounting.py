@@ -102,6 +102,17 @@ def upgrade_tax_tags(cr, env, company, chart_template_id, upgraded_tax_xmlid=Non
         if template.id not in template_to_tax:
             _logger.info("The tax '%s' does not exist, it will now be created as well as its xmlid", template.name)
             vals = template._get_tax_vals_complete(company)
+            # 'create' is overriden in upgrade s.t. if a record already exists with the same fields, it is returned rather than
+            # created. Renaming the existing, identical, taxes if they are linked to aml prevents this retrieving.
+            domain = [
+                ("name", "=", vals["name"]),
+                ("type_tax_use", "=", vals["type_tax_use"]),
+                ("company_id", "=", vals["company_id"]),
+                ("tax_scope", "=", vals["tax_scope"]),
+            ]
+            for tax in env["account.tax"].search(domain):
+                if used_by_amls(cr, tax):
+                    tax.name += " (old)"
             ChartTemplate.create_record_with_xmlid(company, template, "account.tax", vals)
             continue
 
@@ -127,6 +138,8 @@ def upgrade_tax_tags(cr, env, company, chart_template_id, upgraded_tax_xmlid=Non
         else:
             # Create a new tax based on the tax template and drop the xmlid of the old tax
             _logger.info("The xmlid of tax: '%s' will be removed and a new tax will be created", tax.name)
+            if used_by_amls(cr, tax):
+                tax.name += " (old)"
             xml_id = tax.get_xml_id().get(tax.id)
             if xml_id:
                 remove_xml_id(cr, xml_id)
@@ -218,3 +231,16 @@ def remove_xml_id(cr, xml_id):
     """,
         [module, name],
     )
+
+
+def used_by_amls(cr, tax):
+    cr.execute(
+        """
+        SELECT 1
+          FROM account_move_line_account_tax_rel
+         WHERE account_tax_id = %s
+         LIMIT 1
+    """,
+        [tax.id],
+    )
+    return bool(cr.rowcount)
