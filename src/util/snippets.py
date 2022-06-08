@@ -63,8 +63,22 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
         """,
         dict(regex=regex),
     ).decode()
-    for select_query in util.explode_query_range(cr, query, table=table, bucket_size=1500):
-        add_snippet_names(cr, table, column, snippets, select_query)
+    bytes_per_chunk = 1024 * 1024 * 200
+    cr.execute(
+        cr.mogrify(
+            f"""
+            WITH info AS (
+                SELECT id,
+                       sum(pg_column_size({column})) OVER (ORDER BY id) / {bytes_per_chunk} AS chunk
+                  FROM {table}
+                 WHERE {column} ~ %(regex)s
+            ) SELECT min(id), max(id) FROM info GROUP BY chunk
+            """,
+            dict(regex=regex),
+        ).decode()
+    )
+    for id0, id1 in cr.fetchall():
+        add_snippet_names(cr, table, column, snippets, query + f" AND id BETWEEN {id0} AND {id1}")
 
 
 def get_regex_from_snippets_list(snippets):
