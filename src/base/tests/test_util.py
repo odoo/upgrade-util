@@ -400,3 +400,38 @@ class TestInherit(UnitTestCase):
         cr = self.env.cr
         result = sorted(list(util.inherit_parents(cr, model)))
         self.assertEqual(result, sorted(expected))
+
+
+class TestNamedCursors(UnitTestCase):
+    @staticmethod
+    def exec(cr, which, args):
+        cr.execute("SELECT * FROM ir_ui_view")
+        return getattr(cr, which)(*args)
+
+    @parametrize(
+        [
+            (None, "dictfetchone", []),
+            (None, "dictfetchmany", [10]),
+            (None, "dictfetchall", []),
+            (1, "dictfetchone", []),
+            (1, "dictfetchmany", [10]),
+            (1, "dictfetchall", []),
+            (None, "fetchone", []),
+            (None, "fetchmany", [10]),
+            (None, "fetchall", []),
+            (1, "fetchone", []),
+            (1, "fetchmany", [10]),
+            (1, "fetchall", []),
+        ]
+    )
+    def test_dictfetch(self, itersize, which, args):
+        expected = self.exec(self.env.cr, which, args)
+        with util.named_cursor(self.env.cr, itersize=itersize) as ncr:
+            result = self.exec(ncr, which, args)
+        self.assertEqual(result, expected)
+
+    def test_iterdict(self):
+        expected = self.exec(self.env.cr, "dictfetchall", [])
+        with util.named_cursor(self.env.cr) as ncr:
+            result = list(self.exec(ncr, "iterdict", []))
+        self.assertEqual(result, expected)

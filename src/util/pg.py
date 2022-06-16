@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from contextlib import contextmanager
 from functools import reduce
 from multiprocessing import cpu_count
@@ -771,3 +772,36 @@ def get_m2m_tables(cr, table):
 
     cr.execute(query, [table])
     return [row[0] for row in cr.fetchall()]
+
+
+class named_cursor(object):
+    def __init__(self, cr, itersize=None):
+        self._ncr = cr._cnx.cursor("upg_nc_" + uuid.uuid4().hex)
+        if itersize:
+            self._ncr.itersize = itersize
+
+    def __dictrow(self, row):
+        return {d.name: v for d, v in zip(self._ncr.description, row)}
+
+    def dictfetchall(self):
+        return list(map(self.__dictrow, self._ncr.fetchall()))
+
+    def dictfetchmany(self, size):
+        return list(map(self.__dictrow, self._ncr.fetchmany(size)))
+
+    def dictfetchone(self):
+        row = self._ncr.fetchone()
+        return None if row is None else self.__dictrow(row)
+
+    def iterdict(self):
+        return map(self.__dictrow, self._ncr)
+
+    def __enter__(self):
+        self._ncr.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return self._ncr.__exit__(exc_type, exc_value, traceback)
+
+    def __getattr__(self, name):
+        return getattr(self._ncr, name)
