@@ -69,7 +69,7 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
             f"""
             WITH info AS (
                 SELECT id,
-                       sum(pg_column_size({column})) OVER (ORDER BY id) / {bytes_per_chunk} AS chunk
+                       sum(pg_column_size(({column}, id))) OVER (ORDER BY id) / {bytes_per_chunk} AS chunk
                   FROM {table}
                  WHERE {column} ~ %(regex)s
             ) SELECT min(id), max(id) FROM info GROUP BY chunk
