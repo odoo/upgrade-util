@@ -129,7 +129,7 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     if not silent:
         _logger.info("remove deprecated %s view %s (ID %s)", key and "COWed" or "built-in", key or xml_id, view_id)
 
-    _remove_records(cr, "ir.ui.view", [view_id])
+    remove_records(cr, "ir.ui.view", [view_id])
 
 
 @contextmanager
@@ -216,7 +216,7 @@ if version_gte("saas~14.3"):
     def remove_asset(cr, name):
         cr.execute("SELECT id FROM ir_asset WHERE bundle = %s", [name])
         if cr.rowcount:
-            _remove_records(cr, "ir.asset", [aid for aid, in cr.fetchall()])
+            remove_records(cr, "ir.asset", [aid for aid, in cr.fetchall()])
 else:
     def remove_asset(cr, name):
         remove_view(cr, name, silent=True)
@@ -258,10 +258,10 @@ def remove_record(cr, name):
         _logger.log(NEARLYWARN, "Removing menu %r", name)
         return remove_menus(cr, [res_id])
 
-    return _remove_records(cr, model, [res_id])
+    return remove_records(cr, model, [res_id])
 
 
-def _remove_records(cr, model, ids):
+def remove_records(cr, model, ids):
     if not ids:
         return
 
@@ -278,7 +278,7 @@ def _remove_records(cr, model, ids):
             for (view_id,) in cr.fetchall():
                 remove_view(cr, view_id=view_id)
         else:
-            _remove_records(cr, theme_copy_model, [rid for rid, in cr.fetchall()])
+            remove_records(cr, theme_copy_model, [rid for rid, in cr.fetchall()])
 
     for inh in for_each_inherit(cr, model, skip=()):
         if inh.via:
@@ -293,7 +293,7 @@ def _remove_records(cr, model, ids):
                 for (view_id,) in cr.fetchall():
                     remove_view(cr, view_id=view_id)
             else:
-                _remove_records(cr, inh.model, [rid for rid, in cr.fetchall()])
+                remove_records(cr, inh.model, [rid for rid, in cr.fetchall()])
 
     table = table_of_model(cr, model)
     cr.execute('DELETE FROM "{}" WHERE id IN %s'.format(table), [ids])

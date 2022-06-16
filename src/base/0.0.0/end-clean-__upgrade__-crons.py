@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from odoo.addons.base.maintenance.migrations import util
-from odoo.addons.base.maintenance.migrations.util.records import _remove_records
 
 
 def migrate(cr, version):
@@ -18,4 +17,4 @@ def migrate(cr, version):
             xid_date=xid_date
         )
     )
-    _remove_records(cr, "ir.cron", cr.fetchone()[0])
+    util.remove_records(cr, "ir.cron", cr.fetchone()[0])

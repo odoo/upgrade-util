@@ -17,7 +17,7 @@ from .pg import (
     table_exists,
     view_exists,
 )
-from .records import _remove_records, _rm_refs, remove_view, replace_record_references_batch
+from .records import _rm_refs, remove_records, remove_view, replace_record_references_batch
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                     size = (len(ids) + chunk_size - 1) / chunk_size
                     it = chunks(ids, chunk_size, fmt=tuple)
                     for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
-                        _remove_records(cr, ref_model, sub_ids)
+                        remove_records(cr, ref_model, sub_ids)
                         _rm_refs(cr, ref_model, sub_ids)
             else:
                 # link to `_unknown` model
