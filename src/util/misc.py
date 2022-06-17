@@ -227,6 +227,34 @@ def log_progress(it, logger, qualifier="elements", size=None, estimate=True, log
             )
 
 
+def log_chunks(it, logger, chunk_size, qualifier="items"):
+    tinit = tlog = datetime.datetime.now()
+
+    def log(chunk_num, size=chunk_size):
+        now = datetime.datetime.now()
+        logger.info(
+            "Chunk #%d of %d %s processed in %s (total %s)",
+            chunk_num,
+            size,
+            qualifier,
+            now - tlog,
+            now - tinit,
+        )
+        return now
+
+    i = 0
+    for i, e in enumerate(it, 1):
+        yield e
+        tlog = tlog if i % chunk_size else log(i // chunk_size)
+
+    if i == 0:
+        # empty iterator
+        logger.info("No %s to process", qualifier)
+    elif i % chunk_size != 0:
+        # log the last partial chunk
+        log(i // chunk_size + 1, i % chunk_size)
+
+
 class SelfPrint(object):
     """Class that will return a self representing string. Used to evaluate domains."""
 
