@@ -8,6 +8,7 @@ import lxml
 from docutils.core import publish_string
 
 from .helpers import _validate_model
+from .misc import parse_version
 
 # python3 shims
 try:
@@ -27,10 +28,28 @@ except ImportError:
 
 try:
     from odoo import SUPERUSER_ID, release
+    from odoo.tools import html_escape
     from odoo.tools.mail import html_sanitize
 except ImportError:
     from openerp import SUPERUSER_ID, release
     from openerp.tools.mail import html_sanitize
+
+    try:
+        from openerp.tools.misc import html_escape
+    except ImportError:
+        import werkzeug.utils
+
+        # Avoid DeprecationWarning while still remaining compatible with werkzeug pre-0.9
+        if parse_version(getattr(werkzeug, "__version__", "0.0")) < parse_version("0.9.0"):
+
+            def html_escape(text):
+                return werkzeug.utils.escape(text, quote=True)
+
+        else:
+
+            def html_escape(text):
+                return werkzeug.utils.escape(text)
+
 
 try:
     from odoo.addons.base.models.ir_module import MyWriter  # > 11.0
@@ -211,5 +230,5 @@ def get_anchor_link_to_record(model, id, name, action_id=None):
         model,
         action_id or "",
         id,
-        name,
+        html_escape(name),
     )

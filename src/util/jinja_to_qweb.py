@@ -16,7 +16,7 @@ from odoo.tools import is_html_empty, mute_logger, safe_eval
 from .helpers import _validate_table, model_of_table
 from .orm import env as get_env
 from .pg import named_cursor
-from .report import add_to_migration_reports
+from .report import add_to_migration_reports, html_escape
 
 _logger = logging.getLogger(__name__)
 
@@ -415,14 +415,17 @@ def verify_upgraded_jinja_fields(cr):
                     field_errors[key].append(field)
 
         if missing_records:
-            list_items = "\n".join(f'<li>id: "{id}", {name_field}: "{name}" </li>' for id, name in missing_records)
+            list_items = "\n".join(
+                f'<li>id: "{id}", {html_escape(name_field)}: "{html_escape(name)}" </li>'
+                for id, name in missing_records
+            )
             add_to_migration_reports(
                 f"""
                     <details>
                         <summary>
-                            Some of the records for the table {table_name} could not be tested because there is no
+                            Some of the records for the table {html_escape(table_name)} could not be tested because there is no
                             record in the database.
-                            The {table_name} records are:
+                            The {html_escape(table_name)} records are:
                         </summary>
                         <ul>{list_items}</ul>
                     </details>
@@ -435,16 +438,19 @@ def verify_upgraded_jinja_fields(cr):
         if field_errors:
             string = []
             for (id, name), fields in field_errors.items():
-                fields_string = "\n".join(f"<li>{field}</li>" for field in fields)
-                string.append(f"<li>id: {id}, {name_field}: {name}, fields: <ul>{fields_string}</ul></li>")
+                fields_string = "\n".join(f"<li>{html_escape(field)}</li>" for field in fields)
+                string.append(
+                    f"""<li>id: {id}, {html_escape(name_field)}: {html_escape(name)},
+                     fields: <ul>{fields_string}</ul></li>"""
+                )
 
             string = "\n".join(string)
             add_to_migration_reports(
                 f"""
                     <details>
                         <summary>
-                            Some of the fields of the table {table_name} does not render the same value before and after
-                            being converted.
+                            Some of the fields of the table {html_escape(table_name)} does not render the same value
+                            before and after being converted.
                             The mail.template are:
                         </summary>
                         <ul>{string}</ul>
