@@ -130,6 +130,7 @@ def _convert_jinja_to_t_out_tail(node):
 
 
 def convert_jinja_to_qweb(string):
+    string = re.sub(r"""^<\?xml version=("|')1\.0\1\?>\s*""", "", string, re.M)
     # Create a parent in case there is multiples root nodes
     element = lxml.html.fragment_fromstring(string, create_parent="div")
     for el in element.getiterator():
