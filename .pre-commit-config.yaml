@@ -12,7 +12,7 @@ repos:
         files: '^src/\w+/0.0.0/.*\.py$'
 
   - repo: https://github.com/psf/black
-    rev: 22.3.0
+    rev: 22.6.0
     hooks:
       - id: black
   - repo: https://github.com/pycqa/isort
@@ -28,7 +28,7 @@ repos:
           - flake8-logging-format
           - flake8-implicit-str-concat
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v4.3.0
     hooks:
     - id: check-xml
     - id: check-yaml
