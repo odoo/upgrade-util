@@ -579,6 +579,10 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     if col2 is None:
         col2 = "%s_id" % fk2
 
+    if table_exists(cr, m2m):
+        fixup_m2m(cr, m2m, fk1, fk2, col1, col2)
+        return
+
     cr.execute(
         """
         CREATE TABLE {m2m}(
@@ -601,6 +605,10 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 
     if not table_exists(cr, m2m):
         return
+
+    extra_columns = get_columns(cr, m2m, ignore=(col1, col2))
+    if extra_columns:
+        raise MigrationError("The m2m %r has extra columns: %s" % (m2m, ", ".join(extra_columns[0])))
 
     # cleanup
     fixup_m2m_cleanup(cr, m2m, col1, col2)
