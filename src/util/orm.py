@@ -30,7 +30,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_gte
-from .pg import column_exists
+from .pg import column_exists, get_columns
 
 # python3 shims
 try:
@@ -108,7 +108,8 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
     # (Cursor, str, str, str, Tuple[int, str]) -> None
     cr.execute("SELECT id FROM ir_model WHERE model = %s", [model])
     model_id = cr.fetchone()[0]
-    xid = "__upgrade__.cron_" + re.sub(r"\W+", "_", name.lower())
+    xid_name = "cron_" + re.sub(r"\W+", "_", name.lower())
+    xid = "__upgrade__." + xid_name
     number, unit = interval
     # TODO handle version <=10.saas-14
     cron = {
@@ -128,6 +129,24 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
     else:
         # < saas-11.5
         e["ir.model.data"]._update("ir.cron", **data)
+
+    # Exclude the related server action from CLOC with an extra xmlid
+    if not column_exists(cr, "ir_cron", "ir_actions_server_id"):
+        return
+
+    columns, s_columns = map(", ".join, get_columns(cr, "ir_model_data", ignore=("id", "module"), extra_prefixes="s"))
+    query = """
+        INSERT INTO ir_model_data(module, {columns})
+             SELECT '__cloc_exclude__', {s_columns}
+               FROM ir_model_data x
+               JOIN ir_cron c ON x.model = 'ir.cron' AND x.res_id = c.id
+               JOIN ir_model_data s ON s.model = 'ir.actions.server' AND s.res_id = c.ir_actions_server_id
+              WHERE x.module = '__upgrade__'
+                AND x.name = %s
+                AND s.module = '__upgrade__'
+        ON CONFLICT DO NOTHING
+    """
+    cr.execute(query.format(columns=columns, s_columns=s_columns), [xid_name])
 
 
 _TRACKING_ATTR = "tracking" if version_gte("saas~12.2") else "track_visibility"
