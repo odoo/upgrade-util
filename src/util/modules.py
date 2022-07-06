@@ -30,7 +30,6 @@ except ImportError:
         from openerp.addons.web.controllers.main import module_topological_sort as topological_sort
 
 from .const import ENVIRON, NEARLYWARN
-from .exceptions import MigrationError
 from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _validate_model
 from .misc import on_CI, version_gte
@@ -560,11 +559,10 @@ def new_module(cr, module, deps=(), auto_install=False):
         # But we should force the dependencies
         mod_id = cr.fetchone()[0]
 
-        # In CI, it should not happen. Let it crash.
-        if on_CI():
-            raise MigrationError("New module %r already defined" % (module,))
+        # In CI, it should not happen. Log it as critical
+        level = logging.CRITICAL if on_CI() else logging.WARNING
 
-        _logger.warning("New module %r already defined. Resetting dependencies.", module)
+        _logger.log(level, "New module %r already defined. Resetting dependencies.", module)
         cr.execute("DELETE FROM ir_module_module_dependency WHERE module_id = %s", [mod_id])
 
     else:

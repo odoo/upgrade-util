@@ -29,7 +29,6 @@ class TestTablesHavePK(IntegrityCase):
         if cr.rowcount:
             tables = "\n".join(" - %s" % t for t, in cr.fetchall())
             msg = "Some tables doesn't have any primary key:\n{}".format(tables)
-            _logger.error(msg)  # trigger an error on runbot
+            _logger.critical(msg)
             if util.on_CI():
-                # and on upgradeci
                 raise AssertionError(msg)
