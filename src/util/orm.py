@@ -171,6 +171,23 @@ def invalidate(records, *args):
     ((env and getattr(records.env, "invalidate_all", None)) or records.invalidate_cache)(*args)
 
 
+def no_selection_cache_validation(f=None):
+    old_convert = ofields.Selection.convert_to_cache
+
+    def _convert(self, value, record, validate=True):
+        return old_convert(self, value, record, False)
+
+    if f is None:
+        return patch(ofields.__name__ + ".Selection.convert_to_cache", _convert)
+
+    def wrapper(*args, **kwargs):
+        with patch(ofields.__name__ + ".Selection.convert_to_cache", _convert):
+            return f(*args, **kwargs)
+
+    return wrapper
+
+
+@no_selection_cache_validation
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto"):
     assert strategy in {"flush", "commit", "auto"}
     Model = env(cr)[model] if isinstance(model, basestring) else model
@@ -184,11 +201,6 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         any_tracked_field = any(getattr(Model._fields[f], _TRACKING_ATTR, False) for f in fields)
         strategy = "commit" if big_table and any_tracked_field else "flush"
 
-    old_convert = ofields.Selection.convert_to_cache
-
-    def _convert(self, value, record, validate=True):
-        return old_convert(self, value, record, False)
-
     size = (len(ids) + chunk_size - 1) / chunk_size
     qual = "%s %d-bucket" % (model, chunk_size) if chunk_size != 1 else model
     for subids in log_progress(chunks(ids, chunk_size, list), logger, qualifier=qual, size=size):
@@ -201,8 +213,7 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
             else:
                 Model.env.add_to_compute(field, records)
 
-        with patch(ofields.__name__ + ".Selection.convert_to_cache", _convert):
-            recompute(records)
+        recompute(records)
         if strategy == "commit":
             cr.commit()
         else:
@@ -211,7 +222,7 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
 
 
 class iter_browse(object):
-    __slots__ = ("_model", "_cr_uid", "_size", "_chunk_size", "_logger", "_strategy", "_it")
+    __slots__ = ("_model", "_cr_uid", "_size", "_chunk_size", "_logger", "_strategy", "_it", "_patch")
 
     def __init__(self, model, *args, **kw):
         assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
@@ -226,11 +237,14 @@ class iter_browse(object):
         if kw:
             raise TypeError("Unknow arguments: %s" % ", ".join(kw))
 
+        self._patch = no_selection_cache_validation()
+        self._patch.start()  # this is needed because _browse calls _end first :/
         self._it = chunks(ids, self._chunk_size, fmt=self._browse)
 
     def _browse(self, ids):
         next(self._end(), None)
         args = self._cr_uid + (list(ids),)
+        self._patch.start()
         return self._model.browse(*args)
 
     def _end(self):
@@ -239,6 +253,7 @@ class iter_browse(object):
         else:
             flush(self._model)
         invalidate(self._model, *self._cr_uid)
+        self._patch.stop()
         if 0:
             yield
 
@@ -266,6 +281,7 @@ class iter_browse(object):
     def create(self, values):
         ids = []
         for sub_values in chunks(values, self._chunk_size, fmt=list):
+            self._patch.start()
             ids += self._model.create(sub_values).ids
             next(self._end(), None)
         args = self._cr_uid + (ids,)
