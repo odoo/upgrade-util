@@ -11,6 +11,7 @@ from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
 from odoo.addons.base.maintenance.migrations.util.domains import _adapt_one_domain
+from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
 
 
 class TestAdaptOneDomain(UnitTestCase):
@@ -442,3 +443,47 @@ class TestNamedCursors(UnitTestCase):
         with util.named_cursor(self.env.cr) as ncr:
             result = list(self.exec(ncr, "__iter__"))
         self.assertEqual(result, expected)
+
+
+class TestRecords(UnitTestCase):
+    def test_rename_xmlid(self):
+        cr = self.env.cr
+
+        old = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})
+        new = self.env["res.currency"].create({"name": "TX2", "symbol": "TX2"})
+        self.env["ir.model.data"].create({"name": "TX1", "module": "base", "model": "res.currency", "res_id": old.id})
+        self.env["ir.model.data"].create({"name": "TX2", "module": "base", "model": "res.currency", "res_id": new.id})
+
+        country = self.env["res.country"].create({"name": "Test country 1", "currency_id": old.id})
+        self.env["ir.model.data"].create(
+            {"name": "test_country_1", "module": "base", "model": "res.country", "res_id": country.id}
+        )
+
+        # Wrong model
+        with self.assertRaises(MigrationError):
+            util.rename_xmlid(cr, "base.TX1", "base.test_country_1", on_collision="merge")
+
+        # Collision
+        with self.assertRaises(MigrationError):
+            util.rename_xmlid(cr, "base.TX1", "base.TX2", on_collision="fail")
+
+        # As TX2 is not free, TX1 is merged with TX2
+        res = util.rename_xmlid(cr, "base.TX1", "base.TX2", on_collision="merge")
+        self.assertEqual(res, new.id)
+        self.assertEqual(util.ref(cr, "base.TX1"), None)
+
+        # TX1 references moved to TX2
+        cr.execute("SELECT currency_id FROM res_country WHERE id = %s", [country.id])
+        self.assertEqual(cr.fetchall(), [(new.id,)])
+
+        # Nothing left to rename in TX1
+        res = util.rename_xmlid(cr, "base.TX1", "base.TX3", on_collision="merge")
+        self.assertEqual(res, None)
+
+        # Can rename to empty TX3 withouth need for merge
+        res = util.rename_xmlid(cr, "base.TX2", "base.TX3", on_collision="merge")
+        self.assertEqual(res, new.id)
+
+        # Normal rename
+        res = util.rename_xmlid(cr, "base.TX3", "base.TX4")
+        self.assertEqual(res, new.id)

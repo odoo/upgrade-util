@@ -18,6 +18,7 @@ except ImportError:
     from openerp.tools.misc import file_open
 
 from .const import NEARLYWARN
+from .exceptions import MigrationError
 from .helpers import _get_theme_models, _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit
@@ -429,34 +430,54 @@ def remove_menus(cr, menu_ids):
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.ui.menu' AND res_id IN %s", [ids])
 
 
-def rename_xmlid(cr, old, new, noupdate=None):
+def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
     if "." not in old or "." not in new:
         raise ValueError("Please use fully qualified name <module>.<name>")
+    if on_collision not in {"fail", "merge"}:
+        raise ValueError("Invalid value for the `on_collision` argument: {0!r}".format(on_collision))
 
     old_module, _, old_name = old.partition(".")
     new_module, _, new_name = new.partition(".")
-    nu = "" if noupdate is None else (", noupdate=" + str(bool(noupdate)).lower())
-    cr.execute(
-        """UPDATE ir_model_data
-                     SET module=%s, name=%s
-                         {}
-                   WHERE module=%s AND name=%s
-               RETURNING model, res_id
-               """.format(
-            nu
-        ),
-        (new_module, new_name, old_module, old_name),
-    )
-    data = cr.fetchone()
-    if data:
-        model, rid = data
+    cr.execute("SELECT model, res_id FROM ir_model_data WHERE module = %s AND name = %s", [new_module, new_name])
+    new_model, new_id = cr.fetchone() or (None, None)
+    cr.execute("SELECT model, res_id FROM ir_model_data WHERE module = %s AND name = %s", [old_module, old_name])
+    model, old_id = cr.fetchone() or (None, None)
+
+    if new_id and old_id:
+        if on_collision == "merge":
+            if model != new_model:
+                raise MigrationError("Model mismatch while renaming xmlid {}. {} to {}".format(old, model, new_model))
+
+            replace_record_references(cr, (model, old_id), (model, new_id), replace_xmlid=False)
+            if noupdate is not None:
+                force_noupdate(cr, new, bool(noupdate))
+            cr.execute("DELETE FROM ir_model_data WHERE module=%s AND name=%s", [old_module, old_name])
+        else:
+            raise MigrationError("Can't rename {} to {} as it already exists".format(old, new))
+    else:
+        nu = "" if noupdate is None else (", noupdate=" + str(bool(noupdate)).lower())
+
+        cr.execute(
+            """UPDATE ir_model_data
+                  SET module=%s, name=%s
+                   {}
+                WHERE module=%s AND name=%s
+            RETURNING model, res_id
+            """.format(
+                nu
+            ),
+            (new_module, new_name, old_module, old_name),
+        )
+        model, new_id = cr.fetchone() or (None, None)
+
+    if model and new_id:
         if model == "ir.ui.view" and column_exists(cr, "ir_ui_view", "key"):
-            cr.execute("UPDATE ir_ui_view SET key=%s WHERE id=%s AND key=%s", [new, rid, old])
+            cr.execute("UPDATE ir_ui_view SET key=%s WHERE id=%s AND key=%s", [new, new_id, old])
             if cr.rowcount:
                 # iif the key has been updated for this view, also update it for all other cowed views.
                 # Don't change the view keys inconditionally to avoid changing unrelated views.
                 cr.execute("UPDATE ir_ui_view SET key = %s WHERE key = %s", [new, old])
-        return rid
+        return new_id
     return None
 
 
