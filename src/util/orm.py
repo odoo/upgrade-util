@@ -165,6 +165,11 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         any_tracked_field = any(getattr(Model._fields[f], _TRACKING_ATTR, False) for f in fields)
         strategy = "commit" if big_table and any_tracked_field else "flush"
 
+    old_convert = ofields.Selection.convert_to_cache
+
+    def _convert(self, value, record, validate=True):
+        return old_convert(self, value, record, False)
+
     size = (len(ids) + chunk_size - 1) / chunk_size
     qual = "%s %d-bucket" % (model, chunk_size) if chunk_size != 1 else model
     for subids in log_progress(chunks(ids, chunk_size, list), logger, qualifier=qual, size=size):
@@ -176,11 +181,6 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
                 records._recompute_todo(field)
             else:
                 Model.env.add_to_compute(field, records)
-
-        old_convert = ofields.Selection.convert_to_cache
-
-        def _convert(self, value, record, validate=True):
-            return old_convert(self, value, record, False)
 
         with patch(ofields.__name__ + ".Selection.convert_to_cache", _convert):
             recompute(records)
