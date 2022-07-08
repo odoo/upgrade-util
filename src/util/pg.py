@@ -548,7 +548,8 @@ def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
         """
             SELECT {select}
               FROM information_schema.columns
-             WHERE table_name=%s
+             WHERE table_schema = 'public'
+               AND table_name=%s
                AND column_name NOT IN %s
     """.format(
             select=select
