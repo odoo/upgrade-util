@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 @contextmanager
 def no_fiscal_lock(cr):
     invalidate(env(cr)["res.company"])
-    columns = [col for col in get_columns(cr, "res_company")[0] if col.endswith("_lock_date")]
+    columns = [col for col in get_columns(cr, "res_company") if col.endswith("_lock_date")]
     assert columns
     set_val = ", ".join("{} = NULL".format(col) for col in columns)
     returns = ", ".join("old.{}".format(col) for col in columns)

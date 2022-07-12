@@ -136,7 +136,8 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
     if not column_exists(cr, "ir_cron", "ir_actions_server_id"):
         return
 
-    columns, s_columns = map(", ".join, get_columns(cr, "ir_model_data", ignore=("id", "module"), extra_prefixes="s"))
+    columns = get_columns(cr, "ir_model_data", ignore=("id", "module"))
+    s_columns = ["s." + c for c in columns]
     query = """
         INSERT INTO ir_model_data(module, {columns})
              SELECT '__cloc_exclude__', {s_columns}
@@ -148,7 +149,7 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
                 AND s.module = '__upgrade__'
         ON CONFLICT DO NOTHING
     """
-    cr.execute(query.format(columns=columns, s_columns=s_columns), [xid_name])
+    cr.execute(query.format(columns=",".join(columns), s_columns=",".join(s_columns)), [xid_name])
 
 
 _TRACKING_ATTR = "tracking" if version_gte("saas~12.2") else "track_visibility"

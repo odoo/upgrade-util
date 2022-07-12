@@ -841,7 +841,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
 
             if not column_exists(cr, table, "id"):
                 # seems to be a m2m table. Avoid duplicated entries
-                cols = get_columns(cr, table, ignore=(fk,))[0]
+                cols = get_columns(cr, table, ignore=(fk,))
                 assert len(cols) == 1  # it's a m2, should have only 2 columns
                 col2 = cols[0]
                 query += """

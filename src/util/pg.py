@@ -552,35 +552,25 @@ def get_depending_views(cr, table, column):
     return cr.fetchall()
 
 
-def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
-    """return the list of columns in table (minus ignored ones)
-    can also returns the list multiple times with different prefixes.
-    This can be used to duplicating records (INSERT SELECT from the same table)
-    """
+def get_columns(cr, table, ignore=("id",)):
+    """return the list of columns in table (minus ignored ones)"""
     _validate_table(table)
-    select = "quote_ident(column_name)"
-    params = []
-    if extra_prefixes:
-        select = ",".join([select] + ["concat(%%s, '.', %s)" % select] * len(extra_prefixes))
-        params = list(extra_prefixes)
 
     cr.execute(
         """
-            SELECT {select}
+            SELECT quote_ident(column_name)
               FROM information_schema.columns
              WHERE table_schema = 'public'
-               AND table_name=%s
-               AND column_name NOT IN %s
-    """.format(
-            select=select
-        ),
-        params + [table, ignore],
+               AND table_name = %s
+               AND column_name != ALL(%s)
+        """,
+        [table, list(ignore)],
     )
-    return list(zip(*cr.fetchall()))
+    return [c for c, in cr.fetchall()]
 
 
 def find_new_table_column_name(cr, table, name):
-    (columns,) = get_columns(cr, table)
+    columns = get_columns(cr, table)
     i = 0
     while name in columns:
         i += 1
@@ -629,7 +619,7 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
 
     extra_columns = get_columns(cr, m2m, ignore=(col1, col2))
     if extra_columns:
-        raise MigrationError("The m2m %r has extra columns: %s" % (m2m, ", ".join(extra_columns[0])))
+        raise MigrationError("The m2m %r has extra columns: %s" % (m2m, ", ".join(extra_columns)))
 
     # cleanup
     fixup_m2m_cleanup(cr, m2m, col1, col2)

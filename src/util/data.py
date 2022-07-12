@@ -27,7 +27,7 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
     table = table_of_model(cr, model)
     upds = []
     for ft, fc, _, da in get_fk(cr, table):
-        cols = get_columns(cr, ft, ignore=(fc,))[0]
+        cols = get_columns(cr, ft, ignore=(fc,))
         is_many2one = False
         is_many2many = da == "c" and len(cols) == 1  # if ondelete=cascade fk and only 2 columns, it's a m2m
         if not is_many2many:
