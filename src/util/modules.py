@@ -6,6 +6,7 @@ except ImportError:
 
 import logging
 import os
+from collections import defaultdict
 from inspect import currentframe
 from operator import itemgetter
 
@@ -36,7 +37,7 @@ from .misc import on_CI, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import column_exists
-from .records import remove_menus, remove_record, remove_view
+from .records import remove_menus, remove_records, remove_view
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ def uninstall_module(cr, module):
     )
 
     # delete data
-    model_ids, field_ids, menu_ids = [], [], []
+    model_ids, field_ids, menu_ids, record_ids = [], [], [], defaultdict(list)
     cr.execute(
         """
             SELECT model, res_id
@@ -135,7 +136,10 @@ def uninstall_module(cr, module):
         elif model == "ir.ui.view":
             remove_view(cr, view_id=res_id, silent=True)
         else:
-            remove_record(cr, (model, res_id))
+            record_ids[model].append(res_id)
+
+    for model, ids in record_ids.items():
+        remove_records(cr, model, ids)
 
     if menu_ids:
         remove_menus(cr, menu_ids)
@@ -316,8 +320,7 @@ def merge_module(cr, old, into, update_dependers=True):
                 elif model == "ir.ui.menu":
                     remove_menus(cr, tuple(res_ids))
                 else:
-                    for r in res_ids:
-                        remove_record(cr, (model, r))
+                    remove_records(cr, model, res_ids)
 
         cr.execute("DELETE FROM ir_model_{0} WHERE module=%s".format(table), [old])
 
