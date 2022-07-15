@@ -82,7 +82,7 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
 def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
     _validate_model(model)
 
-    ENVIRON["__renamed_fields"][model].add(fieldname)
+    ENVIRON["__renamed_fields"][model][fieldname] = None
 
     def filter_value(key, value):
         if key == "orderedBy" and isinstance(value, dict):
@@ -323,9 +323,8 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
 def rename_field(cr, model, old, new, update_references=True, domain_adapter=None, skip_inherit=()):
     _validate_model(model)
     rf = ENVIRON["__renamed_fields"].get(model)
-    if rf and old in rf:
-        rf.discard(old)
-        rf.add(new)
+    if rf:
+        rf[new] = rf.pop(old, old)
 
     try:
         with savepoint(cr):

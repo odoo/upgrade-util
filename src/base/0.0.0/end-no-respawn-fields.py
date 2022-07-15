@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+
 from psycopg2.extras import execute_values
 
 from odoo.addons.base.maintenance.migrations import util
@@ -24,7 +25,8 @@ def migrate(cr, version):
         [
             (model, field)
             for model, fields in util.ENVIRON["__renamed_fields"].items()
-            for field in fields
+            for field, new_name in fields.items()
+            if new_name is None  # means removed :p
         ],
         # fmt:on
     )
