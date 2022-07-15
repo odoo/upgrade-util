@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import os
 
 import lxml
 
@@ -7,6 +8,11 @@ from .exceptions import SleepyDeveloperError
 from .misc import splitlines, version_gte
 
 _logger = logging.getLogger(__name__.rpartition(".")[0])
+
+_VALID_MODELS = frozenset(
+    {"_unknown", "website_pricelist", "ir_actions_account_report_download"}
+    | set(m.strip() for m in os.getenv("UPG_VALID_MODELS", "").split(";")) - {""}
+)
 
 # python3 shims
 try:
@@ -122,8 +128,7 @@ def model_of_table(cr, table):
 
 
 def _validate_model(model):
-    exceptions = ["_unknown", "website_pricelist", "ir_actions_account_report_download"]
-    if "_" in model and "." not in model and not model.startswith("x_") and model not in exceptions:
+    if "_" in model and "." not in model and not model.startswith("x_") and model not in _VALID_MODELS:
         raise SleepyDeveloperError("`{}` seems to be a table name instead of model name".format(model))
     return model
 
