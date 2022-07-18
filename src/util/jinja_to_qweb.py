@@ -15,6 +15,7 @@ from odoo.tools import is_html_empty, mute_logger, safe_eval
 
 from .helpers import _validate_table, model_of_table
 from .orm import env as get_env
+from .pg import named_cursor
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -344,7 +345,8 @@ def upgrade_jinja_fields(
 
     qweb_entries = [f"{model},{name}" for name in qweb_fields]
     if qweb_entries:
-        cr.execute(
+        ncr = named_cursor(cr, 1000)
+        ncr.execute(
             r"""
             SELECT id, src, value
               FROM ir_translation
@@ -353,7 +355,8 @@ def upgrade_jinja_fields(
             """,
             [tuple(qweb_entries)],
         )
-        for tid, src, value in cr.fetchall():
+
+        for tid, src, value in ncr:
             converted_src = convert_jinja_to_qweb(src) if src else ""
             converted_value = convert_jinja_to_qweb(value) if value else ""
             cr.execute(
@@ -367,6 +370,7 @@ def upgrade_jinja_fields(
                 """,
                 [converted_src, converted_value, tid, tid],
             )
+        ncr.close()
 
 
 def verify_upgraded_jinja_fields(cr):
