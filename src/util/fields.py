@@ -81,8 +81,6 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
 
 def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
     _validate_model(model)
-    if fieldname == "id":
-        raise SleepyDeveloperError("Did you mean `util.remove_model`?")
 
     ENVIRON["__renamed_fields"][model].add(fieldname)
 
