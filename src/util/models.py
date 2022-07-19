@@ -464,3 +464,20 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=()):
     # down on inherits of `model`
     for inh in for_each_inherit(cr, model, skip_inherit):
         remove_inherit_from_model(cr, inh.model, inherit, keep=keep, skip_inherit=skip_inherit)
+
+
+def convert_model_to_abstract(cr, model, drop_table=True, keep=()):
+    _validate_model(model)
+
+    if drop_table:
+        table = table_of_model(cr, model)
+        if table_exists(cr, table):
+            cr.execute('DROP TABLE "{0}" CASCADE'.format(table))
+        elif view_exists(cr, table):
+            cr.execute('DROP VIEW "{0}" CASCADE'.format(table))
+
+    # Even if `__last_update` can be changed on the model definition, we hardcode the name.
+    # I'm not aware of any (standard) model that modify it. The field will need to be removed explicitly if it happen.
+    for field in ["id", "__last_update", "display_name", "create_uid", "create_date", "write_uid", "write_date"]:
+        if field not in keep:
+            remove_field(cr, model, field)
