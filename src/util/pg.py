@@ -805,6 +805,9 @@ class named_cursor(object):
     def iterdict(self):
         return map(self.__dictrow, self._ncr)
 
+    def __iter__(self):
+        return self._ncr.__iter__()
+
     def __enter__(self):
         self._ncr.__enter__()
         return self
