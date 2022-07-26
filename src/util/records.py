@@ -139,6 +139,16 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
 
         with util.skippable_cm(), util.edit_view(cr, 'xml.id') as arch:
             arch.attrib['string'] = 'My Form'
+
+    When view_id is passed to identify a view, view's arch will always yield to be edited because
+    we assume that xmlid for such view does not exist to check its noupdate flag.
+
+    If view's noupdate=false then the arch will not be yielded for edit unless skip_if_not_noupdate=False,
+    because when noupdate=False we assume it is a standard view that will be updated by the ORM later on anyways.
+
+    If view's noupdate=True, the view will be yielded for edit.
+
+    For more details, see discussion in: https://github.com/odoo/upgrade-specific/pull/4216
     """
     assert bool(xmlid) ^ bool(view_id), "You Must specify either xmlid or view_id"
     noupdate = True
