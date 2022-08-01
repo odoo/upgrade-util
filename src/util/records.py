@@ -28,8 +28,11 @@ from .pg import (
     _validate_table,
     column_exists,
     column_updatable,
+    explode_query,
+    explode_query_range,
     get_columns,
     get_fk,
+    parallel_execute,
     table_exists,
     target_of,
 )
@@ -824,8 +827,15 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                     # We can't decide which link to break.
                     # XXX: add a warning?
                     query += "DELETE FROM {table} WHERE {fk} IN %(new)s AND {fk} = {col2};"
-
-            cr.execute(query.format(table=table, fk=fk, jmap=jmap, col2=col2), dict(new=new, old=old))
+                cr.execute(query.format(table=table, fk=fk, jmap=jmap, col2=col2), dict(new=new, old=old))
+            else:
+                fmt_query = (
+                    cr.mogrify(query.format(table=table, fk=fk, jmap=jmap, col2=col2), dict(new=new, old=old))
+                    .decode()
+                    .replace("{", "{{")
+                    .replace("}", "}}")
+                )
+                parallel_execute(cr, explode_query(cr, fmt_query, alias="t"))
 
             if not col2:  # it's a model
                 # update default values
@@ -859,8 +869,8 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                         [model, fk, smap_keys],
                     )
 
-    cr.execute("CREATE TEMP TABLE _upgrade_rrr_old_ids(id int PRIMARY KEY)")
-    execute_values(cr, "INSERT INTO _upgrade_rrr_old_ids VALUES %s", [(id,) for id in old])
+    cr.execute("CREATE TABLE _upgrade_rrr_old_ids(id int PRIMARY KEY, new_id int)")
+    execute_values(cr, "INSERT INTO _upgrade_rrr_old_ids (id, new_id) VALUES %s", id_mapping.items())
 
     cr.execute("SELECT id FROM ir_model WHERE model=%s", [model_dst])
     model_dest_id = cr.fetchone()[0]
@@ -882,8 +892,8 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             jmap_expr = "true"  # no-op
             jmap_expr_upd = ""
         else:
-            jmap_expr = "\"{ir.res_id}\" = ('{jmap}'::jsonb->>t.{ir.res_id}::varchar)::int4".format(**locals())
-            jmap_expr_upd = "," + jmap_expr
+            jmap_expr = '"{ir.res_id}" = _upgrade_rrr_old_ids.new_id'.format(ir=ir)
+            jmap_expr_upd = ", " + jmap_expr
 
         query = """
             UPDATE "{ir.table}" t
@@ -917,8 +927,11 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 query,
                 "AND".join(conditions),
             )
+            cr.execute(query.format(**locals()), locals())
+        else:
+            fmt_query = cr.mogrify(query.format(**locals()), locals()).decode().replace("{", "{{").replace("}", "}}")
+            parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
 
-        cr.execute(query.format(**locals()), locals())
     cr.execute("DROP TABLE IF EXISTS _upgrade_rrr_old_ids")
 
     # reference fields

@@ -454,14 +454,25 @@ class TestRecords(UnitTestCase):
         self.env["ir.model.data"].create({"name": "TX1", "module": "base", "model": "res.currency", "res_id": old.id})
         self.env["ir.model.data"].create({"name": "TX2", "module": "base", "model": "res.currency", "res_id": new.id})
 
-        country = self.env["res.country"].create({"name": "Test country 1", "currency_id": old.id})
+        rate = self.env["res.currency.rate"].create({"currency_id": old.id})
         self.env["ir.model.data"].create(
-            {"name": "test_country_1", "module": "base", "model": "res.country", "res_id": country.id}
+            {"name": "test_rate_tx1", "module": "base", "model": "res.currency.rate", "res_id": rate.id}
         )
+
+        if hasattr(self, "_savepoint_id"):
+            # As the `rename_xmlid` method uses `parallel_execute`, the cursor is commited; which kill
+            # the savepoint created by the test setup (since saas~14.1 with the merge of SavepointCase
+            # into TransactionCase in odoo/odoo@7f2e168c02a7aea666d34510ed2ed8efacd5654b).
+            # Force a new one to avoid this issue.
+            # Incidentally, we should also explicitly remove the created records.
+            self.addCleanup(cr.execute, f"SAVEPOINT test_{self._savepoint_id}")
+            self.addCleanup(old.unlink)
+            self.addCleanup(new.unlink)
+            self.addCleanup(rate.unlink)
 
         # Wrong model
         with self.assertRaises(MigrationError):
-            util.rename_xmlid(cr, "base.TX1", "base.test_country_1", on_collision="merge")
+            util.rename_xmlid(cr, "base.TX1", "base.test_rate_tx1", on_collision="merge")
 
         # Collision
         with self.assertRaises(MigrationError):
@@ -473,14 +484,14 @@ class TestRecords(UnitTestCase):
         self.assertEqual(util.ref(cr, "base.TX1"), None)
 
         # TX1 references moved to TX2
-        cr.execute("SELECT currency_id FROM res_country WHERE id = %s", [country.id])
+        cr.execute("SELECT currency_id FROM res_currency_rate WHERE id = %s", [rate.id])
         self.assertEqual(cr.fetchall(), [(new.id,)])
 
         # Nothing left to rename in TX1
         res = util.rename_xmlid(cr, "base.TX1", "base.TX3", on_collision="merge")
         self.assertEqual(res, None)
 
-        # Can rename to empty TX3 withouth need for merge
+        # Can rename to empty TX3 without need for merge
         res = util.rename_xmlid(cr, "base.TX2", "base.TX3", on_collision="merge")
         self.assertEqual(res, new.id)
 
