@@ -56,32 +56,46 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
     for ir in indirect_references(cr):
         if ir.table in ("ir_model", "ir_model_fields", "ir_model_data"):
             continue
-
-        query = """
-            WITH _ as (
-                SELECT r.id, bool_or(COALESCE(d.module, '') NOT IN ('', '__export__')) AS from_module
-                  FROM "{}" r
-             LEFT JOIN ir_model_data d ON d.model = %s AND d.res_id = r.id
-                 WHERE {}
-             GROUP BY r.id
-            )
-            SELECT from_module, array_agg(id) FROM _ GROUP BY from_module
-        """
         ref_model = model_of_table(cr, ir.table)
-        cr.execute(query.format(ir.table, ir.model_filter(prefix="r.")), [ref_model, model])
-        for from_module, ids in cr.fetchall():
-            if from_module or not ir.set_unknown:
-                if ir.table == "ir_ui_view":
-                    for view_id in ids:
-                        remove_view(cr, view_id=view_id, silent=True)
-                else:
-                    # remove in batch
-                    size = (len(ids) + chunk_size - 1) / chunk_size
-                    it = chunks(ids, chunk_size, fmt=tuple)
-                    for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
-                        remove_records(cr, ref_model, sub_ids)
-                        _rm_refs(cr, ref_model, sub_ids)
-            else:
+
+        query = cr.mogrify(
+            """
+                SELECT d.res_id
+                  FROM ir_model_data d
+                  JOIN "{}" r ON d.model = %s AND d.res_id = r.id
+                 WHERE d.module != '__export__'
+                   AND {}
+            """.format(
+                ir.table, ir.model_filter(prefix="r.")
+            ),
+            [ref_model, model],
+        ).decode()
+        if not ir.set_unknown:
+            # If not set_unknown, all records should be deleted.
+            query = cr.mogrify(
+                'SELECT id FROM "{}" r WHERE {}'.format(ir.table, ir.model_filter(prefix="r.")), [model]
+            ).decode()
+
+        cr.execute(query)
+        if ir.table == "ir_ui_view":
+            for (view_id,) in cr.fetchall():
+                remove_view(cr, view_id=view_id, silent=True)
+        else:
+            # remove in batch
+            size = (cr.rowcount + chunk_size - 1) / chunk_size
+            it = chunks([id for id, in cr.fetchall()], chunk_size, fmt=tuple)
+            for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
+                remove_records(cr, ref_model, sub_ids)
+                _rm_refs(cr, ref_model, sub_ids)
+
+        if ir.set_unknown:
+            # Link remaining records not linked to a XMLID
+            query = cr.mogrify(
+                'SELECT id FROM "{}" r WHERE {}'.format(ir.table, ir.model_filter(prefix="r.")), [model]
+            ).decode()
+            cr.execute(query)
+            ids = [id for id, in cr.fetchall()]
+            if ids:
                 # link to `_unknown` model
                 sets, args = zip(
                     *[
