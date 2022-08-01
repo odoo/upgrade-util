@@ -12,7 +12,9 @@ from .pg import (
     _get_unique_indexes_with,
     column_exists,
     column_updatable,
+    explode_query_range,
     get_m2m_tables,
+    parallel_execute,
     remove_constraint,
     table_exists,
     view_exists,
@@ -425,7 +427,11 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
                 )
             where = " AND ".join(wheres) or "true"
             query = "UPDATE {t} t SET {c}=%(new)s WHERE {w} AND {c}=%(old)s".format(t=ir.table, c=ir.res_model, w=where)
-            cr.execute(query, dict(new=target, old=source))
+            fmt_query = cr.mogrify(query, dict(new=target, old=source)).decode()
+            if column_exists(cr, ir.table, "id"):
+                parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
+            else:
+                cr.execute(fmt_query)
 
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
