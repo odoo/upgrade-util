@@ -139,25 +139,31 @@ def _validate_table(table):
     return table
 
 
-def _ir_values_value(cr):
+def _ir_values_value(cr, prefix=None):
     # returns the casting from bytea to text needed in saas~17 for column `value` of `ir_values`
     # returns tuple(column_read, cast_write)
-    result = getattr(_ir_values_value, "result", None)
+    cache = getattr(_ir_values_value, "cache", None)
 
-    if result is None:
+    if cache is None:
         from .pg import column_type
 
         if column_type(cr, "ir_values", "value") == "bytea":
             cr.execute("SELECT character_set_name FROM information_schema.character_sets")
             (charset,) = cr.fetchone()
-            column_read = "convert_from(value, '%s')" % charset
+            column_read = "convert_from(%%svalue, '%s')" % charset
             cast_write = "convert_to(%%s, '%s')" % charset
         else:
-            column_read = "value"
+            column_read = "%svalue"
             cast_write = "%s"
-        _ir_values_value.result = result = (column_read, cast_write)
+        _ir_values_value.cache = (column_read, cast_write)
+    else:
+        column_read, cast_write = cache
 
-    return result
+    if prefix:
+        prefix = prefix + "."
+    else:
+        prefix = ""
+    return column_read % prefix, cast_write
 
 
 def _dashboard_actions(cr, arch_match, *models):
