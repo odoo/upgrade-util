@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import json
 import logging
 import os
 from contextlib import contextmanager
@@ -777,21 +776,11 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     if not replace_xmlid:
         ignores.append("ir_model_data")
 
-    old = tuple(id_mapping.keys())
-    new = tuple(id_mapping.values())
-    jmap = json.dumps(id_mapping)
-
-    def genmap(fmt_k, fmt_v=None):
-        # generate map using given format
-        fmt_v = fmt_k if fmt_v is None else fmt_v
-        m = {fmt_k % k: fmt_v % v for k, v in id_mapping.items()}
-        return json.dumps(m), tuple(m.keys())
+    cr.execute("CREATE UNLOGGED TABLE _upgrade_rrr(old int PRIMARY KEY, new int)")
+    execute_values(cr, "INSERT INTO _upgrade_rrr (old, new) VALUES %s", id_mapping.items())
 
     if model_src == model_dst:
-        pmap, pmap_keys = genmap("I%d\n.")  # 7 time faster than using pickle.dumps
-        smap, smap_keys = genmap("%d")
-
-        column_read, cast_write = _ir_values_value(cr)
+        fk_def = []
 
         model_src_table = table_of_model(cr, model_src)
         for table, fk, _, _ in get_fk(cr, model_src_table):
@@ -799,78 +788,73 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 continue
             query = """
                 UPDATE {table} t
-                   SET {fk} = ('{jmap}'::jsonb->>{fk}::varchar)::int4
-                 WHERE {fk} IN %(old)s
+                   SET {fk} = r.new
+                  FROM _upgrade_rrr r
+                 WHERE r.old = t.{fk}
             """
 
-            col2 = None
             if not column_exists(cr, table, "id"):
                 # seems to be a m2m table. Avoid duplicated entries
                 cols = get_columns(cr, table, ignore=(fk,))[0]
                 assert len(cols) == 1  # it's a m2, should have only 2 columns
                 col2 = cols[0]
-                query = (
-                    """
-                    WITH _existing AS (
-                        SELECT {col2} FROM {table} WHERE {fk} IN %%(new)s
-                    )
-                    %s
-                    AND NOT EXISTS(SELECT 1 FROM _existing WHERE {col2}=t.{col2});
-                    DELETE FROM {table} WHERE {fk} IN %%(old)s;
+                query += """
+                    AND NOT EXISTS(SELECT 1 FROM {table} e WHERE e.{col2} = t.{col2} AND e.{fk} = r.new);
+
+                    DELETE
+                      FROM {table} t
+                     USING _upgrade_rrr r
+                     WHERE t.{fk} = r.old;
                 """
-                    % query
-                )
+
                 col2_info = target_of(cr, table, col2)  # col2 may not be a FK
                 if col2_info and col2_info[:2] == (model_src_table, "id"):
                     # a m2m on itself, remove the self referencing entries
                     # It only handle 1-level recursions. For multi-level recursions, it should be handled manually.
                     # We can't decide which link to break.
                     # XXX: add a warning?
-                    query += "DELETE FROM {table} WHERE {fk} IN %(new)s AND {fk} = {col2};"
-                cr.execute(query.format(table=table, fk=fk, jmap=jmap, col2=col2), dict(new=new, old=old))
-            else:
-                fmt_query = (
-                    cr.mogrify(query.format(table=table, fk=fk, jmap=jmap, col2=col2), dict(new=new, old=old))
-                    .decode()
-                    .replace("{", "{{")
-                    .replace("}", "}}")
-                )
+                    query += """
+                        DELETE
+                          FROM {table} t
+                         USING _upgrade_rrr r
+                         WHERE t.{fk} = r.new
+                           AND t.{fk} = t.{col2};
+                    """
+
+                cr.execute(query.format(table=table, fk=fk, col2=col2))
+
+            else:  # it's a model
+                fmt_query = cr.mogrify(query.format(table=table, fk=fk)).decode()
                 parallel_execute(cr, explode_query(cr, fmt_query, alias="t"))
 
-            if not col2:  # it's a model
-                # update default values
-                # TODO? update all defaults using 1 query (using `WHERE (model, name) IN ...`)
+                # track default values to update
                 model = model_of_table(cr, table)
-                if table_exists(cr, "ir_values"):
-                    query = """
-                         UPDATE ir_values
-                            SET value = {cast[0]} '{pmap}'::jsonb->>({col}) {cast[2]}
-                          WHERE key='default'
-                            AND model=%s
-                            AND name=%s
-                            AND {col} IN %s
-                    """.format(
-                        col=column_read, cast=cast_write.partition("%s"), pmap=pmap
-                    )
-                    cr.execute(query, [model, fk, pmap_keys])
-                else:
-                    cr.execute(
-                        """
-                        UPDATE ir_default d
-                           SET json_value = '{smap}'::jsonb->>json_value
-                          FROM ir_model_fields f
-                         WHERE f.id = d.field_id
-                           AND f.model = %s
-                           AND f.name = %s
-                           AND d.json_value IN %s
-                    """.format(
-                            smap=smap
-                        ),
-                        [model, fk, smap_keys],
-                    )
+                fk_def.append((model, fk))
 
-    cr.execute("CREATE TABLE _upgrade_rrr_old_ids(id int PRIMARY KEY, new_id int)")
-    execute_values(cr, "INSERT INTO _upgrade_rrr_old_ids (id, new_id) VALUES %s", id_mapping.items())
+        if fk_def:
+            if table_exists(cr, "ir_values"):
+                column_read, cast_write = _ir_values_value(cr, prefix="v")
+                query = r"""
+                    UPDATE ir_values v
+                       SET value = {cast_write}
+                      FROM _upgrade_rrr r
+                     WHERE v.key = 'default'
+                       AND {column_read} = format(E'I%%s\n.', r.old)
+                       AND (v.model, v.name) IN %s
+                """.format(
+                    column_read=column_read, cast_write=cast_write % r"format(E'I%%s\n.', r.new)"
+                )
+            else:
+                query = """
+                    UPDATE ir_default d
+                       SET json_value = r.new::varchar
+                      FROM _upgrade_rrr r, ir_model_fields f
+                     WHERE f.id = d.field_id
+                       AND d.json_value = r.old::varchar
+                       AND (f.model, f.name) IN %s
+                """
+
+            cr.execute(query, [tuple(fk_def)])
 
     cr.execute("SELECT id FROM ir_model WHERE model=%s", [model_dst])
     model_dest_id = cr.fetchone()[0]
@@ -892,16 +876,16 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             jmap_expr = "true"  # no-op
             jmap_expr_upd = ""
         else:
-            jmap_expr = '"{ir.res_id}" = _upgrade_rrr_old_ids.new_id'.format(ir=ir)
+            jmap_expr = '"{ir.res_id}" = _upgrade_rrr.new'.format(ir=ir)
             jmap_expr_upd = ", " + jmap_expr
 
         query = """
             UPDATE "{ir.table}" t
                SET {upd}
                    {jmap_expr_upd}
-              FROM _upgrade_rrr_old_ids
+              FROM _upgrade_rrr
              WHERE {whr}
-               AND _upgrade_rrr_old_ids.id = {ir.res_id}
+               AND _upgrade_rrr.old = {ir.res_id}
         """
 
         unique_indexes = []
@@ -922,34 +906,38 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             query = """
                     %s
                     AND %s;
-                DELETE FROM {ir.table} USING _upgrade_rrr_old_ids WHERE {whr} AND {ir.res_id} = _upgrade_rrr_old_ids.id;
+                DELETE FROM {ir.table} USING _upgrade_rrr WHERE {whr} AND {ir.res_id} = _upgrade_rrr.old;
             """ % (
                 query,
                 "AND".join(conditions),
             )
             cr.execute(query.format(**locals()), locals())
         else:
-            fmt_query = cr.mogrify(query.format(**locals()), locals()).decode().replace("{", "{{").replace("}", "}}")
+            fmt_query = cr.mogrify(query.format(**locals()), locals()).decode()
             parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
 
-    cr.execute("DROP TABLE IF EXISTS _upgrade_rrr_old_ids")
-
     # reference fields
-    cmap, cmap_keys = genmap("%s,%%d" % model_src, "%s,%%d" % model_dst)
     cr.execute("SELECT model, name FROM ir_model_fields WHERE ttype='reference'")
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if table not in ignores and column_updatable(cr, table, column):
             cr.execute(
                 """
-                    UPDATE "{table}"
-                       SET "{column}" = '{cmap}'::jsonb->>"{column}"
-                     WHERE "{column}" IN %s
+                    WITH _ref AS (
+                        SELECT concat(%s, ',', old) as old, concat(%s, ',', new) as new
+                          FROM _upgrade_rrr
+                    )
+                    UPDATE "{table}" t
+                       SET "{column}" = r.new
+                      FROM _ref r
+                     WHERE t."{column}" = r.old
             """.format(
-                    table=table, column=column, cmap=cmap
+                    table=table, column=column
                 ),
-                [cmap_keys],
+                [model_src, model_dst],
             )
+
+    cr.execute("DROP TABLE _upgrade_rrr")
 
 
 def ensure_mail_alias_mapping(cr, model, record_xmlid, alias_xmlid, alias_name):
