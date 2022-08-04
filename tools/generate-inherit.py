@@ -138,10 +138,25 @@ VIRTUAL_INHERITS = {
     "account.avatax": [
         Inherit(model="account.move", born=Version("14.0"), dead=Version("15.0"), via=None),
         Inherit(model="sale.order", born=Version("14.0"), dead=Version("15.0"), via=None),
+        Inherit(model="sale.subscription", born=Version("14.0"), dead=Version("15.0"), via=None),
     ],
     "account.avatax.unique.code": [
         Inherit(model="account.avatax", born=Version("14.0"), dead=Version("15.0"), via=None),
         Inherit(model="res.partner", born=Version("14.0"), dead=Version("15.0"), via=None),
+    ],
+    "account.edi.common": [
+        Inherit("account.edi.xml.cii", born=Version("14.0"), dead=Version("15.0")),
+        Inherit("account.edi.xml.ubl_20", born=Version("14.0"), dead=Version("15.0")),
+    ],
+    "account.edi.xml.ubl_20": [
+        Inherit("account.edi.xml.ubl_21", born=Version("14.0"), dead=Version("15.0")),
+        Inherit("account.edi.xml.ubl_efff", born=Version("14.0"), dead=Version("15.0")),
+    ],
+    "account.edi.xml.ubl_21": [
+        Inherit("account.edi.xml.ubl_bis3", born=Version("14.0"), dead=Version("15.0")),
+    ],
+    "account.edi.xml.ubl_bis3": [
+        Inherit("account.edi.xml.ubl_de", born=Version("14.0"), dead=Version("15.0")),
     ],
     "account.report": [
         Inherit("account.cash.flow.report", born=Version("saas-11.1"), dead=Version("saas-12.5")),
