@@ -4,9 +4,9 @@ try:
 except ImportError:
     from collections import Sequence, Set
 
+import itertools
 import logging
 import os
-from collections import defaultdict
 from inspect import currentframe
 from operator import itemgetter
 
@@ -108,7 +108,7 @@ def uninstall_module(cr, module):
     )
 
     # delete data
-    model_ids, field_ids, menu_ids, record_ids = [], [], [], defaultdict(list)
+    model_ids, field_ids, menu_ids = [], [], []
     cr.execute(
         """
             SELECT model, res_id
@@ -125,6 +125,7 @@ def uninstall_module(cr, module):
     """,
         [module],
     )
+    to_group = []
     for model, res_id in cr.fetchall():
         if model == "ir.model":
             model_ids.append(res_id)
@@ -132,13 +133,15 @@ def uninstall_module(cr, module):
             field_ids.append(res_id)
         elif model == "ir.ui.menu":
             menu_ids.append(res_id)
-        elif model == "ir.ui.view":
-            remove_view(cr, view_id=res_id, silent=True)
         else:
-            record_ids[model].append(res_id)
+            to_group.append((model, res_id))
 
-    for model, ids in record_ids.items():
-        remove_records(cr, model, ids)
+    for model, group in itertools.groupby(to_group, lambda it: it[0]):
+        if model == "ir.ui.view":
+            for _, res_id in group:
+                remove_view(cr, view_id=res_id, silent=True)
+        else:
+            remove_records(cr, model, [it[1] for it in group])
 
     if menu_ids:
         remove_menus(cr, menu_ids)
