@@ -78,7 +78,8 @@ def reset_cowed_views(cr, xmlid, key=None):
     cr.execute(
         """
         UPDATE ir_ui_view u
-           SET arch_db = v.arch_db
+           SET arch_prev = u.arch_db,
+               arch_db = v.arch_db
           FROM ir_ui_view v
           JOIN ir_model_data m
             ON m.res_id = v.id AND m.model = 'ir.ui.view'
