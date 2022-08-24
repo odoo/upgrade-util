@@ -6,10 +6,10 @@ repos:
         entry: ./tools/compile23.py
         language: script
       - id: bad-import-000
-        name: Incompatible import with old versions in `0.0.0` scripts
+        name: Incompatible import with old versions in tests and `0.0.0` scripts
         language: pygrep
         entry: '(from|import) odoo.upgrade\b'
-        files: '^src/\w+/0.0.0/.*\.py$'
+        files: '^src/\w+/(tests|0\.0\.0)/.*\.py$'
 
   - repo: https://github.com/psf/black
     rev: 22.6.0
