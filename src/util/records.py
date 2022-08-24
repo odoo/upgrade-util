@@ -391,11 +391,14 @@ def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
     cr.execute(
         """
         SELECT 1
-          FROM {}
-         WHERE id = %s
+          FROM {} r
+     LEFT JOIN ir_config_parameter p
+            ON p.key = 'upgrade.start.time'
+         WHERE r.id = %s
            -- Note: use a negative search to handle the case of NULL values in write/create_date
-           AND write_date - create_date > interval %s
-    """.format(
+           AND COALESCE(r.write_date < p.value::timestamp, True)
+           AND r.write_date - r.create_date > interval %s
+        """.format(
             table
         ),
         [res_id, interval],
