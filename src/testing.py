@@ -161,13 +161,16 @@ class UpgradeCommon(BaseCase):
     # -> but in this case impossible to filter on prepare or check with test_tags
     def test_prepare(self):
         if self._abstract:
+            self.skipTest("abstract test class")
             return
         (version, sub_version) = self.change_version
         if version is not None:
             current_version = parse_version(release.series)
             if current_version >= parse_version("%s.%s" % self.change_version):
+                self.skipTest("out of bounds version (>)")
                 return
             if current_version < parse_version("%s.%s" % get_previous_major(version, sub_version)):
+                self.skipTest("out of bounds version (<)")
                 return
 
         key = self.key
@@ -175,6 +178,7 @@ class UpgradeCommon(BaseCase):
             _logger.warning("key %s already exists, skipping", key)
             # do we want to warn and skip, or update key?
             # for upgrade case, avoid to prepare twice in all cases. For integrity, maybe update value
+            self.skipTest("duplicated key")
             return
 
         _logger.info("Calling %s.prepare", self.__class__.__name__)
@@ -183,13 +187,16 @@ class UpgradeCommon(BaseCase):
 
     def test_check(self):
         if self._abstract:
+            self.skipTest("abstract test class")
             return
         (version, sub_version) = self.change_version
         if version is not None:
             current_version = parse_version(release.series)
             if current_version < parse_version("%s.%s" % self.change_version):
+                self.skipTest("out of bounds version (<)")
                 return
             if current_version > parse_version("%s.%s" % get_next_major(version, sub_version)):
+                self.skipTest("out of bounds version (>)")
                 return
 
         key = self.key
