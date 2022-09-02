@@ -15,6 +15,7 @@ except ImportError:
     ThreadPoolExecutor = None
 
 import psycopg2
+from psycopg2 import sql
 
 try:
     from odoo.sql_db import db_connect
@@ -314,6 +315,11 @@ def table_exists(cr, table):
         [table],
     )
     return cr.fetchone() is not None
+
+
+def sequence_exists(cr, sequence):
+    cr.execute("SELECT 1 FROM information_schema.sequences WHERE sequence_name = %s", [sequence])
+    return bool(cr.rowcount)
 
 
 def view_exists(cr, view):
@@ -820,3 +826,34 @@ class named_cursor(object):
 
     def __getattr__(self, name):
         return getattr(self._ncr, name)
+
+
+def create_id_sequence(cr, table, set_as_default=True):
+    if not table_exists(cr, table):
+        raise MigrationError("The table `%s` doesn't exist, sequence can't be created." % table)
+
+    sequence = table + "_id_seq"
+    if sequence_exists(cr, sequence):
+        return
+
+    sequence_sql, table_sql = sql.Identifier(sequence), sql.Identifier(table)
+
+    cr.execute(
+        sql.SQL("CREATE SEQUENCE {sequence} OWNED BY {table}.id").format(
+            sequence=sequence_sql,
+            table=table_sql,
+        )
+    )
+    cr.execute(
+        sql.SQL("SELECT setval('{sequence}', (SELECT COALESCE(max(id), 0) FROM {table}))").format(
+            sequence=sequence_sql,
+            table=table_sql,
+        )
+    )
+    if set_as_default:
+        cr.execute(
+            sql.SQL("ALTER TABLE ONLY {table} ALTER COLUMN id SET DEFAULT nextval('{sequence}'::regclass)").format(
+                sequence=sequence_sql,
+                table=table_sql,
+            )
+        )
