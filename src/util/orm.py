@@ -66,22 +66,24 @@ def get_admin_channel(cr):
     if "mail.channel" in e:
         admin_group = e.ref("base.group_system", raise_if_not_found=False)
         if admin_group:
-            admin_channel = e["mail.channel"].search(
-                [
-                    ("public", "=", "groups"),
-                    ("group_public_id", "=", admin_group.id),
-                    ("group_ids", "in", admin_group.id),
-                ]
-            )
+            search_rules = [
+                ("channel_type", "=", "channel"),
+                ("group_public_id", "=", admin_group.id),
+                ("group_ids", "in", admin_group.id),
+            ]
+            if "public" in e["mail.channel"]._fields:
+                search_rules.append(("public", "=", "groups"))
+            admin_channel = e["mail.channel"].search(search_rules)
             if not admin_channel:
-                admin_channel = e["mail.channel"].create(
-                    {
-                        "name": "Administrators",
-                        "public": "groups",
-                        "group_public_id": admin_group.id,
-                        "group_ids": [(6, 0, [admin_group.id])],
-                    }
-                )
+                channel_values = {
+                    "name": "Administrators",
+                    "channel_type": "channel",
+                    "group_public_id": admin_group.id,
+                    "group_ids": [(6, 0, [admin_group.id])],
+                }
+                if "public" in e["mail.channel"]._fields:
+                    channel_values["public"] = "groups"
+                admin_channel = e["mail.channel"].create(channel_values)
     return admin_channel
 
 
