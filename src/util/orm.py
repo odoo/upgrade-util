@@ -503,6 +503,8 @@ def custom_module_field_as_manual(env, rollback=True):
     yield
 
     if rollback:
+        flush(env["base"])
+
         # 6. Restore back models and fields converted from `base` to `manual`.
         if updated_model_ids:
             env.cr.execute("UPDATE ir_model SET state = 'base' WHERE id IN %s", (tuple(updated_model_ids),))
