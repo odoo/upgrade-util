@@ -2,9 +2,11 @@
 import logging
 from contextlib import contextmanager
 
+from .fields import remove_field
+from .helpers import table_of_model
 from .modules import module_installed
 from .orm import env, invalidate
-from .pg import get_columns
+from .pg import create_column, explode_query_range, get_columns, parallel_execute
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -244,3 +246,55 @@ def used_by_amls(cr, tax):
         [tax.id],
     )
     return bool(cr.rowcount)
+
+
+def upgrade_analytic_distribution(cr, model, tag_table=None, account_field=None, tag_field=None):
+    table = table_of_model(cr, model)
+    tag_table = tag_table or "account_analytic_tag_{table}_rel".format(table=table)
+    account_field = account_field or "analytic_account_id"
+    tag_field = tag_field or "analytic_tag_ids"
+    query = """
+        WITH _items AS (
+            SELECT id, {account_field} FROM {table} item WHERE {{parallel_filter}}
+        ),
+        table_union AS (
+            SELECT item.id AS line_id,
+                   distribution.account_id AS account_id,
+                   distribution.percentage AS percentage
+              FROM _items item
+              JOIN {tag_table} analytic_rel ON analytic_rel.{table}_id = item.id
+              JOIN account_analytic_distribution distribution ON analytic_rel.account_analytic_tag_id = distribution.tag_id
+            UNION ALL
+            SELECT item.id AS line_id,
+                   item.{account_field} AS account_id,
+                   100 AS percentage
+              FROM _items item
+             WHERE item.{account_field} IS NOT NULL
+        ),
+        summed_union AS (
+            SELECT line_id,
+                   account_id,
+                   SUM(percentage) AS percentage
+              FROM table_union
+          GROUP BY line_id, account_id
+        ),
+        distribution AS (
+            SELECT line_id,
+                   CAST(json_object_agg(account_id, percentage) AS VARCHAR) AS distribution
+              FROM summed_union
+          GROUP BY line_id
+        )
+        UPDATE {table} item
+           SET analytic_distribution_stored_char = distribution.distribution
+          FROM distribution
+         WHERE item.id = distribution.line_id
+    """.format(
+        account_field=account_field,
+        table=table,
+        tag_table=tag_table,
+    )
+
+    create_column(cr, table, "analytic_distribution_stored_char", "varchar")
+    parallel_execute(cr, explode_query_range(cr, query, table=table, alias="item"))
+    remove_field(cr, model, account_field)
+    remove_field(cr, model, tag_field)
