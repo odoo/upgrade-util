@@ -5,12 +5,13 @@ from contextlib import contextmanager
 from operator import itemgetter
 
 import lxml
-from psycopg2.extras import execute_values
+from psycopg2.extras import Json, execute_values
 
 try:
     from odoo import release
     from odoo.tools.convert import xml_import
     from odoo.tools.misc import file_open
+    from odoo.tools.translate import xml_translate
 except ImportError:
     from openerp import release
     from openerp.tools.convert import xml_import
@@ -26,6 +27,7 @@ from .pg import (
     _get_unique_indexes_with,
     _validate_table,
     column_exists,
+    column_type,
     column_updatable,
     explode_query,
     explode_query_range,
@@ -175,25 +177,46 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
 
     if view_id and not (skip_if_not_noupdate and not noupdate):
         arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+        jsonb_column = column_type(cr, "ir_ui_view", arch_col) == "jsonb"
         cr.execute(
             """
                 SELECT {arch}
                   FROM ir_ui_view
                  WHERE id=%s
             """.format(
-                arch=arch_col
+                arch=arch_col,
             ),
             [view_id],
         )
         [arch] = cr.fetchone() or [None]
         if arch:
-            if isinstance(arch, unicode):
-                arch = arch.encode("utf-8")
-            arch = lxml.etree.fromstring(arch)
-            yield arch
+            if jsonb_column:
+
+                def get_trans_terms(value):
+                    terms = []
+                    xml_translate(terms.append, value)
+                    return terms
+
+                translation_terms = {lang: get_trans_terms(value) for lang, value in arch.items()}
+                arch_etree = lxml.etree.fromstring(arch["en_US"])
+                yield arch_etree
+                new_arch = lxml.etree.tostring(arch_etree, encoding="unicode")
+                terms_en = translation_terms["en_US"]
+                arch_column_value = Json(
+                    {
+                        lang: xml_translate(dict(zip(terms_en, terms)).get, new_arch)
+                        for lang, terms in translation_terms.items()
+                    }
+                )
+            else:
+                if isinstance(arch, unicode):
+                    arch = arch.encode("utf-8")
+                arch_etree = lxml.etree.fromstring(arch)
+                yield arch_etree
+                arch_column_value = lxml.etree.tostring(arch_etree, encoding="unicode")
             cr.execute(
                 "UPDATE ir_ui_view SET {arch}=%s, active=true WHERE id=%s".format(arch=arch_col),
-                [lxml.etree.tostring(arch, encoding="unicode"), view_id],
+                [arch_column_value, view_id],
             )
 
 
@@ -320,8 +343,11 @@ def remove_records(cr, model, ids):
         # Create a shim. It will be re-generated later by creating/updating groups or
         # explicitly in `base/0.0.0/end-user_groups_view.py`.
         arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+        jsonb_column = column_type(cr, "ir_ui_view", arch_col) == "jsonb"
+        arch_value = "json_build_object('en_US', '<form/>')" if jsonb_column else "'<form/>'"
         cr.execute(
-            "UPDATE ir_ui_view SET {} = '<form/>' WHERE id = %s".format(arch_col), [ref(cr, "base.user_groups_view")]
+            "UPDATE ir_ui_view SET {} = {} WHERE id = %s".format(arch_col, arch_value),
+            [ref(cr, "base.user_groups_view")],
         )
 
 
@@ -368,7 +394,7 @@ def _rm_refs(cr, model, ids=None):
         query = "DELETE FROM ir_values WHERE {0} {1}".format(column, match)
         cr.execute(query, [needle])
 
-    if ids is None:
+    if ids is None and table_exists(cr, "ir_translation"):
         cr.execute(
             """
             DELETE FROM ir_translation
@@ -653,14 +679,31 @@ def update_record_from_xml(
         cr.execute("UPDATE {} SET write_uid=%s, write_date=%s WHERE id=%s".format(table), write_data)
 
     if reset_translations:
-        cr.execute(
-            """
-                DELETE FROM ir_translation
-                      WHERE name IN %s
-                        AND res_id = %s
-            """,
-            [tuple("{},{}".format(model, f) for f in reset_translations), res_id],
-        )
+        if table_exists(cr, "ir_translation"):
+            cr.execute(
+                """
+                    DELETE FROM ir_translation
+                          WHERE name IN %s
+                            AND res_id = %s
+                """,
+                [tuple("{},{}".format(model, f) for f in reset_translations), res_id],
+            )
+        else:
+            query = """
+                UPDATE {}
+                   SET {}
+                 WHERE id = %s
+            """.format(
+                table,
+                ",".join(
+                    [
+                        """%s = NULLIF(jsonb_build_object('en_US', {%s}->>'en_US'), '{"en_US": null}'::jsonb)"""
+                        % (f, f)
+                        for f in reset_translations
+                    ]
+                ),
+            )
+            cr.execute(query, [res_id])
 
 
 def delete_unused(cr, *xmlids, **kwargs):
@@ -727,7 +770,7 @@ def delete_unused(cr, *xmlids, **kwargs):
             ids = map(itemgetter(0), cr.fetchall())
 
         ids = list(ids)
-        if model == "res.lang":
+        if model == "res.lang" and table_exists(cr, "ir_translation"):
             cr.execute(
                 """
                 DELETE FROM ir_translation t

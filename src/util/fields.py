@@ -221,14 +221,15 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     )
 
     # cleanup translations
-    cr.execute(
-        """
-       DELETE FROM ir_translation
-        WHERE name=%s
-          AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
-    """,
-        ["%s,%s" % (model, fieldname)],
-    )
+    if table_exists(cr, "ir_translation"):
+        cr.execute(
+            """
+           DELETE FROM ir_translation
+            WHERE name=%s
+              AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
+        """,
+            ["%s,%s" % (model, fieldname)],
+        )
 
     # remove default values set for aliases
     if column_exists(cr, "mail_alias", "alias_defaults"):
@@ -369,15 +370,16 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
             cr.execute("UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s", [name, fid])
         cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
 
-    cr.execute(
-        """
-       UPDATE ir_translation
-          SET name=%s
-        WHERE name=%s
-          AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
-    """,
-        ["%s,%s" % (model, new), "%s,%s" % (model, old)],
-    )
+    if table_exists(cr, "ir_translation"):
+        cr.execute(
+            """
+           UPDATE ir_translation
+              SET name=%s
+            WHERE name=%s
+              AND type in ('field', 'help', 'model', 'model_terms', 'selection')   -- ignore wizard_* translations
+        """,
+            ["%s,%s" % (model, new), "%s,%s" % (model, old)],
+        )
 
     if column_exists(cr, "ir_attachment", "res_field"):
         cr.execute(
@@ -435,23 +437,41 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
 def convert_field_to_html(cr, model, field, skip_inherit=()):
     _validate_model(model)
     table = table_of_model(cr, model)
-    query = 'UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field))
+    jsonb_column = column_type(cr, table, field) == "jsonb"
+    if jsonb_column:
+        query = """
+            WITH html_values AS (
+                SELECT id, jsonb_object_agg(t.key, {2}) AS value
+                  FROM "{0}", jsonb_each_text("{1}") AS t
+                 WHERE {{parallel_filter}}
+              GROUP BY id
+            )
+            UPDATE "{0}"
+               SET "{1}" = h.value
+              FROM html_values AS h
+             WHERE "{0}".id = h.id
+        """.format(
+            table, field, pg_text2html("t.value")
+        )
+    else:
+        query = 'UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field))
     parallel_execute(cr, explode_query_range(cr, query, table=table))
 
     # Update translations
-    wrap = None if version_gte("saas~11.5") else "p"
-    ttype = "model_terms" if version_gte("saas~11.5") else "model"
-    cr.execute(
-        r"""
-        UPDATE ir_translation
-           SET src = {}, value = {}, type = %s
-         WHERE type = 'model'
-           AND name = %s
-        """.format(
-            pg_text2html("src", wrap=wrap), pg_text2html("value", wrap=wrap)
-        ),
-        [ttype, "%s,%s" % (model, field)],
-    )
+    if table_exists(cr, "ir_translation"):
+        wrap = None if version_gte("saas~11.5") else "p"
+        ttype = "model_terms" if version_gte("saas~11.5") else "model"
+        cr.execute(
+            r"""
+            UPDATE ir_translation
+               SET src = {}, value = {}, type = %s
+             WHERE type = 'model'
+               AND name = %s
+            """.format(
+                pg_text2html("src", wrap=wrap), pg_text2html("value", wrap=wrap)
+            ),
+            [ttype, "%s,%s" % (model, field)],
+        )
 
     for inh in for_each_inherit(cr, model, skip_inherit):
         if not inh.via:

@@ -11,6 +11,7 @@ from .misc import chunks, log_progress
 from .pg import (
     _get_unique_indexes_with,
     column_exists,
+    column_type,
     column_updatable,
     explode_query_range,
     get_m2m_tables,
@@ -31,13 +32,16 @@ def _unknown_model_id(cr):
         order = column_exists(cr, "ir_model", "order")
         extra_columns = ', "order"' if order else ""
         extra_values = ", 'id'" if order else ""
+        name_value = (
+            "jsonb_build_object('en_US', 'Unknown')" if column_type(cr, "ir_model", "name") == "jsonb" else "'Unknown'"
+        )
         cr.execute(
             """
                 INSERT INTO ir_model(name, model{})
-                     SELECT 'Unknown', '_unknown'{}
+                     SELECT {}, '_unknown'{}
                       WHERE NOT EXISTS (SELECT 1 FROM ir_model WHERE model = '_unknown')
             """.format(
-                extra_columns, extra_values
+                extra_columns, name_value, extra_values
             )
         )
         cr.execute("SELECT id FROM ir_model WHERE model = '_unknown'")

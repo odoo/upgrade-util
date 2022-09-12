@@ -4,6 +4,7 @@ import re
 
 from lxml import etree, html
 from psycopg2.extensions import quote_ident
+from psycopg2.extras import Json
 
 from odoo.upgrade import util
 
@@ -211,10 +212,14 @@ def convert_html_content(
     """
 
     def convert_column(cr, table, column, extra_where=""):
+        jsonb_column = util.column_type(cr, table, column.strip('"')) == "jsonb"
+        where_column_expression = column
+        if jsonb_column:
+            where_column_expression = f"{where_column_expression}->>'en_US'"
         base_select_query = f"""
             SELECT id, {column}
             FROM {table}
-            WHERE {column} {where_column}
+            WHERE {where_column_expression} {where_column}
             {extra_where}
         """
         update_query = f"""
@@ -231,7 +236,15 @@ def convert_html_content(
         for select_query in select_queries:
             cr.execute(select_query)
             for res_id, content in cr.fetchall():
-                has_changed, new_content = converter_callback(content)
+                if jsonb_column and content:
+                    new_content = {}
+                    has_changed, new_content["en_US"] = converter_callback(content.pop("en_US"))
+                    if has_changed:
+                        for lang, value in content.items():
+                            _, new_content[lang] = converter_callback(value)
+                        new_content = Json(new_content)
+                else:
+                    has_changed, new_content = converter_callback(content)
                 if has_changed:
                     cr.execute(update_query, [new_content, res_id])
 
