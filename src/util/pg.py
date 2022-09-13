@@ -178,6 +178,11 @@ def pg_array_uniq(a, drop_null=False):
     return "ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn)
 
 
+def pg_replace(s, replacements):
+    q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode("utf-8")  # noqa: E731
+    return reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s)
+
+
 def pg_html_escape(s, quote=True):
     """sql version of html.escape"""
     replacements = [
@@ -190,9 +195,7 @@ def pg_html_escape(s, quote=True):
             ('"', "&quot;"),
             ("'", "&#x27;"),
         ]
-
-    q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode("utf-8")  # noqa: E731
-    return reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s)
+    return pg_replace(s, replacements)
 
 
 def pg_text2html(s, wrap="p"):
