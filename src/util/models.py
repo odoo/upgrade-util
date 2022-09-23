@@ -283,34 +283,7 @@ def rename_model(cr, old, new, rename_table=True):
                 )
             )
 
-    # translations
-    cr.execute(
-        """
-        WITH renames AS (
-            SELECT id, type, lang, res_id, src, '{new}' || substring(name FROM '%#",%#"' FOR '#') as new
-              FROM ir_translation
-             WHERE name LIKE '{old},%'
-        )
-        UPDATE ir_translation t
-           SET name = r.new
-          FROM renames r
-     LEFT JOIN ir_translation e ON (
-            e.type = r.type
-        AND e.lang = r.lang
-        AND e.name = r.new
-        AND CASE WHEN e.type = 'model' THEN e.res_id IS NOT DISTINCT FROM r.res_id
-                 WHEN e.type = 'selection' THEN e.src IS NOT DISTINCT FROM r.src
-                 ELSE e.res_id IS NOT DISTINCT FROM r.res_id AND e.src IS NOT DISTINCT FROM r.src
-             END
-     )
-         WHERE t.id = r.id
-           AND e.id IS NULL
-    """.format(
-            new=new, old=old
-        )
-    )
-    cr.execute("DELETE FROM ir_translation WHERE name LIKE '{},%'".format(old))
-
+    # defaults
     if table_exists(cr, "ir_values"):
         column_read, cast_write = _ir_values_value(cr)
         query = """
@@ -322,15 +295,45 @@ def rename_model(cr, old, new, rename_table=True):
         )
         cr.execute(query)
 
-    cr.execute(
-        """
-        UPDATE ir_translation
-           SET name=%s
-         WHERE name=%s
-           AND type IN ('constraint', 'sql_constraint', 'view', 'report', 'rml', 'xsl')
-    """,
-        [new, old],
-    )
+    # translations
+    if table_exists(cr, "ir_translation"):
+        cr.execute(
+            """
+            WITH renames AS (
+                SELECT id, type, lang, res_id, src, '{new}' || substring(name FROM '%#",%#"' FOR '#') as new
+                  FROM ir_translation
+                 WHERE name LIKE '{old},%'
+            )
+            UPDATE ir_translation t
+               SET name = r.new
+              FROM renames r
+         LEFT JOIN ir_translation e ON (
+                e.type = r.type
+            AND e.lang = r.lang
+            AND e.name = r.new
+            AND CASE WHEN e.type = 'model' THEN e.res_id IS NOT DISTINCT FROM r.res_id
+                     WHEN e.type = 'selection' THEN e.src IS NOT DISTINCT FROM r.src
+                     ELSE e.res_id IS NOT DISTINCT FROM r.res_id AND e.src IS NOT DISTINCT FROM r.src
+                 END
+         )
+             WHERE t.id = r.id
+               AND e.id IS NULL
+        """.format(
+                new=new, old=old
+            )
+        )
+        cr.execute("DELETE FROM ir_translation WHERE name LIKE '{},%'".format(old))
+
+        cr.execute(
+            """
+            UPDATE ir_translation
+               SET name=%s
+             WHERE name=%s
+               AND type IN ('constraint', 'sql_constraint', 'view', 'report', 'rml', 'xsl')
+        """,
+            [new, old],
+        )
+
     old_u = old.replace(".", "_")
     new_u = new.replace(".", "_")
 

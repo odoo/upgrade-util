@@ -15,7 +15,7 @@ from odoo.tools import is_html_empty, mute_logger, safe_eval
 
 from .helpers import _validate_table, model_of_table
 from .orm import env as get_env
-from .pg import named_cursor
+from .pg import named_cursor, table_exists
 from .report import add_to_migration_reports, html_escape
 
 _logger = logging.getLogger(__name__)
@@ -309,6 +309,9 @@ def upgrade_jinja_fields(
                 templates_converted,
             )
         )
+
+    if not table_exists(cr, "ir_translation"):
+        return
 
     _logger.info("process translations for model %s", model)
     # NOTE: Not all translations may not be updated.

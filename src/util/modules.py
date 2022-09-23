@@ -35,7 +35,7 @@ from .helpers import _validate_model
 from .misc import on_CI, version_gte
 from .models import delete_model
 from .orm import env, flush
-from .pg import column_exists
+from .pg import column_exists, table_exists
 from .records import remove_menus, remove_records, remove_view
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
@@ -177,7 +177,8 @@ def uninstall_module(cr, module):
                 remove_field(cr, model, name)
 
     cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
-    cr.execute("DELETE FROM ir_translation WHERE module=%s", [module])
+    if table_exists(cr, "ir_translation"):
+        cr.execute("DELETE FROM ir_translation WHERE module=%s", [module])
     cr.execute("UPDATE ir_module_module SET state='uninstalled' WHERE name=%s", (module,))
 
 
@@ -259,7 +260,8 @@ def rename_module(cr, old, new):
     cr.execute("UPDATE ir_module_module_dependency SET name=%s WHERE name=%s", (new, old))
     _update_view_key(cr, old, new)
     cr.execute("UPDATE ir_model_data SET module=%s WHERE module=%s", (new, old))
-    cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [new, old])
+    if table_exists(cr, "ir_translation"):
+        cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [new, old])
 
     mod_old = "module_" + old
     mod_new = "module_" + new
@@ -330,7 +332,8 @@ def merge_module(cr, old, into, update_dependers=True):
     _up("relation", mod_ids[old], mod_ids[into])
     _update_view_key(cr, old, into)
     _up("data", old, into)
-    cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [into, old])
+    if table_exists(cr, "ir_translation"):
+        cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [into, old])
 
     # update dependencies of modules that depends on $old
     if update_dependers:
