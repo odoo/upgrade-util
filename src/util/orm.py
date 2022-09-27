@@ -216,6 +216,8 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
                 Model.env.add_to_compute(field, records)
 
         recompute(records)
+        # trigger dependent fields recomputation
+        records.modified(fields)
         if strategy == "commit":
             cr.commit()
         else:
