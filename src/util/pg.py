@@ -226,10 +226,21 @@ def _column_info(cr, table, column):
     _validate_table(table)
     cr.execute(
         """
-            SELECT udt_name, is_nullable::boolean, is_updatable::boolean
-              FROM information_schema.columns
-             WHERE table_name = %s
-               AND column_name = %s
+        SELECT COALESCE(bt.typname, t.typname) AS udt_name,
+               NOT (a.attnotnull OR t.typtype = 'd' AND t.typnotnull) AS is_nullable,
+               (   c.relkind IN ('r','p','v','f')
+               AND pg_column_is_updatable(c.oid::regclass, a.attnum, false)
+               ) AS is_updatable
+          FROM pg_attribute a
+          JOIN pg_class c
+            ON a.attrelid = c.oid
+          JOIN pg_type t
+            ON a.atttypid = t.oid
+     LEFT JOIN pg_type bt
+            ON t.typtype = 'd'
+           AND t.typbasetype = bt.oid
+         WHERE c.relname = %s
+           AND a.attname = %s
         """,
         [table, column],
     )
