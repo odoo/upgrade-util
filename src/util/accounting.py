@@ -280,12 +280,12 @@ def upgrade_analytic_distribution(cr, model, tag_table=None, account_field=None,
         ),
         distribution AS (
             SELECT line_id,
-                   CAST(json_object_agg(account_id, percentage) AS VARCHAR) AS distribution
+                   json_object_agg(account_id, percentage) AS distribution
               FROM summed_union
           GROUP BY line_id
         )
         UPDATE {table} item
-           SET analytic_distribution_stored_char = distribution.distribution
+           SET analytic_distribution = distribution.distribution
           FROM distribution
          WHERE item.id = distribution.line_id
     """.format(
@@ -294,7 +294,7 @@ def upgrade_analytic_distribution(cr, model, tag_table=None, account_field=None,
         tag_table=tag_table,
     )
 
-    create_column(cr, table, "analytic_distribution_stored_char", "varchar")
+    create_column(cr, table, "analytic_distribution", "jsonb")
     parallel_execute(cr, explode_query_range(cr, query, table=table, alias="item"))
     remove_field(cr, model, account_field)
     remove_field(cr, model, tag_field)
