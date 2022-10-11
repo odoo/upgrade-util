@@ -200,14 +200,6 @@ VIRTUAL_INHERITS = {
     ],
 }
 
-VIRTUAL_BRANCHES = {
-    # Some branches has been removed for unknown reasons. Just point them to last know hash
-    "saas-15.5": {
-        "odoo": "5a20b60234745f885ef0b612d0f85817babfbd08",
-        "enterprise": "abcfbc5174bfed4674206b9f707e53f2ed348fb8",
-        "design-themes": "a05eb04897f64bf6ee953b07fbb108c68adfc5ce",
-    }
-}
 
 # from lib2to3.refactor.RefactoringTool class
 def _read_python_source(filename):
@@ -348,14 +340,11 @@ def checkout(wd: Path, repo: Repo, version: Version) -> bool:
     gitdir = str(wd / repo.name)
 
     hasref = subprocess.run(["git", "show-ref", "-q", "--verify", f"refs/remotes/origin/{version.name}"], cwd=gitdir)
-
-    co = f"origin/{version.name}"
     if hasref.returncode != 0:
-        co = VIRTUAL_BRANCHES.get(version.name, {}).get(repo.name)
-        if not co:
-            return False  # unknow branch
-
-    subprocess.run(["git", "checkout", "-q", "--force", "-B", version.name, co], cwd=gitdir, check=True)
+        return False  # unknow branch
+    subprocess.run(
+        ["git", "checkout", "-q", "--force", "-B", version.name, f"origin/{version.name}"], cwd=gitdir, check=True
+    )
     return True
 
 
