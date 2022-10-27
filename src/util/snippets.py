@@ -191,11 +191,74 @@ def html_selector_converter(transform_callback, selector=None):
     return html_converter(looper if selector else transform_callback)
 
 
+def convert_html_column(
+    cr, table, column, converter_callback, where_column="IS NOT NULL", extra_where="", maximum_batch_size=10000
+):
+    """
+    Converts HTML content for the given table column.
+
+    :param cursor cr: database cursor
+    :param str table: table name
+    :param str column: column name
+    :param func converter_callback: conversion function that converts the HTML
+        text content and returns a tuple with a boolean that indicates whether a
+        change happened and the new content must be saved
+    :param str where_column: filtering such as
+        - "like '%abc%xyz%'"
+        - "~* '\\yabc.*xyz\\y'"
+    :param str extra_where: extra filtering on the where clause
+    :param int maximum_batch_size: Maximum number of rows to fetch at once
+        before migrating them
+    :return: The changed record ids
+    :rtype: list[int]
+    """
+
+    jsonb_column = util.column_type(cr, table, column.strip('"')) == "jsonb"
+    where_column_expression = column
+    if jsonb_column:
+        where_column_expression = f"{where_column_expression}->>'en_US'"
+    base_select_query = f"""
+        SELECT id, {column}
+        FROM {table}
+        WHERE {where_column_expression} {where_column}
+        {extra_where}
+    """
+    update_query = f"""
+        UPDATE {table}
+        SET {column} = %s
+        WHERE id = %s
+    """
+
+    changed_ids = []
+    select_queries = (
+        (base_select_query,)
+        if maximum_batch_size is None
+        else util.explode_query_range(cr, base_select_query, table=table, bucket_size=maximum_batch_size)
+    )
+    for select_query in select_queries:
+        cr.execute(select_query)
+        for res_id, content in cr.fetchall():
+            if jsonb_column and content:
+                new_content = {}
+                has_changed, new_content["en_US"] = converter_callback(content.pop("en_US"))
+                if has_changed:
+                    for lang, value in content.items():
+                        _, new_content[lang] = converter_callback(value)
+                    new_content = Json(new_content)
+            else:
+                has_changed, new_content = converter_callback(content)
+            if has_changed:
+                cr.execute(update_query, [new_content, res_id])
+                changed_ids.append(res_id)
+
+    return changed_ids
+
+
 def convert_html_content(
     cr,
     converter_callback,
     where_column="IS NOT NULL",
-    maximum_batch_size=10000,
+    **kwargs,
 ):
     """
     Converts HTML content.
@@ -207,47 +270,16 @@ def convert_html_content(
     :param str where_column: filtering such as
         - "like '%abc%xyz%'"
         - "~* '\\yabc.*xyz\\y'"
-    :param int maximum_batch_size: Maximum number of rows to fetch at once
-        before migrating them
+    :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
 
-    def convert_column(cr, table, column, extra_where=""):
-        jsonb_column = util.column_type(cr, table, column.strip('"')) == "jsonb"
-        where_column_expression = column
-        if jsonb_column:
-            where_column_expression = f"{where_column_expression}->>'en_US'"
-        base_select_query = f"""
-            SELECT id, {column}
-            FROM {table}
-            WHERE {where_column_expression} {where_column}
-            {extra_where}
-        """
-        update_query = f"""
-            UPDATE {table}
-            SET {column} = %s
-            WHERE id = %s
-        """
-
-        select_queries = (
-            (base_select_query,)
-            if maximum_batch_size is None
-            else util.explode_query_range(cr, base_select_query, table=table, bucket_size=maximum_batch_size)
-        )
-        for select_query in select_queries:
-            cr.execute(select_query)
-            for res_id, content in cr.fetchall():
-                if jsonb_column and content:
-                    new_content = {}
-                    has_changed, new_content["en_US"] = converter_callback(content.pop("en_US"))
-                    if has_changed:
-                        for lang, value in content.items():
-                            _, new_content[lang] = converter_callback(value)
-                        new_content = Json(new_content)
-                else:
-                    has_changed, new_content = converter_callback(content)
-                if has_changed:
-                    cr.execute(update_query, [new_content, res_id])
-
-    convert_column(cr, "ir_ui_view", "arch_db", "AND type = 'qweb'")
+    convert_html_column(
+        cr,
+        "ir_ui_view",
+        "arch_db",
+        converter_callback,
+        where_column=where_column,
+        **dict(kwargs, extra_where="AND type = 'qweb'"),
+    )
     for table, column in get_html_fields(cr):
-        convert_column(cr, table, column)
+        convert_html_column(cr, table, column, converter_callback, where_column=where_column, **kwargs)
