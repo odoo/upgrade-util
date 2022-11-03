@@ -128,11 +128,23 @@ def split_osenv(name):
 
 try:
     import importlib.util
+    from pathlib import Path
+
+    try:
+        import odoo.upgrade
+    except ImportError:
+        _search_path = [Path(__file__).parent.parent]
+    else:
+        _search_path = [Path(p) for p in odoo.upgrade.__path__]
 
     def import_script(path, name=None):
         if not name:
             name, _ = os.path.splitext(os.path.basename(path))
-        full_path = os.path.join(os.path.dirname(__file__), "..", path)
+        for full_path in (sp / path for sp in _search_path):
+            if full_path.exists():
+                break
+        else:
+            raise ImportError(path)
         spec = importlib.util.spec_from_file_location(name, full_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
