@@ -829,7 +829,7 @@ def get_m2m_tables(cr, table):
 
 class named_cursor(object):
     def __init__(self, cr, itersize=None):
-        self._ncr = cr._cnx.cursor("upg_nc_" + uuid.uuid4().hex)
+        self._ncr = cr._cnx.cursor("upg_nc_" + uuid.uuid4().hex, withhold=True)
         if itersize:
             self._ncr.itersize = itersize
 
