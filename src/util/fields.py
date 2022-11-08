@@ -17,6 +17,14 @@ except ImportError:
     from openerp.tools.misc import mute_logger
     from openerp.tools.safe_eval import safe_eval
 
+try:
+    from odoo.tools.sql import make_index_name
+except ImportError:
+
+    def make_index_name(table_name, column_name):
+        return "%s_%s_index" % (table_name, column_name)
+
+
 from .const import ENVIRON
 from .domains import _adapt_one_domain, _valid_path_to, adapt_domains
 from .exceptions import SleepyDeveloperError
@@ -423,7 +431,9 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
     if table_exists(cr, table) and column_exists(cr, table, old):
         cr.execute('ALTER TABLE "{0}" RENAME COLUMN "{1}" TO "{2}"'.format(table, old, new))
         # Rename corresponding index
-        cr.execute('ALTER INDEX IF EXISTS "{0}_{1}_index" RENAME TO "{2}_{3}_index"'.format(table, old, table, new))
+        new_index_name = make_index_name(table, new)
+        old_index_name = make_index_name(table, old)
+        cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(new_index_name, old_index_name))
 
     if update_references:
         # skip all inherit, they will be handled by the resursive call
