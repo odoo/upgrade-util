@@ -844,7 +844,7 @@ def create_id_sequence(cr, table, set_as_default=True):
         )
 
     cr.execute(
-        sql.SQL("SELECT setval('{sequence}', (SELECT COALESCE(max(id), 0) FROM {table}))").format(
+        sql.SQL("SELECT setval('{sequence}', (SELECT COALESCE(max(id), 0) FROM {table}) + 1, false)").format(
             sequence=sequence_sql,
             table=table_sql,
         )
