@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import re
+from concurrent.futures import ProcessPoolExecutor
 
 from lxml import etree, html
 from psycopg2.extensions import quote_ident
@@ -8,7 +9,7 @@ from psycopg2.extras import Json
 
 from odoo.upgrade import util
 
-_logger = logging.getLogger("odoo.upgrade.web_editor.132." + __name__)
+_logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")
 
 
@@ -88,9 +89,15 @@ def get_regex_from_snippets_list(snippets):
 
 def get_html_fields(cr):
     # yield (table, column) of stored html fields (that needs snippets updates)
+    for table, columns in html_fields(cr):
+        for column in columns:
+            yield table, quote_ident(column, cr._cnx)
+
+
+def html_fields(cr):
     cr.execute(
         """
-        SELECT f.model, f.name
+        SELECT f.model, array_agg(f.name)
           FROM ir_model_fields f
           JOIN ir_model m ON m.id = f.model_id
          WHERE f.ttype = 'html'
@@ -98,12 +105,17 @@ def get_html_fields(cr):
            AND m.transient = false
            AND f.model NOT LIKE 'ir.actions%'
            AND f.model != 'mail.message'
+      GROUP BY f.model
     """
     )
-    for model, column in cr.fetchall():
+    for model, columns in cr.fetchall():
         table = util.table_of_model(cr, model)
-        if util.table_exists(cr, table) and util.column_exists(cr, table, column):
-            yield table, quote_ident(column, cr._cnx)
+        if not util.table_exists(cr, table):
+            # an SQL VIEW
+            continue
+        columns = [column for column in columns if util.column_exists(cr, table, column)]
+        if columns:
+            yield table, columns
 
 
 def parse_style(attr):
@@ -160,7 +172,7 @@ def html_converter(transform_callback):
         """
 
         # Remove `<?xml ...>` header
-        content = re.sub(r"^<\?xml .+\?>\s*", "", content.strip())
+        content = re.sub(r"^<\?xml .+\?>\s*", "", (content or "").strip())
         # Wrap in <wrap> node before parsing to preserve external comments and
         # multi-root nodes
         els = html.fromstring(f"<wrap>{content}</wrap>", parser=utf8_parser)
@@ -175,6 +187,33 @@ def html_converter(transform_callback):
     return converter
 
 
+class HTMLConverter:
+    def __init__(self, callback, selector=None):
+        self.selector = selector
+        self.callback = callback
+
+    def has_changed(self, els):
+        if self.selector:
+            return any([self.callback(el) for el in els.xpath(self.selector)])
+        return self.callback(els)
+
+    def __call__(self, content):
+        # Remove `<?xml ...>` header
+        if not content:
+            return (False, content)
+        content = re.sub(r"^<\?xml .+\?>\s*", "", content.strip())
+        # Wrap in <wrap> node before parsing to preserve external comments and
+        # multi-root nodes
+        els = html.fromstring(f"<wrap>{content}</wrap>", parser=utf8_parser)
+        has_changed = self.has_changed(els)
+        new_content = (
+            re.sub(r"(^<wrap>|</wrap>$)", "", etree.tostring(els, encoding="unicode").strip())
+            if has_changed
+            else content
+        )
+        return (has_changed, new_content)
+
+
 def html_selector_converter(transform_callback, selector=None):
     """
     Creates an upgrade converter for HTML elements that match a selector.
@@ -184,6 +223,7 @@ def html_selector_converter(transform_callback, selector=None):
     :param str selector: targets the elements to loop on
     :return: func conversion callback
     """
+    return HTMLConverter(transform_callback, selector)
 
     def looper(root_el):
         return any([transform_callback(el) for el in root_el.xpath(selector)])
@@ -191,9 +231,35 @@ def html_selector_converter(transform_callback, selector=None):
     return html_converter(looper if selector else transform_callback)
 
 
-def convert_html_column(
-    cr, table, column, converter_callback, where_column="IS NOT NULL", extra_where="", maximum_batch_size=10000
-):
+class Convertor:
+    def __init__(self, converters, callback):
+        self.converters = converters
+        self.callback = callback
+
+    def __call__(self, row):
+        converters = self.converters
+        columns = self.converters.keys()
+        converter_callback = self.callback
+        res_id, *contents = row
+        changes = {}
+        for column, content in zip(columns, contents):
+            if content and converters[column]:
+                # jsonb column; convert all keys
+                new_content = {}
+                has_changed, new_content["en_US"] = converter_callback(content.pop("en_US"))
+                if has_changed:
+                    for lang, value in content.items():
+                        _, new_content[lang] = converter_callback(value)
+                new_content = Json(new_content)
+            else:
+                has_changed, new_content = converter_callback(content)
+            changes[column] = new_content
+            if has_changed:
+                changes["id"] = res_id
+        return changes
+
+
+def convert_html_columns(cr, table, columns, converter_callback, where_column="IS NOT NULL", extra_where="true"):
     """
     Converts HTML content for the given table column.
 
@@ -207,51 +273,33 @@ def convert_html_column(
         - "like '%abc%xyz%'"
         - "~* '\\yabc.*xyz\\y'"
     :param str extra_where: extra filtering on the where clause
-    :param int maximum_batch_size: Maximum number of rows to fetch at once
-        before migrating them
-    :return: The changed record ids
-    :rtype: list[int]
     """
 
-    jsonb_column = util.column_type(cr, table, column.strip('"')) == "jsonb"
-    where_column_expression = column
-    if jsonb_column:
-        where_column_expression = f"{where_column_expression}->>'en_US'"
+    assert "id" not in columns
+
+    converters = {column: "->>'en_US'" if util.column_type(cr, table, column) == "jsonb" else "" for column in columns}
+    select = ", ".join(f'"{column}"' for column in columns)
+    where = " OR ".join(f'"{column}"{converters[column]} {where_column}' for column in columns)
+
     base_select_query = f"""
-        SELECT id, {column}
-        FROM {table}
-        WHERE {where_column_expression} {where_column}
-        {extra_where}
-    """
-    update_query = f"""
-        UPDATE {table}
-        SET {column} = %s
-        WHERE id = %s
+        SELECT id, {select}
+          FROM {table}
+         WHERE ({where})
+           AND ({extra_where})
     """
 
-    changed_ids = []
-    select_queries = (
-        (base_select_query,)
-        if maximum_batch_size is None
-        else util.explode_query_range(cr, base_select_query, table=table, bucket_size=maximum_batch_size)
-    )
-    for select_query in select_queries:
-        cr.execute(select_query)
-        for res_id, content in cr.fetchall():
-            if jsonb_column and content:
-                new_content = {}
-                has_changed, new_content["en_US"] = converter_callback(content.pop("en_US"))
-                if has_changed:
-                    for lang, value in content.items():
-                        _, new_content[lang] = converter_callback(value)
-                    new_content = Json(new_content)
-            else:
-                has_changed, new_content = converter_callback(content)
-            if has_changed:
-                cr.execute(update_query, [new_content, res_id])
-                changed_ids.append(res_id)
+    split_queries = util.explode_query_range(cr, base_select_query, table=table)
 
-    return changed_ids
+    update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
+    update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
+
+    with ProcessPoolExecutor() as executor:
+        convert = Convertor(converters, converter_callback)
+        for query in util.log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
+            cr.execute(query)
+            for data in executor.map(convert, cr.fetchall()):
+                if "id" in data:
+                    cr.execute(update_query, data)
 
 
 def convert_html_content(
@@ -273,13 +321,14 @@ def convert_html_content(
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
 
-    convert_html_column(
+    convert_html_columns(
         cr,
         "ir_ui_view",
-        "arch_db",
+        ["arch_db"],
         converter_callback,
         where_column=where_column,
-        **dict(kwargs, extra_where="AND type = 'qweb'"),
+        **dict(kwargs, extra_where="type = 'qweb'"),
     )
-    for table, column in get_html_fields(cr):
-        convert_html_column(cr, table, column, converter_callback, where_column=where_column, **kwargs)
+
+    for table, columns in html_fields(cr):
+        convert_html_columns(cr, table, columns, converter_callback, where_column=where_column, **kwargs)
