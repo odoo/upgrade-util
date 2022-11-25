@@ -33,6 +33,7 @@ from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext, version_gte
 from .orm import env
 from .pg import (
+    alter_column_type,
     column_exists,
     column_type,
     explode_query_range,
@@ -655,6 +656,31 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
     iter_cur.close()
     # free PG space
     remove_column(cr, table, field)
+
+
+if version_gte("16.0"):
+
+    def convert_field_to_translatable(cr, model, field):
+        table = table_of_model(cr, model)
+        if column_type(cr, table, field) == "jsonb":
+            return
+        alter_column_type(cr, table, field, "jsonb", "jsonb_build_object('en_US', {0})")
+
+    def convert_field_to_untranslatable(cr, model, field, type="varchar"):
+        assert type in ("varchar", "text")
+        table = table_of_model(cr, model)
+        if column_type(cr, table, field) != "jsonb":
+            return
+
+        alter_column_type(cr, table, field, type, "{0}->>'en_US'")
+
+else:
+    # Older versions, these functions are no-op
+    def convert_field_to_translatable(cr, model, field):
+        pass
+
+    def convert_field_to_untranslatable(cr, model, field, type="varchar"):
+        pass
 
 
 def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
