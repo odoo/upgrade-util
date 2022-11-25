@@ -314,6 +314,40 @@ def remove_column(cr, table, column, cascade=False):
         cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"{2}'.format(table, column, drop_cascade))
 
 
+def alter_column_type(cr, table, column, type, using=None, logger=_logger):
+    if not using:
+        # Simple case. Use general SQL syntax
+        cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE %s' % (table, column, type))
+        return
+
+    # else, create a new column and parallel update queries.
+    cr.execute(
+        """
+        ALTER TABLE "{table}" RENAME COLUMN "{column}" TO "_{column}_upg";
+        ALTER TABLE "{table}" ADD COLUMN "{column}" {type};
+        """.format(
+            **locals()
+        )
+    )
+    using = using.format('"_{}_upg"'.format(column))
+    parallel_execute(
+        cr,
+        explode_query_range(
+            cr,
+            """
+            UPDATE "{table}"
+               SET "{column}" = {using}
+             WHERE "_{column}_upg" IS NOT NULL
+            """.format(
+                **locals()
+            ),
+            table=table,
+        ),
+        logger=logger,
+    )
+    cr.execute('ALTER TABLE "{table}" DROP COLUMN "_{column}_upg" CASCADE'.format(**locals()))
+
+
 def table_exists(cr, table):
     _validate_table(table)
     cr.execute(
