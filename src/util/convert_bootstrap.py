@@ -207,7 +207,7 @@ def edit_element_t_classes(element, add, remove):
                             value = f"{value} {joined_adds}"
                 # otherwise use regexes to replace the classes in the attribute
                 # if there's just one replace, do a string replacement with the new classes
-                if len(remove) == 1:
+                elif len(remove) == 1:
                     value = re.sub(rf"{BS}{re.escape(remove[0])}{BE}", joined_adds, value)
                 # else there's more than one class to remove and split at matches,
                 # then rejoin with new ones at the position of the last removed one.
