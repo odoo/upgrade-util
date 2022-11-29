@@ -912,6 +912,8 @@ class BootstrapConverter:
             (CSS("label.form-file-label"), [RemoveElement()]),
             (regex_xpath(rf"{BS}input-group-(prepend|append){BE}", "class"), [PullUp()]),
             ("//label[not(hasclass('form-check-label'))]", [AddClasses("form-label")]),
+            ReplaceClasses.op("form-control-file", "form-control"),
+            ReplaceClasses.op("form-control-range", "form-range"),
             # TODO abt: .form-text no loger sets display, add some class?
             # table
             RegexReplaceClass.op(rf"{BS}thead-(light|dark){BE}", r"table-\1"),
