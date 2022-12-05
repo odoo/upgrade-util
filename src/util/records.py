@@ -1022,7 +1022,13 @@ def remove_act_window_view_mode(cr, model, view_mode):
     cr.execute(
         """
             UPDATE ir_act_window
-               SET view_mode = ARRAY_TO_STRING(ARRAY_REMOVE(STRING_TO_ARRAY(view_mode, ','), %s), ',')
+               SET view_mode = COALESCE(
+                      NULLIF(
+                          ARRAY_TO_STRING(ARRAY_REMOVE(STRING_TO_ARRAY(view_mode, ','), %s), ','),
+                          '' -- invalid value
+                      ),
+                      'tree,form' -- default value
+                   )
              WHERE res_model = %s
                AND %s = ANY(STRING_TO_ARRAY(view_mode, ','))
         """,
