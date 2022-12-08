@@ -138,7 +138,7 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
 
 
 @contextmanager
-def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
+def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=True):
     """Contextmanager that may yield etree arch of a view.
     As it may not yield, you must use `skippable_cm`
 
@@ -152,6 +152,8 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
     because when noupdate=False we assume it is a standard view that will be updated by the ORM later on anyways.
 
     If view's noupdate=True, the view will be yielded for edit.
+
+    If the `active` argument is not None, the view will be (de)activated accordingly.
 
     For more details, see discussion in: https://github.com/odoo/upgrade-specific/pull/4216
     """
@@ -214,8 +216,10 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True):
                 arch_etree = lxml.etree.fromstring(arch)
                 yield arch_etree
                 arch_column_value = lxml.etree.tostring(arch_etree, encoding="unicode")
+
+            set_active = ", active={}".format(bool(active)) if active is not None else ""
             cr.execute(
-                "UPDATE ir_ui_view SET {arch}=%s, active=true WHERE id=%s".format(arch=arch_col),
+                "UPDATE ir_ui_view SET {arch}=%s{set_active} WHERE id=%s".format(arch=arch_col, set_active=set_active),
                 [arch_column_value, view_id],
             )
 
