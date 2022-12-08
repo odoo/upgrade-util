@@ -13,6 +13,29 @@ _logger = logging.getLogger(__name__)
 
 
 @contextmanager
+def no_deprecated_accounts(cr):
+    cr.execute(
+        """
+        UPDATE account_account
+           SET deprecated = false
+         WHERE deprecated = true
+     RETURNING id
+        """
+    )
+    ids = tuple(r for r, in cr.fetchall())
+    yield
+    if ids:
+        cr.execute(
+            """
+            UPDATE account_account
+               SET deprecated = true
+             WHERE id IN %s
+            """,
+            [ids],
+        )
+
+
+@contextmanager
 def no_fiscal_lock(cr):
     invalidate(env(cr)["res.company"])
     columns = [col for col in get_columns(cr, "res_company") if col.endswith("_lock_date")]
