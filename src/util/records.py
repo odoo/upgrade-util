@@ -1017,15 +1017,8 @@ def ensure_mail_alias_mapping(cr, model, record_xmlid, alias_xmlid, alias_name):
 def remove_act_window_view_mode(cr, model, view_mode):
     cr.execute(
         """
-            DELETE FROM ir_act_window
-                  WHERE view_mode = %s
-                    AND res_model = %s
-        """,
-        [view_mode, model],
-    )
-    cr.execute(
-        """
-            UPDATE ir_act_window
+        WITH upd AS (
+            UPDATE ir_act_window act
                SET view_mode = COALESCE(
                       NULLIF(
                           ARRAY_TO_STRING(ARRAY_REMOVE(STRING_TO_ARRAY(view_mode, ','), %s), ','),
@@ -1033,8 +1026,15 @@ def remove_act_window_view_mode(cr, model, view_mode):
                       ),
                       'tree,form' -- default value
                    )
-             WHERE res_model = %s
-               AND %s = ANY(STRING_TO_ARRAY(view_mode, ','))
+             WHERE act.res_model = %s
+               AND %s = ANY(STRING_TO_ARRAY(act.view_mode, ','))
+         RETURNING act.id
+
+        )
+        DELETE FROM ir_act_window_view av
+              USING upd
+              WHERE upd.id = av.act_window_id
+                AND av.view_mode=%s
         """,
-        [view_mode, model, view_mode],
+        [view_mode, model, view_mode, view_mode],
     )
