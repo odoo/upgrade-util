@@ -24,6 +24,7 @@ from .helpers import _get_theme_models, _ir_values_value, _validate_model, model
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit
 from .misc import parse_version, version_gte
+from .orm import env
 from .pg import (
     _get_unique_indexes_with,
     _validate_table,
@@ -674,7 +675,8 @@ def update_record_from_xml(
             for node in doc.xpath(xpath):
                 new_root[0].append(node)
 
-    importer = xml_import(cr, from_module, idref={}, mode="update")
+    cr_or_env = env(cr) if version_gte("saas~16.2") else cr
+    importer = xml_import(cr_or_env, from_module, idref={}, mode="update")
     kw = dict(mode="update") if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
     importer.parse(new_root, **kw)
 
