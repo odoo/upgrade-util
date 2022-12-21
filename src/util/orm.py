@@ -296,7 +296,7 @@ class iter_browse(object):
 
 
 @contextmanager
-def custom_module_field_as_manual(env, rollback=True):
+def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     """
     Helper to be used with a Python `with` statement,
     to perform an operation with models and fields coming from Python modules acting as `manual` models/fields,
@@ -506,7 +506,8 @@ def custom_module_field_as_manual(env, rollback=True):
     yield
 
     if rollback:
-        flush(env["base"])
+        if do_flush:
+            flush(env["base"])
 
         # 6. Restore back models and fields converted from `base` to `manual`.
         if updated_model_ids:
