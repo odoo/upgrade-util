@@ -79,6 +79,8 @@ def innerxml(element, is_html=False):
     :param etree.ElementBase element: the element to convert.
     :param bool is_html: whether to use HTML for serialization, XML otherwise. Defaults to False.
     :rtype: str
+
+    :meta private: exclude from online docs
     """
     return (element.text or "") + "".join(
         etree.tostring(child, encoding=str, method="html" if is_html else None) for child in element
@@ -86,17 +88,29 @@ def innerxml(element, is_html=False):
 
 
 def split_classes(*joined_classes):
-    """Return a list of classes given one or more strings of joined classes separated by spaces."""
+    """
+    Return a list of classes given one or more strings of joined classes separated by spaces.
+
+    :meta private: exclude from online docs
+    """
     return [c for classes in joined_classes for c in (classes or "").split(" ") if c]
 
 
 def get_classes(element):
-    """Return the list of classes from the ``class`` attribute of an element."""
+    """
+    Return the list of classes from the ``class`` attribute of an element.
+
+    :meta private: exclude from online docs
+    """
     return split_classes(element.get("class", ""))
 
 
 def join_classes(classes):
-    """Return a string of classes joined by space given a list of classes."""
+    """
+    Return a string of classes joined by space given a list of classes.
+
+    :meta private: exclude from online docs
+    """
     return " ".join(classes)
 
 
@@ -105,6 +119,8 @@ def set_classes(element, classes):
     Set the ``class`` attribute of an element from a list of classes.
 
     If the list is empty, the attribute is removed.
+
+    :meta private: exclude from online docs
     """
     if classes:
         element.attrib["class"] = join_classes(classes)
@@ -122,6 +138,8 @@ def edit_classlist(classes, add, remove):
         from the list. The `ALL` sentinel value can be specified to remove all classes.
     :rtype: typing.List[str]
     :return: the new class list.
+
+    :meta private: exclude from online docs
     """
     if remove is ALL:
         classes = []
@@ -160,6 +178,8 @@ def edit_element_t_classes(element, add, remove):
     :param str | typing.Iterable[str] | None add: if specified, adds the given class(es) to the element.
     :param str | typing.Iterable[str] | ALL | None remove: if specified, removes the given class(es)
         from the element. The `ALL` sentinel value can be specified to remove all classes.
+
+    :meta private: exclude from online docs
     """
     if isinstance(add, str):
         add = [add]
@@ -220,6 +240,8 @@ def edit_element_classes(element, add, remove, is_qweb=False):
         from the element. The `ALL` sentinel value can be specified to remove all classes.
     :param bool is_qweb: if True also edit classes in ``t-att-class`` and ``t-attf-class`` attributes.
         Defaults to False.
+
+    :meta private: exclude from online docs
     """
     if not is_qweb or not set(element.attrib) & {"t-att-class", "t-attf-class"}:
         set_classes(element, edit_classlist(get_classes(element), add, remove))
@@ -241,6 +263,8 @@ def simple_css_selector_to_xpath(selector, prefix="//"):
     :param str prefix: the prefix to add to the XPath expression. Defaults to ``//``.
     :return: the resulting XPath expression.
     :rtype: str
+
+    :meta private: exclude from online docs
     """
     separator = prefix
     xpath_parts = []
@@ -276,6 +300,8 @@ def regex_xpath(pattern, attr=None, xpath=None):
         If not given, the pattern is matched against the element's text.
     :param str | None xpath: an optional XPath expression to further filter the elements to match.
     :rtype: str
+
+    :meta private: exclude from online docs
     """
     # TODO abt: investigate lxml xpath variables interpolation (xpath.setcontext? registerVariables?)
     if "'" in pattern and '"' in pattern:
@@ -290,7 +316,11 @@ def regex_xpath(pattern, attr=None, xpath=None):
 
 
 def adapt_xpath_for_qweb(xpath):
-    """Adapts a xpath to enable matching on qweb ``t-att(f)-`` attributes."""
+    """
+    Adapts a xpath to enable matching on qweb ``t-att(f)-`` attributes.
+
+    :meta private: exclude from online docs
+    """
     xpath = re.sub(r"\bhas-?class(?=\()", "has-t-class", xpath)
     # supposing that there's only one of `class`, `t-att-class`, `t-attf-class`,
     # joining all of them with a space and removing trailing whitespace should behave
@@ -303,9 +333,22 @@ def adapt_xpath_for_qweb(xpath):
     return re.sub(r"\[@(?<!t-)([\w-]+)\]", r"[@\1 or @t-att-\1 or @t-attf-\1]", xpath)
 
 
-class ElementOperation:
-    """Abstract base class for defining operations to be applied on etree elements."""
+class ElementOperation(ABC):
+    """
+    Abstract base class for operations that can be applied on xml/html elements.
 
+    The concrete subclasses can then be used to define operations for fixing/converting views.
+
+    :param str | None xpath: an optional xpath to match on that will be included in the operation definition.
+        If None or omitted it must be provided separately to the converter.
+
+    :meta private: exclude from online docs
+    """
+
+    def __init__(self, *, xpath=None):
+        self._xpath = xpath
+
+    @abstractmethod
     def __call__(self, element, converter):
         """
         Perform the operation on the given element.
@@ -317,34 +360,37 @@ class ElementOperation:
         :return: the converted element, which could be the same provided, a different one, or None.
             The returned element should be used by the converter to chain further operations.
         :rtype: etree.ElementBase | None
-        """
-        raise NotImplementedError
 
-    def xpath(self, xpath=None):
+        :meta private: exclude from online docs
         """
-        Return an XPath expression that matches elements for the operation.
 
-        :param str | None xpath: an optional XPath expression to further filter the elements to match.
+    @property
+    def xpath(self):
+        """
+        The XPath expression that matches elements for the defined operation.
+
+        It will be used by the converter to match elements and apply the operation on them.
+
+        :raise ValueError: if the operation does not define an XPath.
         :rtype: str
-        """
-        raise NotImplementedError(f"Operation {self.__class__.__name__} does not support XPath matching")
 
-    @classmethod
-    def op(cls, *args, xpath=None, **kwargs):
+        :meta private: exclude from online docs
         """
-        Create a definition of an operation with the given arguments, and returns a tuple of (xpath, operations list) that can be used in the converter definition list.
-
-        :param typing.Any args: positional arguments to pass to the operation :meth:`~.__init__`.
-        :param typing.Any kwargs: keyword arguments to pass to the operation :meth:`~.__init__`.
-        :param str | None xpath: an optional XPath expression to further filter the elements to match.
-        :rtype: (str, list[ElementOperation])
-        """
-        op = cls(*args, **kwargs)
-        return op.xpath(xpath), [op]
+        if self._xpath is None:
+            raise ValueError(
+                f"Operation {self.__class__.__name__} does not provide a default XPath "
+                "for matching elements and none was provided either at definition time, "
+                "or within the conversions list."
+            )
+        return self._xpath
 
 
 class RemoveElement(ElementOperation):
-    """Remove the matched element(s) from the document."""
+    """
+    Remove the matched element(s) from the document.
+
+    :meta private: exclude from online docs
+    """
 
     def __call__(self, element, converter):
         parent = element.getparent()
@@ -360,9 +406,14 @@ class EditClasses(ElementOperation):
     :param str | typing.Iterable[str] | None add: classes to add to the elements.
     :param str | typing.Iterable[str] | ALL | None remove: classes to remove from the elements.
         The `ALL` sentinel can be used to remove all classes.
+    :param str | None xpath: see :class:`ElementOperation` ``xpath`` parameter.
+
+    :meta private: exclude from online docs
     """
 
-    def __init__(self, *, add=None, remove=None):
+    def __init__(self, *, add=None, remove=None, xpath=None):
+        super().__init__(xpath=xpath)
+
         if not add and not remove:
             raise ValueError("At least one of `add` or `remove` must be specified")
         if isinstance(add, str):
@@ -376,18 +427,13 @@ class EditClasses(ElementOperation):
         edit_element_classes(element, self.add_classes, self.remove_classes, is_qweb=converter.is_qweb)
         return element
 
-    def xpath(self, xpath=None):
-        """
-        Return an XPath expression that matches elements with any of the old classes.
-
-        :param str | None xpath: an optional XPath expression to further filter the elements to match.
-        :rtype: str
-        """
+    @property
+    def xpath(self):
         if not self.remove_classes:
             raise ValueError("Cannot generate an XPath expression without any classes to remove (i.e. match on)")
-        xpath_pre = xpath or "//*"
+        xpath_pre = self._xpath or "//*"
         if self.remove_classes is ALL:
-            if not xpath:
+            if not self._xpath:
                 raise ValueError(
                     f"{self.__class__.__name__}: Attempted to generate XPath matching any class for any element. "
                     "Provide an additional `xpath=` argument to narrow down the elements to match."
@@ -397,10 +443,19 @@ class EditClasses(ElementOperation):
 
 
 class AddClasses(EditClasses):
-    def __init__(self, *classes):
-        super().__init__(add=classes)
+    """
+    Add classes.
 
-    xpath = ElementOperation.xpath
+    :param str | typing.Iterable[str] classes: the classes to add to the elements.
+    :param str | None xpath: see :class:`ElementOperation` ``xpath`` parameter.
+
+    :meta private: exclude from online docs
+    """
+
+    def __init__(self, *classes, xpath=None):
+        super().__init__(add=classes, xpath=xpath)
+
+    xpath = ElementOperation.xpath  # skip EditClasses xpath method logic
 
 
 class RemoveClasses(EditClasses):
@@ -408,10 +463,15 @@ class RemoveClasses(EditClasses):
     Remove classes.
 
     N.B. no checks are made to ensure the class(es) to remove are actually present on the elements.
+
+    :param str | typing.Iterable[str] | ALL classes: the classes to remove from the elements.
+    :param str | None xpath: see :class:`ElementOperation` ``xpath`` parameter.
+
+    :meta private: exclude from online docs
     """
 
-    def __init__(self, *classes):
-        super().__init__(remove=classes)
+    def __init__(self, *classes, xpath=None):
+        super().__init__(remove=classes, xpath=xpath)
 
 
 class ReplaceClasses(EditClasses):
@@ -420,12 +480,15 @@ class ReplaceClasses(EditClasses):
 
     :param str | typing.Iterable[str] | ALL old: classes to remove from the elements.
     :param str | typing.Iterable[str] | None new: classes to add to the elements.
+    :param str | None xpath: see :class:`ElementOperation` ``xpath`` parameter.
+
+    :meta private: exclude from online docs
     """
 
-    def __init__(self, old, new):
+    def __init__(self, old, new, *, xpath=None):
         if not old:
             raise ValueError("At least one class to remove must be specified")
-        super().__init__(remove=old, add=new)
+        super().__init__(remove=old, add=new, xpath=xpath)
 
 
 class PullUp(ElementOperation):
@@ -446,6 +509,7 @@ class PullUp(ElementOperation):
 
         <span class="input-group-text">...</span>
 
+    :meta private: exclude from online docs
     """
 
     def __call__(self, element, converter):
@@ -466,12 +530,20 @@ class PullUp(ElementOperation):
 
 
 class RenameAttribute(ElementOperation):
-    """Rename an attribute. Silently ignores elements that do not have the attribute."""
+    """
+    Rename an attribute. Silently ignores elements that do not have the attribute.
 
-    def __init__(self, old_name, new_name, extra_xpath=""):
+    :param str old_name: the name of the attribute to rename.
+    :param str new_name: the new name of the attribute.
+    :param str | None xpath: see :class:`ElementOperation` ``xpath`` parameter.
+
+    :meta private: exclude from online docs
+    """
+
+    def __init__(self, old_name, new_name, *, xpath=None):
+        super().__init__(xpath=xpath)
         self.old_name = old_name
         self.new_name = new_name
-        self.extra_xpath = extra_xpath
 
     def __call__(self, element, converter):
         rename_map = {self.old_name: self.new_name}
@@ -489,14 +561,16 @@ class RenameAttribute(ElementOperation):
             element.attrib.update({rename_map.get(k, k): v for k, v in attrib_before.items()})
         return element
 
-    def xpath(self, xpath=None):
+    @property
+    def xpath(self):
         """
         Return an XPath expression that matches elements with the old attribute name.
 
-        :param str | None xpath: an optional XPath expression to further filter the elements to match.
         :rtype: str
+
+        :meta private: exclude from online docs
         """
-        return (xpath or "//*") + f"[@{self.old_name}]{self.extra_xpath}"
+        return (self._xpath or "//*") + f"[@{self.old_name}]"
 
 
 class RegexReplace(ElementOperation):
@@ -506,11 +580,15 @@ class RegexReplace(ElementOperation):
     N.B. no checks are made to ensure the attribute to replace is actually present on the elements.
 
     :param str pattern: the regex pattern to match.
-    :param str repl: the replacement string.
+    :param str sub: the replacement string.
     :param str | None attr: the attribute to replace. If not specified, the text of the element is replaced.
+    :param str | None xpath: see :class:`ElementOperation` ``xpath`` parameter.
+
+    :meta private: exclude from online docs
     """
 
-    def __init__(self, pattern, sub, attr=None):
+    def __init__(self, pattern, sub, attr=None, *, xpath=None):
+        super().__init__(xpath=xpath)
         self.pattern = pattern
         self.repl = sub
         self.attr = attr
@@ -525,14 +603,16 @@ class RegexReplace(ElementOperation):
                     element.attrib[attr] = re.sub(self.pattern, self.repl, element.attrib[attr])
         return element
 
-    def xpath(self, xpath=None):
+    @property
+    def xpath(self):
         """
         Return an XPath expression that matches elements with the old attribute name.
 
-        :param str | None xpath: an optional XPath expression to further filter the elements to match.
         :rtype: str
+
+        :meta private: exclude from online docs
         """
-        return regex_xpath(self.pattern, self.attr, xpath)
+        return regex_xpath(self.pattern, self.attr, self._xpath)
 
 
 class RegexReplaceClass(RegexReplace):
@@ -540,31 +620,34 @@ class RegexReplaceClass(RegexReplace):
     Uses `re.sub` to modify the class.
 
     Basically, same as `RegexReplace`, but with `attr="class"`.
+
+    :meta private: exclude from online docs
     """
 
-    def __init__(self, pattern, sub, attr="class"):
-        super().__init__(pattern, sub, attr)
+    def __init__(self, pattern, sub, attr="class", *, xpath=None):
+        super().__init__(pattern, sub, attr, xpath=xpath)
 
 
-class EtreeConverter(ABC):
+class EtreeConverter:
     """
     Class for converting lxml etree documents, applying a bunch of operations on them.
 
-    :param etree.ElementTree tree: the parsed XML or HTML tree to convert.
+    :param list[ElementOperation | (str, ElementOperation | list[ElementOperation])] conversions:
+        the operations to apply to the tree.
+        Each item in the conversions list must either be an :class:`ElementOperation` that can provide its own XPath,
+        or a tuple of ``(xpath, operation)`` or ``(xpath, operations)`` with the XPath and an operation
+        or a list of operations to apply to the nodes matching the XPath.
     :param bool is_html: whether the tree is an HTML document.
     :para bool is_qweb: whether the tree contains QWeb directives.
         If this is enabled, XPaths will be auto-transformed to try to also match ``t-att*`` attributes.
+
+    :meta private: exclude from online docs
     """
 
-    def __init__(self, tree, is_html=False, is_qweb=False):
-        self.tree = tree
+    def __init__(self, conversions, *, is_html=False, is_qweb=False):
+        self.conversions = self.prepare_conversions(conversions, is_qweb)
         self.is_html = is_html
         self.is_qweb = is_qweb
-
-    @classmethod
-    @abstractmethod
-    def get_conversions(cls, *args, **kwargs):
-        """Return the conversions to apply to the tree."""
 
     @classmethod
     @lru_cache(maxsize=32)
@@ -578,6 +661,8 @@ class EtreeConverter(ABC):
             the conversions to compile.
         :param bool is_qweb: whether the conversions are for QWeb.
         :rtype: list[(str, list[ElementOperation])]
+
+        :meta private: exclude from online docs
         """
 
         def process_spec(spec):
@@ -603,7 +688,11 @@ class EtreeConverter(ABC):
 
     @classmethod
     def prepare_conversions(cls, conversions, is_qweb):
-        """Prepare and compile the conversions into a list of ``(xpath, operations)`` tuples, with pre-compiled XPaths."""
+        """
+        Prepare and compile the conversions into a list of ``(xpath, operations)`` tuples, with pre-compiled XPaths.
+
+        :meta private: exclude from online docs
+        """
         # make sure conversions list and nested lists of operations are converted to tuples for caching
         conversions = tuple(
             (spec[0], tuple(spec[1]))
@@ -613,38 +702,62 @@ class EtreeConverter(ABC):
         )
         return cls._compile_conversions(conversions, is_qweb)
 
-    def convert(self, src_version, dst_version):
+    def convert(self, tree):
         """
-        Convert the loaded document inplace from the source version to the destination, returning the converted document and the number of conversion operations applied.
+        Convert an etree document inplace with the prepared conversions.
 
-        :param str src_version: the source Bootstrap version.
-        :param str dst_version: the destination Bootstrap version.
+        Returns the converted document and the number of conversion operations applied.
+
+        :param etree.ElementTree tree: the parsed XML or HTML tree to convert.
         :rtype: etree.ElementTree, int
+
+        :meta private: exclude from online docs
         """
-        conversions = self.get_conversions(src_version, dst_version, is_qweb=self.is_qweb)
         applied_operations_count = 0
-        for xpath, operations in conversions:
-            for element in xpath(self.tree):
+        for xpath, operations in self.conversions:
+            for element in xpath(tree):
                 for operation in operations:
                     if element is None:  # previous operations that returned None (i.e. deleted element)
                         raise ValueError("Matched xml element is not available anymore! Check operations.")
                     element = operation(element, self)  # noqa: PLW2901
                     applied_operations_count += 1
-        return self.tree, applied_operations_count
+        return tree, applied_operations_count
 
     @classmethod
-    def convert_arch(cls, arch, src_version, dst_version, is_html=False, **converter_kwargs):
+    def convert_tree(cls, tree, *converter_args, **converter_kwargs):
+        """
+        Class method for converting an already parsed lxml tree inplace.
+
+        :param etree.ElementTree tree: the lxml tree to convert.
+        :param dict converter_args: additional positional arguments to pass to the converter.
+            See :class:`EtreeConverter` for more details.
+        :param dict converter_kwargs: additional keyword arguments to pass to the converter.
+            See :class:`EtreeConverter` for more details.
+        :return: the converted lxml tree.
+        :rtype: etree.ElementTree
+
+        :meta private: exclude from online docs
+        """
+        tree, ops_count = cls(*converter_args, **converter_kwargs).convert(tree)
+        return tree
+
+    @classmethod
+    def convert_arch(cls, arch, *converter_args, **converter_kwargs):
         """
         Class method for converting a string of XML or HTML code.
 
         :param str arch: the XML or HTML code to convert.
-        :param str src_version: the source Bootstrap version.
-        :param str dst_version: the destination Bootstrap version.
-        :param bool is_html: whether the arch is an HTML document.
+        :param dict converter_args: additional positional arguments to pass to the converter.
+            See :class:`EtreeConverter` for more details.
         :param dict converter_kwargs: additional keyword arguments to pass to the converter.
+            See :class:`EtreeConverter` for more details.
         :return: the converted XML or HTML code.
         :rtype: str
+
+        :meta private: exclude from online docs
         """
+        is_html = converter_kwargs.pop("is_html", False)  # is_html is keyword-only, so it wouldn't be in converter_args
+
         stripped_arch = arch.strip()
         doc_header_match = re.search(r"^<\?xml .+\?>\s*", stripped_arch)
         doc_header = doc_header_match.group(0) if doc_header_match else ""
@@ -652,7 +765,7 @@ class EtreeConverter(ABC):
 
         tree = etree.fromstring(f"<wrap>{stripped_arch}</wrap>", parser=html_utf8_parser if is_html else None)
 
-        tree, ops_count = cls(tree, is_html, **converter_kwargs).convert(src_version, dst_version)
+        tree, ops_count = cls(*converter_args, is_html=is_html, **converter_kwargs).convert(tree)
         if not ops_count:
             return arch
 
@@ -663,28 +776,32 @@ class EtreeConverter(ABC):
         )
 
     @classmethod
-    def convert_file(cls, path, src_version, dst_version, is_html=None, **converter_kwargs):
+    def convert_file(cls, path, *converter_args, **converter_kwargs):
         """
         Class method for converting an XML or HTML file inplace.
 
         :param str path: the path to the XML or HTML file to convert.
-        :param str src_version: the source Bootstrap version.
-        :param str dst_version: the destination Bootstrap version.
-        :param bool is_html: whether the file is an HTML document.
-            If not set, will be detected from the file extension.
+        :param dict converter_args: additional positional arguments to pass to the converter.
+            See :class:`EtreeConverter` for more details.
         :param dict converter_kwargs: additional keyword arguments to pass to the converter.
+            See :class:`EtreeConverter` for more details.
         :rtype: None
+
+        :meta private: exclude from online docs
         """
+        is_html = converter_kwargs.pop("is_html", None)
         if is_html is None:
             is_html = os.path.splitext(path)[1].startswith("htm")
         tree = etree.parse(path, parser=html_utf8_parser if is_html else None)
 
-        tree, ops_count = cls(tree, is_html, **converter_kwargs).convert(src_version, dst_version)
+        tree, ops_count = cls(*converter_args, is_html=is_html, **converter_kwargs).convert(tree)
         if not ops_count:
-            logging.info("No conversion operations applied, skipping file %s", path)
+            logging.info("No conversion operations applied, skipping file: %s", path)
             return
 
         tree.write(path, encoding="utf-8", method="html" if is_html else None, xml_declaration=not is_html)
+
+    # -- Operations helper methods, useful where operations need some converter-specific info or logic (e.g. is_html) --
 
     def element_factory(self, *args, **kwargs):
         """
@@ -695,6 +812,8 @@ class EtreeConverter(ABC):
         :param args: positional arguments to pass to the etree.XML or etree.HTML function.
         :param kwargs: keyword arguments to pass to the etree.XML or etree.HTML function.
         :return: the created element.
+
+        :meta private: exclude from online docs
         """
         return etree.HTML(*args, **kwargs) if self.is_html else etree.XML(*args, **kwargs)
 
@@ -710,6 +829,8 @@ class EtreeConverter(ABC):
         :param dict[str, str] attributes: attributes to set on the new element, provided as keyword arguments.
         :return: the created element.
         :rtype: etree.ElementBase
+
+        :meta private: exclude from online docs
         """
         element = self.element_factory(f"<{tag}>{contents or ''}</{tag}>")
         for name, value in attributes.items():
@@ -744,6 +865,8 @@ class EtreeConverter(ABC):
             Will be str merged with the attributes of the source element, overriding the latter.
         :return: the new copied element.
         :rtype: etree.ElementBase
+
+        :meta private: exclude from online docs
         """
         tag = tag or element.tag
         contents = innerxml(element, is_html=self.is_html) if copy_contents else None
@@ -754,5 +877,9 @@ class EtreeConverter(ABC):
         return new_element
 
     def adapt_xpath(self, xpath):
-        """Adapts an xpath to match qweb ``t-att(f)-*`` attributes, if ``is_qweb`` is True."""
+        """
+        Adapts an XPath to match qweb ``t-att(f)-*`` attributes, if ``is_qweb`` is True.
+
+        :meta private: exclude from online docs
+        """
         return adapt_xpath_for_qweb(xpath) if self.is_qweb else xpath
