@@ -10,7 +10,16 @@ from .misc import splitlines, version_gte
 _logger = logging.getLogger(__name__.rpartition(".")[0])
 
 _VALID_MODELS = frozenset(
-    {"_unknown", "website_pricelist", "ir_actions_account_report_download"}
+    {
+        "_unknown",
+        "website_pricelist",
+        "ir_actions_account_report_download",
+        # see test_testing_utilities/models.py
+        "o2m_readonly_subfield_parent",
+        "o2m_readonly_subfield_child",
+        "o2m_changes_parent",
+        "o2m_changes_children",
+    }
     | set(m.strip() for m in os.getenv("UPG_VALID_MODELS", "").split(";")) - {""}
 )
 
