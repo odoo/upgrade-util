@@ -9,6 +9,13 @@ from typing import Iterable
 
 from lxml import etree
 
+from odoo import modules
+
+from . import snippets
+from .misc import log_progress
+from .pg import get_value_or_en_translation
+from .records import edit_view
+
 _logger = logging.getLogger(__name__)
 
 
@@ -70,6 +77,80 @@ xpath_utils["has-t-class"] = _xpath_has_t_class
 xpath_utils["regex"] = _xpath_regex
 
 html_utf8_parser = etree.HTMLParser(encoding="utf-8")
+
+
+def parse_arch(arch, is_html=False):
+    """
+    Parse a string of XML or HTML into a lxml :class:`etree.ElementTree`.
+
+    :param str arch: the XML or HTML code to convert.
+    :param bool is_html: whether the code is HTML or XML.
+    :return: the parsed etree and the original document header (if any, removed from the tree).
+    :rtype: (etree.ElementTree, str)
+
+    :meta private: exclude from online docs
+    """
+    stripped_arch = arch.strip()
+    doc_header_match = re.search(r"^<\?xml .+\?>\s*", stripped_arch)
+    doc_header = doc_header_match.group(0) if doc_header_match else ""
+    stripped_arch = stripped_arch[doc_header_match.end() :] if doc_header_match else stripped_arch
+
+    return etree.fromstring(f"<wrap>{stripped_arch}</wrap>", parser=html_utf8_parser if is_html else None), doc_header
+
+
+def unparse_arch(tree, doc_header="", is_html=False):
+    """
+    Convert an etree into a string of XML or HTML.
+
+    :param etree.ElementTree tree: the etree to convert.
+    :param str doc_header: the document header (if any).
+    :param bool is_html: whether the code is HTML or XML.
+    :return: the XML or HTML code.
+    :rtype: str
+
+    :meta private: exclude from online docs
+    """
+    wrap_node = tree.xpath("//wrap")[0]
+    return doc_header + "\n".join(
+        etree.tostring(child, encoding="unicode", with_tail=True, method="html" if is_html else None)
+        for child in wrap_node
+    )
+
+
+class ArchEditor:
+    """
+    Context manager to edit an XML or HTML string.
+
+    It will parse an XML or HTML string into an etree, and return it to its original
+    string representation when exiting the context.
+
+    The etree is available as the ``tree`` attribute of the context manager.
+    The arch is available as the ``arch`` attribute of the context manager,
+    and is updated when exiting the context.
+
+    :param str arch: the XML or HTML code to convert.
+    :param bool is_html: whether the code is HTML or XML.
+
+    :meta private: exclude from online docs
+    """
+
+    def __init__(self, arch, is_html=False):
+        self.arch = arch
+        self.is_html = is_html
+        self.doc_header = ""
+        self.tree = None
+
+    def __enter__(self):
+        self.tree, self.doc_header = parse_arch(self.arch, is_html=self.is_html)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            return
+        self.arch = unparse_arch(self.tree, self.doc_header, is_html=self.is_html)
+
+    def __str__(self):
+        return self.arch
 
 
 def innerxml(element, is_html=False):
@@ -331,6 +412,118 @@ def adapt_xpath_for_qweb(xpath):
         xpath,
     )
     return re.sub(r"\[@(?<!t-)([\w-]+)\]", r"[@\1 or @t-att-\1 or @t-attf-\1]", xpath)
+
+
+@lru_cache(maxsize=128)
+def extract_xpath_keywords(xpath):
+    """
+    Extract keywords from an XPath expression.
+
+    Will return a tuple of sets for class names and other keywords (e.g. tags, attrs).
+
+    :param str xpath: the XPath expression.
+    :rtype: (frozenset[str], frozenset[str])
+
+    :meta private: exclude from online docs
+    """
+    kwd_pattern = r"[A-Za-z][\w-]*"
+
+    classes = set()
+    other_kwds = set()
+
+    class_match = re.search(rf"hasclass\s*\(\s*['\"]({kwd_pattern})['\"]\s*\)", xpath)
+    if class_match:
+        classes.add(class_match.group(1))
+
+    regex_match = re.search(r"regex\((.*)\)", xpath)
+    if regex_match:
+        regex_inner = regex_match.group(1)
+        matches = re.findall(rf"(?<![(|@\[-\\])\b{kwd_pattern}", regex_inner)
+        classes.update(matches)
+
+    if not class_match and not regex_match:
+        attr_match = re.search(rf"@({kwd_pattern})\b", xpath)
+        if attr_match:
+            other_kwds.add(attr_match.group(1))
+
+        tag_match = re.search(rf"(?<=/)({kwd_pattern})\b(?!\s*\()", xpath)
+        if tag_match:
+            other_kwds.add(tag_match.group(1))
+
+    other_kwds -= {"class", "regex", "concat", "hasclass"}
+
+    return frozenset(classes), frozenset(other_kwds)
+
+
+def extract_xpaths_keywords(xpaths):
+    """
+    Build and return a list of keywords from the given xpath expressions.
+
+    Same as :func:`extract_path_keywords` but over multiple xpath expressions.
+    Will return a tuple of sets for class names and other keywords (e.g. tags, attrs)
+    collected for all the given xpath expressions.
+
+    :param typing.Iterable[str | etree.XPath] xpaths: the XPath expressions.
+    :rtype: (set[str], set[str])
+
+    :meta private: exclude from online docs
+    """
+    classes = set()
+    other_kwds = set()
+    for xpath in xpaths:
+        if isinstance(xpath, etree.XPath):
+            xpath = xpath.path  # noqa: PLW2901
+        if not isinstance(xpath, str):
+            raise TypeError(f"Expected str or etree.XPath, got {type(xpath).__name__}: {xpath!r}")
+        xpath_classes, xpath_other_kwds = extract_xpath_keywords(xpath)
+        classes |= xpath_classes
+        other_kwds |= xpath_other_kwds
+
+    return classes, other_kwds
+
+
+@lru_cache(maxsize=128)
+def build_keywords_where_clause(cr, classes, other_kwds, column):
+    """
+    Build a WHERE clause to filter records based on keywords.
+
+    N.B. arguments must be hashable to enable caching.
+
+    :param psycopg2.cursor cr: the database cursor.
+    :param tuple[str] classes: elements class names to match.
+    :param tuple[str] other_kwds: other keywords to match.
+    :param str column: the column in the query to match the keywords against.
+    :rtype: str
+
+    :meta private: exclude from online docs
+    """
+
+    def add_word_delimiters(keyword):
+        keyword = re.sub(r"^(?=\w)", r"\\m", keyword)
+        return re.sub(r"(?<=\w)$", r"\\M", keyword)
+
+    column = ".".join(f'"{part}"' for part in column.split("."))
+    return cr.mogrify(
+        rf"(({column} ~ '\mclass\M\s*=' AND {column} ~ %(classes)s) OR {column} ~ %(others)s)",
+        {
+            "classes": "|".join(add_word_delimiters(cls) for cls in classes),
+            "others": "|".join(add_word_delimiters(kw) for kw in other_kwds),
+        },
+    ).decode()
+
+
+def build_xpaths_where_clause(cr, xpaths, column):
+    """
+    Build a WHERE clause to filter records based on XPath expressions.
+
+    :param psycopg2.cursor cr: the database cursor.
+    :param typing.Iterable[str | etree.XPath] xpaths: the XPath expressions to match.
+    :param str column: the column in the query to match the XPath expressions against.
+
+    :meta private: exclude from online docs
+    """
+    classes, other_kwds = extract_xpaths_keywords(xpaths)
+    return build_keywords_where_clause(cr, tuple(classes), tuple(other_kwds), column)
 
 
 class ElementOperation(ABC):
@@ -645,9 +838,42 @@ class EtreeConverter:
     """
 
     def __init__(self, conversions, *, is_html=False, is_qweb=False):
-        self.conversions = self.prepare_conversions(conversions, is_qweb)
-        self.is_html = is_html
-        self.is_qweb = is_qweb
+        self._hashable_conversions = self._make_conversions_hashable(conversions)
+        conversions_hash = hash(self._hashable_conversions)
+        self._is_html = is_html
+        self._is_qweb = is_qweb
+        self.conversions = self._compile_conversions(self._hashable_conversions, self.is_qweb)
+        self._cache_hash = hash((self.__class__, conversions_hash, is_html, is_qweb))
+
+    def __hash__(self):
+        return self._cache_hash
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state["conversions"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.conversions = self._compile_conversions(self._hashable_conversions, self.is_qweb)
+
+    @property
+    def is_html(self):
+        """
+        Whether the conversions are for HTML documents.
+
+        :meta private: exclude from online docs
+        """
+        return self._is_html
+
+    @property
+    def is_qweb(self):
+        """
+        Whether the conversions are for QWeb documents.
+
+        :meta private: exclude from online docs
+        """
+        return self._is_qweb
 
     @classmethod
     @lru_cache(maxsize=32)
@@ -660,9 +886,7 @@ class EtreeConverter:
         :param tuple[ElementOperation | (str, ElementOperation | tuple[ElementOperation, ...]), ...] conversions:
             the conversions to compile.
         :param bool is_qweb: whether the conversions are for QWeb.
-        :rtype: list[(str, list[ElementOperation])]
-
-        :meta private: exclude from online docs
+        :rtype: list[(etree.XPath, list[ElementOperation])]
         """
 
         def process_spec(spec):
@@ -687,22 +911,47 @@ class EtreeConverter:
         return [process_spec(spec) for spec in conversions]
 
     @classmethod
-    def prepare_conversions(cls, conversions, is_qweb):
+    def _make_conversions_hashable(cls, conversions):
         """
-        Prepare and compile the conversions into a list of ``(xpath, operations)`` tuples, with pre-compiled XPaths.
+        Normalize the given conversions into tuples, so they can be hashed.
 
-        :meta private: exclude from online docs
+        :param list[ElementOperation | (str, ElementOperation | list[ElementOperation])] conversions:
+            the conversions to make hashable.
+        :rtype: tuple[ElementOperation | (str, ElementOperation | tuple[ElementOperation, ...]), ...]
         """
-        # make sure conversions list and nested lists of operations are converted to tuples for caching
-        conversions = tuple(
+        return tuple(
             (spec[0], tuple(spec[1]))
             if isinstance(spec, tuple) and len(spec) == 2 and isinstance(spec[1], list)
             else spec
             for spec in conversions
         )
-        return cls._compile_conversions(conversions, is_qweb)
 
-    def convert(self, tree):
+    def get_conversions_keywords(self):
+        """
+        Build and return keywords extracted from the compiled conversions.
+
+        Will return a tuple of sets for class names and other keywords (e.g. tags, attrs).
+
+        :rtype: (set[str], set[str])
+
+        :meta private: exclude from online docs
+        """
+        return extract_xpaths_keywords(xpath for xpath, _ in self.conversions)
+
+    def build_where_clause(self, cr, column):
+        """
+        Build and return an XPath expression that matches all the conversions keywords.
+
+        :param psycopg2.cursor cr: the database cursor.
+        :param str column: the column in the query to match the keywords against.
+        :rtype: str
+
+        :meta private: exclude from online docs
+        """
+        classes, other_kwds = self.get_conversions_keywords()
+        return build_keywords_where_clause(cr, tuple(classes), tuple(other_kwds), column)
+
+    def convert_tree(self, tree):
         """
         Convert an etree document inplace with the prepared conversions.
 
@@ -723,83 +972,61 @@ class EtreeConverter:
                     applied_operations_count += 1
         return tree, applied_operations_count
 
-    @classmethod
-    def convert_tree(cls, tree, *converter_args, **converter_kwargs):
-        """
-        Class method for converting an already parsed lxml tree inplace.
+    convert = convert_tree  # alias for backward compatibility
 
-        :param etree.ElementTree tree: the lxml tree to convert.
-        :param dict converter_args: additional positional arguments to pass to the converter.
-            See :class:`EtreeConverter` for more details.
-        :param dict converter_kwargs: additional keyword arguments to pass to the converter.
-            See :class:`EtreeConverter` for more details.
-        :return: the converted lxml tree.
-        :rtype: etree.ElementTree
+    @lru_cache(maxsize=128)  # noqa: B019
+    def convert_callback(self, content):
+        """
+        A converter method that can be used with ``util.snippets`` ``convert_html_columns`` or ``convert_html_content``.
+
+        Accepts a single argument, the html/xml content to convert, and returns a tuple of (has_changed, converted_content).
+
+        :param str content: the html/xml content to convert.
+        :rtype: (bool, str)
 
         :meta private: exclude from online docs
-        """
-        tree, ops_count = cls(*converter_args, **converter_kwargs).convert(tree)
-        return tree
+        """  # noqa: D401
+        if not content:
+            return False, content
 
-    @classmethod
-    def convert_arch(cls, arch, *converter_args, **converter_kwargs):
-        """
-        Class method for converting a string of XML or HTML code.
+        with ArchEditor(content, self.is_html) as arch_editor:
+            tree, ops_count = self.convert_tree(arch_editor.tree)
+            if not ops_count:
+                return False, content
+        return True, arch_editor.arch
 
-        :param str arch: the XML or HTML code to convert.
-        :param dict converter_args: additional positional arguments to pass to the converter.
-            See :class:`EtreeConverter` for more details.
-        :param dict converter_kwargs: additional keyword arguments to pass to the converter.
-            See :class:`EtreeConverter` for more details.
-        :return: the converted XML or HTML code.
+    def convert_arch(self, arch):
+        """
+        Convert an XML or HTML arch string with the prepared conversions.
+
+        :param str arch: the arch to convert.
         :rtype: str
 
         :meta private: exclude from online docs
         """
-        is_html = converter_kwargs.pop("is_html", False)  # is_html is keyword-only, so it wouldn't be in converter_args
+        return self.convert_callback(arch)[1]
 
-        stripped_arch = arch.strip()
-        doc_header_match = re.search(r"^<\?xml .+\?>\s*", stripped_arch)
-        doc_header = doc_header_match.group(0) if doc_header_match else ""
-        stripped_arch = stripped_arch[doc_header_match.end() :] if doc_header_match else stripped_arch
-
-        tree = etree.fromstring(f"<wrap>{stripped_arch}</wrap>", parser=html_utf8_parser if is_html else None)
-
-        tree, ops_count = cls(*converter_args, is_html=is_html, **converter_kwargs).convert(tree)
-        if not ops_count:
-            return arch
-
-        wrap_node = tree.xpath("//wrap")[0]
-        return doc_header + "\n".join(
-            etree.tostring(child, encoding="unicode", with_tail=True, method="html" if is_html else None)
-            for child in wrap_node
-        )
-
-    @classmethod
-    def convert_file(cls, path, *converter_args, **converter_kwargs):
+    def convert_file(self, path):
         """
-        Class method for converting an XML or HTML file inplace.
+        Convert an XML or HTML file inplace.
 
         :param str path: the path to the XML or HTML file to convert.
-        :param dict converter_args: additional positional arguments to pass to the converter.
-            See :class:`EtreeConverter` for more details.
-        :param dict converter_kwargs: additional keyword arguments to pass to the converter.
-            See :class:`EtreeConverter` for more details.
         :rtype: None
 
         :meta private: exclude from online docs
         """
-        is_html = converter_kwargs.pop("is_html", None)
-        if is_html is None:
-            is_html = os.path.splitext(path)[1].startswith("htm")
-        tree = etree.parse(path, parser=html_utf8_parser if is_html else None)
+        file_is_html = os.path.splitext(path)[1].startswith("htm")
+        if self.is_html != file_is_html:
+            raise ValueError(f"File {path!r} is not a {'HTML' if self.is_html else 'XML'} file!")
 
-        tree, ops_count = cls(*converter_args, is_html=is_html, **converter_kwargs).convert(tree)
+        tree = etree.parse(path, parser=html_utf8_parser if self.is_html else None)
+
+        tree, ops_count = self.convert_tree(tree)
         if not ops_count:
             logging.info("No conversion operations applied, skipping file: %s", path)
             return
 
-        tree.write(path, encoding="utf-8", method="html" if is_html else None, xml_declaration=not is_html)
+        tree.write(path, encoding="utf-8", method="html" if self.is_html else None, xml_declaration=not self.is_html)
 
     # -- Operations helper methods, useful where operations need some converter-specific info or logic (e.g. is_html) --
 
@@ -883,3 +1110,112 @@ class EtreeConverter:
         :meta private: exclude from online docs
         """
         return adapt_xpath_for_qweb(xpath) if self.is_qweb else xpath
+
+
+def convert_views(cr, views_ids, converter):
+    """
+    Convert the specified views xml arch using the provided converter.
+
+    :param psycopg2.cursor cr: the database cursor.
+    :param typing.Collection[int] views_ids: the ids of the views to convert.
+    :param EtreeConverter converter: the converter to use.
+    :rtype: None
+
+    :meta private: exclude from online docs
+    """
+    if converter.is_html:
+        raise TypeError(f"Cannot convert xml views with provided ``is_html`` converter {converter!r}")
+
+    _logger.info("Converting %s views/templates using %s", len(views_ids), repr(converter))
+    for view_id in views_ids:
+        with edit_view(cr, view_id=view_id, active=None) as tree:
+            converter.convert_tree(tree)
+        # TODO abt: maybe notify in the log or report that custom views with noupdate=False were converted?
+
+
+def convert_qweb_views(cr, converter):
+    """
+    Convert QWeb views / templates using the provided converter.
+
+    :param psycopg2.cursor cr: the database cursor.
+    :param EtreeConverter converter: the converter to use.
+    :rtype: None
+
+    :meta private: exclude from online docs
+    """
+    if not converter.is_qweb:
+        raise TypeError("Converter for xml views must be ``is_qweb``, got %s", repr(converter))
+
+    # views to convert must have `website_id` set and not come from standard modules
+    standard_modules = set(modules.get_modules()) - {"studio_customization", "__export__", "__cloc_exclude__"}
+    converter_where = converter.build_where_clause(cr, "v.arch_db")
+
+    # Search for custom/cow'ed views (they have no external ID)... but also
+    # search for views with external ID that have a related COW'ed view. Indeed,
+    # when updating a generic view after this script, the archs are compared to
+    # know if the related COW'ed views must be updated too or not: if we only
+    # convert COW'ed views they won't get the generic view update as they will be
+    # judged different from them (user customization) because of the changes
+    # that were made.
+    # E.g.
+    # - In 15.0, install website_sale
+    # - Enable eCommerce categories: a COW'ed view is created to enable the
+    #   feature (it leaves the generic disabled and creates an exact copy but
+    #   enabled)
+    # - Migrate to 16.0: you expect your enabled COW'ed view to get the new 16.0
+    #   version of eCommerce categories... but if the COW'ed view was converted
+    #   while the generic was not, they won't be considered the same
+    #   anymore and only the generic view will get the 16.0 update.
+    cr.execute(
+        f"""
+        WITH keys AS (
+              SELECT key
+                FROM ir_ui_view
+            GROUP BY key
+              HAVING COUNT(*) > 1
+        )
+           SELECT v.id
+             FROM ir_ui_view v
+        LEFT JOIN ir_model_data imd
+               ON imd.model = 'ir.ui.view'
+              AND imd.module IN %s
+              AND imd.res_id = v.id
+        LEFT JOIN keys
+               ON v.key = keys.key
+            WHERE v.type = 'qweb'
+              AND ({converter_where})
+              AND (
+                  imd.id IS NULL
+                  OR (
+                      keys.key IS NOT NULL
+                      AND imd.noupdate = FALSE
+                  )
+              )
+        """,
+        [tuple(standard_modules)],
+    )
+    views_ids = [view_id for (view_id,) in cr.fetchall()]
+    if views_ids:
+        convert_views(cr, views_ids, converter)
+
+
+def convert_html_fields(cr, converter):
+    """
+    Convert all html fields data in the database using the provided converter.
+
+    :param psycopg2.cursor cr: the database cursor.
+    :param EtreeConverter converter: the converter to use.
+    :rtype: None
+
+    :meta private: exclude from online docs
+    """
+    _logger.info("Converting html fields data using %s", repr(converter))
+
+    html_fields = list(snippets.html_fields(cr))
+    for table, columns in log_progress(html_fields, _logger, "tables", log_hundred_percent=True):
+        if table not in ("mail_message", "mail_activity"):
+            extra_where = " OR ".join(
+                f"({converter.build_where_clause(cr, get_value_or_en_translation(cr, table, column))})"
+                for column in columns
+            )
+            snippets.convert_html_columns(cr, table, columns, converter.convert_callback, extra_where=extra_where)

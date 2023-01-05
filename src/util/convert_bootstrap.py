@@ -433,6 +433,8 @@ class BootstrapConverter(EtreeConverter):
     }
 
     def __init__(self, src_version, dst_version, *, is_html=False, is_qweb=False):
+        self.src_version = src_version
+        self.dst_version = dst_version
         conversions = self._get_conversions(src_version, dst_version)
         super().__init__(conversions, is_html=is_html, is_qweb=is_qweb)
 
@@ -476,14 +478,6 @@ class BootstrapConverter(EtreeConverter):
         return result
 
 
-convert_tree = BootstrapConverter.convert_tree
-convert_arch = BootstrapConverter.convert_arch
-convert_file = BootstrapConverter.convert_file
-
-bs3to4_converter = BootstrapConverter("3.0", "4.0")
-bs4to5_converter = BootstrapConverter("4.0", "5.0")
-
-
 # TODO abt: remove this / usages -> replace with refactored converter classes
 class BootstrapHTMLConverter:
     def __init__(self, src, dst):
@@ -493,5 +487,5 @@ class BootstrapHTMLConverter:
     def __call__(self, content):
         if not content:
             return False, content
-        converted_content = convert_arch(content, self.src, self.dst, is_html=True, is_qweb=True)
+        converted_content = BootstrapConverter.convert_arch(content, self.src, self.dst, is_html=True, is_qweb=True)
         return content != converted_content, converted_content
