@@ -1151,3 +1151,15 @@ def convert_tree(tree, src_version, dst_version, **converter_kwargs):
 
 convert_arch = BootstrapConverter.convert_arch
 convert_file = BootstrapConverter.convert_file
+
+
+class BootstrapHTMLConverter:
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
+
+    def __call__(self, content):
+        if not content:
+            return False, content
+        converted_content = convert_arch(content, self.src, self.dst, is_html=True, is_qweb=True)
+        return content != converted_content, converted_content
