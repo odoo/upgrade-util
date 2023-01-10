@@ -890,3 +890,7 @@ def create_id_sequence(cr, table, set_as_default=True):
                 table=table_sql,
             )
         )
+
+
+def get_value_or_en_translation(cr, table, column):
+    return "{}{}".format(column, "->>'en_US'" if column_type(cr, table, column) == "jsonb" else "")
