@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
+import re
 from contextlib import contextmanager
 from operator import itemgetter
 
@@ -988,6 +989,46 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             )
 
     cr.execute("DROP TABLE _upgrade_rrr")
+
+
+def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
+    """
+    Will replace `old` by `new` (whole word match) in all jsonb value of `column` of `table`.
+    The `extra_filter` should use the `t` alias. It can also include `{parallel_filter}` to
+    execute the query in parallel.
+    """
+    re_old = r"\y{}\y".format(re.escape(old))
+    match = 'exists($.* ? (@ like_regex "{}"))'.format(re_old)
+
+    if extra_filter is None:
+        extra_filter = "true"
+
+    query = cr.mogrify(
+        """
+        WITH upd AS (
+             SELECT t.id,
+                    jsonb_object_agg(v.key, regexp_replace(v.value, %s, %s, 'g')) AS value
+               FROM "{table}" t
+               JOIN LATERAL jsonb_each_text(t."{column}") v
+                 ON true
+              WHERE jsonb_path_match(t."{column}", %s)
+                AND {extra_filter}
+              GROUP BY t.id
+        )
+        UPDATE "{table}" t
+           SET "{column}" = upd.value
+          FROM upd
+         WHERE upd.id = t.id
+        """.format(
+            **locals()
+        ),
+        [re_old, new, match],
+    ).decode()
+
+    if "{parallel_filter}" in query:
+        parallel_execute(cr, explode_query_range(cr, query, table=table, alias="t"))
+    else:
+        cr.execute(query)
 
 
 def ensure_mail_alias_mapping(cr, model, record_xmlid, alias_xmlid, alias_name):
