@@ -15,6 +15,7 @@ from .pg import (
     column_updatable,
     explode_query_range,
     get_m2m_tables,
+    get_value_or_en_translation,
     parallel_execute,
     remove_constraint,
     table_exists,
@@ -115,7 +116,10 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 
     _rm_refs(cr, model)
 
-    cr.execute("SELECT id, name FROM ir_model WHERE model=%s", (model,))
+    cr.execute(
+        "SELECT id, {} FROM ir_model WHERE model=%s".format(get_value_or_en_translation(cr, "ir_model", "name")),
+        [model],
+    )
     [mod_id, mod_label] = cr.fetchone() or [None, model]
     if mod_id:
         # some required fk are in "ON DELETE SET NULL/RESTRICT".

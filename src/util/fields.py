@@ -37,6 +37,7 @@ from .pg import (
     column_exists,
     column_type,
     explode_query_range,
+    get_value_or_en_translation,
     parallel_execute,
     pg_text2html,
     remove_column,
@@ -828,14 +829,15 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
         col_prefix = "--"  # sql comment the line
 
     q = """
-        SELECT id, name
+        SELECT id, {name}
           FROM ir_act_server
          WHERE state = 'code'
            AND (code ~ %(old)s
                 {col_prefix} OR condition ~ %(old)s
                )
     """
-    cr.execute(q.format(col_prefix=col_prefix), p)
+
+    cr.execute(q.format(col_prefix=col_prefix, name=get_value_or_en_translation(cr, "ir_act_server", "name")), p)
     if cr.rowcount:
         li = "".join(
             "<li>{}</li>".format(get_anchor_link_to_record("ir.actions.server", aid, aname))
