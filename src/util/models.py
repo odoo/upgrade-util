@@ -31,8 +31,9 @@ from .pg import (
 
 # avoid namespace clash
 from .pg import rename_table as pg_rename_table
-from .records import _rm_refs, remove_records, remove_view, replace_record_references_batch
+from .records import _rm_refs, remove_records, replace_record_references_batch
 from .report import add_to_migration_reports
+from .views.records import remove_view
 
 _logger = logging.getLogger(__name__)
 

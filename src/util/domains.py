@@ -37,7 +37,7 @@ from .helpers import _dashboard_actions, _validate_model
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext
 from .pg import column_exists, get_value_or_en_translation, table_exists
-from .records import edit_view
+from .views.records import edit_view
 
 # python3 shims
 try:

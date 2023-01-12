@@ -48,7 +48,8 @@ from .misc import on_CI, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import column_exists, table_exists, target_of
-from .records import ref, remove_menus, remove_records, remove_view, replace_record_references_batch
+from .records import ref, remove_menus, remove_records, replace_record_references_batch
+from .views.records import remove_view
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 NO_AUTOINSTALL = str2bool(os.getenv("UPG_NO_AUTOINSTALL", "0")) if version_gte("15.0") else False

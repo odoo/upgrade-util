@@ -9,12 +9,10 @@ from typing import Iterable
 
 from lxml import etree
 
-from odoo import modules
+from odoo.modules.module import get_modules
 
-from . import snippets
-from .misc import log_progress
-from .pg import get_value_or_en_translation
-from .records import edit_view
+from .. import misc, pg, snippets
+from . import records
 
 _logger = logging.getLogger(__name__)
 
@@ -1112,110 +1110,128 @@ class EtreeConverter:
         return adapt_xpath_for_qweb(xpath) if self.is_qweb else xpath
 
 
-def convert_views(cr, views_ids, converter):
-    """
-    Convert the specified views xml arch using the provided converter.
+if misc.version_gte("13.0"):
 
-    :param psycopg2.cursor cr: the database cursor.
-    :param typing.Collection[int] views_ids: the ids of the views to convert.
-    :param EtreeConverter converter: the converter to use.
-    :rtype: None
+    def convert_views(cr, views_ids, converter):
+        """
+        Convert the specified views xml arch using the provided converter.
 
-    :meta private: exclude from online docs
-    """
-    if converter.is_html:
-        raise TypeError(f"Cannot convert xml views with provided ``is_html`` converter {converter!r}")
+        :param psycopg2.cursor cr: the database cursor.
+        :param typing.Collection[int] views_ids: the ids of the views to convert.
+        :param EtreeConverter converter: the converter to use.
+        :rtype: None
 
-    _logger.info("Converting %s views/templates using %s", len(views_ids), repr(converter))
-    for view_id in views_ids:
-        with edit_view(cr, view_id=view_id, active=None) as tree:
-            converter.convert_tree(tree)
-        # TODO abt: maybe notify in the log or report that custom views with noupdate=False were converted?
+        :meta private: exclude from online docs
+        """
+        if converter.is_html:
+            raise TypeError("Cannot convert xml views with provided ``is_html`` converter %s" % (repr(converter),))
 
+        _logger.info("Converting %d views/templates using %s", len(views_ids), repr(converter))
+        for view_id in views_ids:
+            with records.edit_view(cr, view_id=view_id, active=None) as tree:
+                converter.convert_tree(tree)
+            # TODO abt: maybe notify in the log or report that custom views with noupdate=False were converted?
 
-def convert_qweb_views(cr, converter):
-    """
-    Convert QWeb views / templates using the provided converter.
+    def convert_qweb_views(cr, converter):
+        """
+        Convert QWeb views / templates using the provided converter.
 
-    :param psycopg2.cursor cr: the database cursor.
-    :param EtreeConverter converter: the converter to use.
-    :rtype: None
+        :param psycopg2.cursor cr: the database cursor.
+        :param EtreeConverter converter: the converter to use.
+        :rtype: None
 
-    :meta private: exclude from online docs
-    """
-    if not converter.is_qweb:
-        raise TypeError("Converter for xml views must be ``is_qweb``, got %s", repr(converter))
+        :meta private: exclude from online docs
+        """
+        if not converter.is_qweb:
+            raise TypeError("Converter for xml views must be ``is_qweb``, got %s" % (repr(converter),))
 
-    # views to convert must have `website_id` set and not come from standard modules
-    standard_modules = set(modules.get_modules()) - {"studio_customization", "__export__", "__cloc_exclude__"}
-    converter_where = converter.build_where_clause(cr, "v.arch_db")
+        # views to convert must have `website_id` set and not come from standard modules
+        standard_modules = set(get_modules()) - {"studio_customization", "__export__", "__cloc_exclude__"}
+        converter_where = converter.build_where_clause(cr, "v.arch_db")
 
-    # Search for custom/cow'ed views (they have no external ID)... but also
-    # search for views with external ID that have a related COW'ed view. Indeed,
-    # when updating a generic view after this script, the archs are compared to
-    # know if the related COW'ed views must be updated too or not: if we only
-    # convert COW'ed views they won't get the generic view update as they will be
-    # judged different from them (user customization) because of the changes
-    # that were made.
-    # E.g.
-    # - In 15.0, install website_sale
-    # - Enable eCommerce categories: a COW'ed view is created to enable the
-    #   feature (it leaves the generic disabled and creates an exact copy but
-    #   enabled)
-    # - Migrate to 16.0: you expect your enabled COW'ed view to get the new 16.0
-    #   version of eCommerce categories... but if the COW'ed view was converted
-    #   while the generic was not, they won't be considered the same
-    #   anymore and only the generic view will get the 16.0 update.
-    cr.execute(
-        f"""
-        WITH keys AS (
-              SELECT key
-                FROM ir_ui_view
-            GROUP BY key
-              HAVING COUNT(*) > 1
-        )
-           SELECT v.id
-             FROM ir_ui_view v
-        LEFT JOIN ir_model_data imd
-               ON imd.model = 'ir.ui.view'
-              AND imd.module IN %s
-              AND imd.res_id = v.id
-        LEFT JOIN keys
-               ON v.key = keys.key
-            WHERE v.type = 'qweb'
-              AND ({converter_where})
-              AND (
-                  imd.id IS NULL
-                  OR (
-                      keys.key IS NOT NULL
-                      AND imd.noupdate = FALSE
-                  )
-              )
-        """,
-        [tuple(standard_modules)],
-    )
-    views_ids = [view_id for (view_id,) in cr.fetchall()]
-    if views_ids:
-        convert_views(cr, views_ids, converter)
-
-
-def convert_html_fields(cr, converter):
-    """
-    Convert all html fields data in the database using the provided converter.
-
-    :param psycopg2.cursor cr: the database cursor.
-    :param EtreeConverter converter: the converter to use.
-    :rtype: None
-
-    :meta private: exclude from online docs
-    """
-    _logger.info("Converting html fields data using %s", repr(converter))
-
-    html_fields = list(snippets.html_fields(cr))
-    for table, columns in log_progress(html_fields, _logger, "tables", log_hundred_percent=True):
-        if table not in ("mail_message", "mail_activity"):
-            extra_where = " OR ".join(
-                f"({converter.build_where_clause(cr, get_value_or_en_translation(cr, table, column))})"
-                for column in columns
+        # Search for custom/cow'ed views (they have no external ID)... but also
+        # search for views with external ID that have a related COW'ed view. Indeed,
+        # when updating a generic view after this script, the archs are compared to
+        # know if the related COW'ed views must be updated too or not: if we only
+        # convert COW'ed views they won't get the generic view update as they will be
+        # judged different from them (user customization) because of the changes
+        # that were made.
+        # E.g.
+        # - In 15.0, install website_sale
+        # - Enable eCommerce categories: a COW'ed view is created to enable the
+        #   feature (it leaves the generic disabled and creates an exact copy but
+        #   enabled)
+        # - Migrate to 16.0: you expect your enabled COW'ed view to get the new 16.0
+        #   version of eCommerce categories... but if the COW'ed view was converted
+        #   while the generic was not, they won't be considered the same
+        #   anymore and only the generic view will get the 16.0 update.
+        cr.execute(
+            """
+            WITH keys AS (
+                  SELECT key
+                    FROM ir_ui_view
+                GROUP BY key
+                  HAVING COUNT(*) > 1
             )
+               SELECT v.id
+                 FROM ir_ui_view v
+            LEFT JOIN ir_model_data imd
+                   ON imd.model = 'ir.ui.view'
+                  AND imd.module IN %%s
+                  AND imd.res_id = v.id
+            LEFT JOIN keys
+                   ON v.key = keys.key
+                WHERE v.type = 'qweb'
+                  AND (%s)
+                  AND (
+                      imd.id IS NULL
+                      OR (
+                          keys.key IS NOT NULL
+                          AND imd.noupdate = FALSE
+                      )
+                  )
+            """
+            % converter_where,
+            [tuple(standard_modules)],
+        )
+        views_ids = [view_id for (view_id,) in cr.fetchall()]
+        if views_ids:
+            convert_views(cr, views_ids, converter)
+
+    def convert_html_fields(cr, converter):
+        """
+        Convert all html fields data in the database using the provided converter.
+
+        :param psycopg2.cursor cr: the database cursor.
+        :param EtreeConverter converter: the converter to use.
+        :rtype: None
+
+        :meta private: exclude from online docs
+        """
+        _logger.info("Converting html fields data using %s", repr(converter))
+
+        html_fields = list(snippets.html_fields(cr))
+        for table, columns in misc.log_progress(html_fields, _logger, "tables", log_hundred_percent=True):
+            if table not in ("mail_message", "mail_activity"):
+                extra_where = " OR ".join(
+                    "(%s)" % converter.build_where_clause(cr, pg.get_value_or_en_translation(cr, table, column))
+                    for column in columns
+                )
             snippets.convert_html_columns(cr, table, columns, converter.convert_callback, extra_where=extra_where)
+
+else:
+
+    def convert_views(*args, **kwargs):
+        raise NotImplementedError(
+            "This helper function is only available for Odoo 13.0 and above: %s", convert_views.__qualname__
+        )
+
+    def convert_qweb_views(*args, **kwargs):
+        raise NotImplementedError(
+            "This helper function is only available for Odoo 13.0 and above: %s", convert_qweb_views.__qualname__
+        )
+
+    def convert_html_fields(*args, **kwargs):
+        raise NotImplementedError(
+            "This helper function is only available for Odoo 13.0 and above: %s", convert_html_fields.__qualname__
+        )
