@@ -116,8 +116,8 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
             disable_view_query = """
                 UPDATE ir_ui_view
                 SET name = (name || ' - old view, inherited from ' || %%s),
-                    model = (model || '.disabled'),
-                    inherit_id = NULL
+                    inherit_id = NULL,
+                    active = false
                     %s
                     WHERE id = %%s
             """
