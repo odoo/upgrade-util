@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
+import inspect
 import logging
 import re
+import sys
+import uuid
 from concurrent.futures import ProcessPoolExecutor
 
 from lxml import etree, html
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
+from .exceptions import MigrationError
 from odoo.upgrade import util
 
 _logger = logging.getLogger(__name__)
@@ -152,45 +156,42 @@ def format_style(styles):
     return style
 
 
-def html_converter(transform_callback):
+def html_converter(transform_callback, selector=None):
     """
-    Creates an upgrade converter for a single HTML text content.
+    Creates an upgrade converter for a single HTML text content or for HTML elements
+    that match a selector.
 
     :param func transform_callback: transforms an HTML tree and returns True if
         a change happened
-    :return: func conversion callback
+    :param str selector: targets the elements to loop on
+    :return: object HTMLConverter with callback
     """
+    return HTMLConverter(transform_callback, selector)
 
-    def converter(content):
-        """
-        Converts content.
 
-        :param str content: content to convert
-        :return: A tuple:
-            1) A boolean which indicates if the content changed
-            2) The updated content
-        """
-
-        # Remove `<?xml ...>` header
-        content = re.sub(r"^<\?xml .+\?>\s*", "", (content or "").strip())
-        # Wrap in <wrap> node before parsing to preserve external comments and
-        # multi-root nodes
-        els = html.fromstring(f"<wrap>{content}</wrap>", parser=utf8_parser)
-        has_changed = transform_callback(els)
-        new_content = (
-            re.sub(r"(^<wrap>|</wrap>$)", "", etree.tostring(els, encoding="unicode").strip())
-            if has_changed
-            else content
+def make_pickleable_callback(callback):
+    """`ProcessPoolExecutor.map` arguments needs to be pickleable
+    Functions can only be pickled if they are importable.
+    However, the callback's file is not importable due to the dash in the filename.
+    We should then put the executed function in its own importable file.
+    """
+    callback_filepath = inspect.getfile(callback)
+    name = f"_upgrade_{uuid.uuid4().hex}"
+    mod = sys.modules[name] = util.import_script(callback_filepath, name=name)
+    try:
+        return getattr(mod, callback.__name__)
+    except AttributeError:
+        error_msg = (
+            f"The converter callback `{callback.__name__}` is a nested function in `{callback.__module__}`.\n"
+            "Move it outside the `migrate()` function to make it top-level."
         )
-        return (has_changed, new_content)
-
-    return converter
+        raise MigrationError(error_msg) from None
 
 
 class HTMLConverter:
     def __init__(self, callback, selector=None):
         self.selector = selector
-        self.callback = callback
+        self.callback = make_pickleable_callback(callback)
 
     def has_changed(self, els):
         if self.selector:
@@ -212,23 +213,6 @@ class HTMLConverter:
             else content
         )
         return (has_changed, new_content)
-
-
-def html_selector_converter(transform_callback, selector=None):
-    """
-    Creates an upgrade converter for HTML elements that match a selector.
-
-    :param func transform_callback: transforms a selected HTML element and
-        returns True if a change happened
-    :param str selector: targets the elements to loop on
-    :return: func conversion callback
-    """
-    return HTMLConverter(transform_callback, selector)
-
-    def looper(root_el):
-        return any([transform_callback(el) for el in root_el.xpath(selector)])
-
-    return html_converter(looper if selector else transform_callback)
 
 
 class Convertor:
