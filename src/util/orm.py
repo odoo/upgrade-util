@@ -66,6 +66,10 @@ def get_admin_channel(cr):
     if "mail.channel" in e:
         admin_group = e.ref("base.group_system", raise_if_not_found=False)
         if admin_group:
+            admin_channel = e.ref("__upgrade__.channel_administrators", raise_if_not_found=False)
+            if admin_channel:
+                return admin_channel
+
             search_rules = [
                 ("channel_type", "=", "channel"),
                 ("group_public_id", "=", admin_group.id),
@@ -84,6 +88,14 @@ def get_admin_channel(cr):
                 if "public" in e["mail.channel"]._fields:
                     channel_values["public"] = "groups"
                 admin_channel = e["mail.channel"].create(channel_values)
+            e["ir.model.data"].create(
+                {
+                    "name": "channel_administrators",
+                    "module": "__upgrade__",
+                    "model": "mail.channel",
+                    "res_id": admin_channel.id,
+                }
+            )
     return admin_channel
 
 
