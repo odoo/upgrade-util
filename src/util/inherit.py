@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
+import logging
 import operator
 import os
 
 from ._inherit import inheritance_data
 from .const import ENVIRON
 from .misc import parse_version
+
+_logger = logging.getLogger(__name__)
 
 
 def _get_base_version(cr):
@@ -19,9 +22,15 @@ def _get_base_version(cr):
     if bv:
         bv = ENVIRON["__base_version"] = parse_version(bv)
     else:
-        cr.execute("SELECT latest_version FROM ir_module_module WHERE name='base' AND state='to upgrade'")
-        # Let it fail if called outside update of `base` module.
-        bv = ENVIRON["__base_version"] = parse_version(cr.fetchone()[0])
+        cr.execute("SELECT state, latest_version FROM ir_module_module WHERE name='base'")
+        state, version = cr.fetchone()
+        if state != "to upgrade":
+            major = ".".join(version.split(".")[:2])
+            _logger.warning(
+                "Assuming upgrading from Odoo %s. If it's not the case, specify the environment variable `ODOO_BASE_VERSION`.",
+                major,
+            )
+        bv = ENVIRON["__base_version"] = parse_version(version)
     return bv
 
 
