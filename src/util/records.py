@@ -411,7 +411,7 @@ def _rm_refs(cr, model, ids=None):
         )
 
 
-def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
+def is_changed(cr, xmlid, interval="1 minute"):
     assert "." in xmlid
     module, _, name = xmlid.partition(".")
     cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
@@ -435,7 +435,11 @@ def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
         ),
         [res_id, interval],
     )
-    if not cr.rowcount:
+    return bool(cr.rowcount)
+
+
+def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
+    if not is_changed(cr, xmlid, interval=interval):
         callback(cr, xmlid, **kwargs)
     else:
         force_noupdate(cr, xmlid, noupdate=True)
