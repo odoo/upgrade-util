@@ -235,10 +235,16 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
                 "Unable to add view '%s' because its inherited view '%s' cannot be found!" % (name, inherit_xml_id)
             )
     arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+    jsonb_column = column_type(cr, "ir_ui_view", arch_col) == "jsonb"
+    if jsonb_column:
+        arch_column_value = Json({"en_US": arch_db})
+    else:
+        arch_column_value = arch_db
     cr.execute(
         """
         INSERT INTO ir_ui_view(name, "type",  model, inherit_id, mode, active, priority, %s)
         VALUES(%%(name)s, %%(view_type)s, %%(model)s, %%(inherit_id)s, %%(mode)s, 't', %%(priority)s, %%(arch_db)s)
+        RETURNING id
     """
         % arch_col,
         {
@@ -248,9 +254,11 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
             "inherit_id": inherit_id,
             "mode": "extension" if inherit_id else "primary",
             "priority": priority,
-            "arch_db": arch_db,
+            "arch_db": arch_column_value,
         },
     )
+    view_id = cr.fetchone()[0]
+    return view_id
 
 
 # fmt:off
