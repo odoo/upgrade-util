@@ -1086,7 +1086,7 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
     execute the query in parallel.
     """
     re_old = r"\y{}\y".format(re.escape(old))
-    match = 'exists($.* ? (@ like_regex "{}"))'.format(re_old)
+    match = 'exists($.* ? (@ like_regex "{}"))'.format(re_old.replace("\\", "\\\\"))
 
     if extra_filter is None:
         extra_filter = "true"
