@@ -1,4 +1,6 @@
 import operator
+import re
+import unittest
 from ast import literal_eval
 
 from lxml import etree
@@ -547,3 +549,23 @@ class TestRecords(UnitTestCase):
         self.assertEqual(len(non_query_result), 0)
         [template_element] = tree.xpath("/t")
         self.assertEqual(template_element.attrib["t-name"], template_xmlid)
+
+    @unittest.skipUnless(util.version_gte("16.0"), "Only work on Odoo >= 16")
+    def test_replace_in_all_jsonb_values(self):
+        test_partner_title = self.env["res.partner.title"].create({"name": "object.number object.numbercombined"})
+
+        pattern_old = re.compile(r"\b\.number\b")
+        pattern_new = re.compile(r"\b\.name\b")
+        pattern_notouch = re.compile(r"\b\.numbercombined\b")
+
+        self.assertNotRegex(test_partner_title.name, pattern_new)
+        self.assertRegex(test_partner_title.name, pattern_notouch)
+        self.assertRegex(test_partner_title.name, pattern_old)
+
+        extra_filter = self.env.cr.mogrify("t.id = %s", (test_partner_title.id,)).decode()
+        util.replace_in_all_jsonb_values(self.env.cr, "res_partner_title", "name", ".number", ".name", extra_filter)
+        test_partner_title.invalidate_recordset(["name"])
+
+        self.assertRegex(test_partner_title.name, pattern_new)
+        self.assertRegex(test_partner_title.name, pattern_notouch)
+        self.assertNotRegex(test_partner_title.name, pattern_old)
