@@ -1,6 +1,8 @@
 import operator
 from ast import literal_eval
 
+from lxml import etree
+
 try:
     from unittest import mock
 except ImportError:
@@ -498,3 +500,50 @@ class TestRecords(UnitTestCase):
         # Normal rename
         res = util.rename_xmlid(cr, "base.TX3", "base.TX4")
         self.assertEqual(res, new.id)
+
+    def test_update_record_from_xml(self):
+        # reset all translated fields on a <record>
+        xmlid = "base.res_partner_title_mister"
+        data_after = {"name": "Fortytwo", "shortcut": "42"}
+        record = self.env.ref(xmlid)
+        data_before = {key: record[key] for key in data_after.keys()}
+        for key, value in data_after.items():
+            record.write({key: value})
+            self.assertEqual(record[key], value)
+
+        util.update_record_from_xml(self.env.cr, xmlid, reset_translations=True)
+        if util.version_gte("16.0"):
+            record.invalidate_recordset(["name"])
+        else:
+            record.invalidate_cache(["name"], record.ids)
+        for key, value in data_before.items():
+            self.assertEqual(record[key], value)
+
+        # reset all translated fields on a <template>
+        template_xmlid = "base.contact_name"
+        record = self.env.ref(template_xmlid)
+        non_xpath = etree.XPath("/non")
+        data_after = {"name": "42", "arch_db": "<non>sense</non>"}
+        data_before = {key: record[key] for key in data_after.keys()}
+        record.write(data_after)
+        for key, value in data_after.items():
+            if key == "arch_db":
+                tree = etree.fromstring(value)
+                [non_element] = non_xpath(tree)
+                self.assertEqual(non_element.text, "sense")
+            else:
+                self.assertEqual(record[key], value)
+
+        util.update_record_from_xml(self.env.cr, template_xmlid, reset_translations=True)
+        if util.version_gte("16.0"):
+            record.invalidate_recordset(data_after.keys())
+        else:
+            record.invalidate_cache(data_after.keys(), record.ids)
+
+        # asserting  equality for the full arch_db fails for some versions due to different quotes being used
+        self.assertEqual(record.name, data_before["name"])
+        tree = etree.fromstring(record.arch_db)
+        non_query_result = non_xpath(tree)
+        self.assertEqual(len(non_query_result), 0)
+        [template_element] = tree.xpath("/t")
+        self.assertEqual(template_element.attrib["t-name"], template_xmlid)
