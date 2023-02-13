@@ -716,8 +716,7 @@ def update_record_from_xml(
                 table,
                 ",".join(
                     [
-                        """%s = NULLIF(jsonb_build_object('en_US', {%s}->>'en_US'), '{"en_US": null}'::jsonb)"""
-                        % (f, f)
+                        """%s = NULLIF(jsonb_build_object('en_US', %s->>'en_US'), '{"en_US": null}'::jsonb)""" % (f, f)
                         for f in reset_translations
                     ]
                 ),
