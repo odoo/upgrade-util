@@ -227,7 +227,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
 
 
 def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=16):
-    inherit_id = False
+    inherit_id = None
     if inherit_xml_id:
         inherit_id = ref(cr, inherit_xml_id)
         if not inherit_id:
