@@ -679,6 +679,7 @@ def update_record_from_xml(
 
     from_module = from_module or module
     manifest = get_manifest(from_module)
+    template = False
     for f in manifest.get("data", []):
         if not f.endswith(".xml"):
             continue
@@ -686,6 +687,8 @@ def update_record_from_xml(
             doc = lxml.etree.parse(fp)
             for node in doc.xpath(xpath):
                 new_root[0].append(node)
+                if node.tag == "template":
+                    template = True
 
     cr_or_env = env(cr) if version_gte("saas~16.2") else cr
     importer = xml_import(cr_or_env, from_module, idref={}, mode="update")
@@ -698,6 +701,16 @@ def update_record_from_xml(
         cr.execute("UPDATE {} SET write_uid=%s, write_date=%s WHERE id=%s".format(table), write_data)
 
     if reset_translations:
+        if reset_translations is True:
+            fields_with_values_from_xml = {elem.attrib["name"] for elem in node.xpath("//record/field")}
+            if template:
+                fields_with_values_from_xml |= {"arch_db", "name"}
+            cr.execute(
+                "SELECT name FROM ir_model_fields WHERE model = %s AND translate = true AND name IN %s",
+                [model, tuple(fields_with_values_from_xml)],
+            )
+            reset_translations = [fname for [fname] in cr.fetchall()]
+
         if table_exists(cr, "ir_translation"):
             cr.execute(
                 """
@@ -716,8 +729,9 @@ def update_record_from_xml(
                 table,
                 ",".join(
                     [
-                        """%s = NULLIF(jsonb_build_object('en_US', %s->>'en_US'), '{"en_US": null}'::jsonb)""" % (f, f)
-                        for f in reset_translations
+                        """%s = NULLIF(jsonb_build_object('en_US', %s->>'en_US'), '{"en_US": null}'::jsonb)"""
+                        % (fname, fname)
+                        for fname in reset_translations
                     ]
                 ),
             )
