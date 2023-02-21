@@ -249,6 +249,7 @@ def upgrade_jinja_fields(
     templates_to_check[table_name] = []
     model = model_of_table(cr, table_name)
 
+    cr.commit()  # ease the processing for PG
     cr.execute(
         f"""
         SELECT id, {name_field}, {sql_fields}
@@ -335,17 +336,29 @@ def upgrade_jinja_fields(
             converted_src = convert_jinja_to_inline(src) if src else ""
             converted_value = convert_jinja_to_inline(value) if value else ""
             cr.execute(
-                """DO $x47df4fbdba2c44f89a61a67221cb687b$
-                     BEGIN
-                       UPDATE ir_translation SET src=%s, value=%s WHERE id=%s;
-                     EXCEPTION WHEN unique_violation THEN
-                       DELETE FROM ir_translation WHERE id=%s;
-                     END;
-                   $x47df4fbdba2c44f89a61a67221cb687b$
+                """
+                DELETE FROM ir_translation orig
+                      USING ir_translation dup
+                      WHERE orig.id = %s
+                        AND dup.id != orig.id
+                         -- "ir_translation_unique" UNIQUE, btree (type, name, lang, res_id, md5(src))
+                        AND dup.type = orig.type
+                        AND dup.name = orig.name
+                        AND dup.lang = orig.lang
+                        AND dup.res_id = orig.res_id
+                        AND dup.src = %s
+                  RETURNING orig.id
                 """,
-                [converted_src, converted_value, tid, tid],
+                [tid, converted_src],
             )
+            if not cr.rowcount:
+                # no duplicate found, update the translation
+                cr.execute(
+                    "UPDATE ir_translation SET src=%s, value=%s WHERE id=%s",
+                    [converted_src, converted_value, tid],
+                )
 
+    cr.commit()  # commit changes for the named cursor below
     qweb_entries = [f"{model},{name}" for name in qweb_fields]
     if qweb_entries:
         ncr = named_cursor(cr, 1000)
@@ -363,16 +376,27 @@ def upgrade_jinja_fields(
             converted_src = convert_jinja_to_qweb(src) if src else ""
             converted_value = convert_jinja_to_qweb(value) if value else ""
             cr.execute(
-                """DO $x47df4fbdba2c44f89a61a67221cb687b$
-                     BEGIN
-                       UPDATE ir_translation SET src=%s, value=%s WHERE id=%s;
-                     EXCEPTION WHEN unique_violation THEN
-                       DELETE FROM ir_translation WHERE id=%s;
-                     END;
-                   $x47df4fbdba2c44f89a61a67221cb687b$
+                """
+                DELETE FROM ir_translation orig
+                      USING ir_translation dup
+                      WHERE orig.id = %s
+                        AND dup.id != orig.id
+                         -- "ir_translation_unique" UNIQUE, btree (type, name, lang, res_id, md5(src))
+                        AND dup.type = orig.type
+                        AND dup.name = orig.name
+                        AND dup.lang = orig.lang
+                        AND dup.res_id = orig.res_id
+                        AND dup.src = %s
+                  RETURNING orig.id
                 """,
-                [converted_src, converted_value, tid, tid],
+                [tid, converted_src],
             )
+            if not cr.rowcount:
+                # no duplicate found, update the translation
+                cr.execute(
+                    "UPDATE ir_translation SET src=%s, value=%s WHERE id=%s",
+                    [converted_src, converted_value, tid],
+                )
         ncr.close()
 
 
