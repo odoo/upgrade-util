@@ -139,7 +139,7 @@ def convert_jinja_to_qweb(string):
             _convert_jinja_to_t_out_text(el)
         if el.tail:
             _convert_jinja_to_t_out_tail(el)
-        for (key, value) in el.attrib.items():
+        for key, value in el.attrib.items():
             if re.search(JINJA_EXPRESSION_REGEX, value):
                 del el.attrib[key]
                 el.set("t-attf-" + key, convert_jinja_to_inline(value))
