@@ -35,6 +35,7 @@ from .pg import (
     explode_query_range,
     get_columns,
     get_fk,
+    get_value_or_en_translation,
     parallel_execute,
     table_exists,
     target_of,
@@ -308,6 +309,10 @@ def remove_record(cr, name):
         _logger.log(NEARLYWARN, "Removing menu %r", name)
         return remove_menus(cr, [res_id])
 
+    if model == "res.groups":
+        _logger.log(NEARLYWARN, "Removing group %r", name)
+        return remove_group(cr, group_id=res_id)
+
     return remove_records(cr, model, [res_id])
 
 
@@ -477,6 +482,62 @@ def remove_menus(cr, menu_ids):
     ids = tuple(x[0] for x in cr.fetchall())
     if ids:
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.ui.menu' AND res_id IN %s", [ids])
+
+
+def remove_group(cr, xml_id=None, group_id=None):
+    assert bool(xml_id) ^ bool(group_id)
+    if xml_id:
+        group_id = ref(cr, xml_id)
+        if group_id:
+            module, _, name = xml_id.partition(".")
+            cr.execute("SELECT model FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
+            [model] = cr.fetchone()
+            if model != "res.groups":
+                raise ValueError("%r should point to a 'res.groups', not a %r" % (xml_id, model))
+
+    if not group_id:
+        return
+
+    # Get all fks from table res_groups
+    fks = get_fk(cr, "res_groups")
+
+    # Remove records referencing the group_id from the referencing tables (restrict fks)
+    standard_tables = ["ir_model_access", "rule_group_rel"]
+    custom_tables = []
+    for foreign_table, foreign_column, _, on_delete_action in fks:
+        if on_delete_action == "r":
+            if foreign_table not in standard_tables:
+                cr.execute(
+                    'SELECT COUNT(*) FROM "{}" WHERE "{}" = %s'.format(foreign_table, foreign_column),
+                    (group_id,),
+                )
+                count = cr.fetchone()[0]
+                if count:
+                    custom_tables.append((foreign_table, foreign_column, count))
+                continue
+
+            query = 'DELETE FROM "{}" WHERE "{}" = %s'.format(foreign_table, foreign_column)
+            query = cr.mogrify(query, (group_id,)).decode()
+
+            if column_exists(cr, foreign_table, "id"):
+                parallel_execute(cr, explode_query_range(cr, query, table=foreign_table))
+            else:
+                cr.execute(query)
+
+    if custom_tables:
+        col_name = get_value_or_en_translation(cr, "res_groups", "name")
+        cr.execute("SELECT {} FROM res_groups WHERE id = %s".format(col_name), [group_id])
+        group_name = cr.fetchone()[0]
+        raise MigrationError(
+            "\nThe following 'table (column) - records count' are referencing the group '{}'".format(group_name)
+            + " and cannot be removed automatically:\n"
+            + "\n".join(
+                " - {} ({}) - {} record(s)".format(table, column, count) for table, column, count in custom_tables
+            )
+            + "\nPlease remove them manually or remove the foreign key constraints set as RESTRICT."
+        )
+
+    remove_records(cr, "res.groups", [group_id])
 
 
 def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
