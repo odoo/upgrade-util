@@ -174,6 +174,14 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
     ]
 
 
+def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_logger):
+    return parallel_execute(
+        cr,
+        explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size),
+        logger=logger,
+    )
+
+
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
     return "ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn)
