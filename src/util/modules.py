@@ -68,7 +68,6 @@ def module_installed(cr, module):
 
 
 def uninstall_module(cr, module):
-
     cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (module,))
     (mod_id,) = cr.fetchone() or [None]
     if not mod_id:
@@ -141,7 +140,7 @@ def uninstall_module(cr, module):
             for _, res_id in group:
                 remove_view(cr, view_id=res_id, silent=True)
         else:
-            remove_records(cr, model, [it[1] for it in group])
+            remove_records(cr, model, [it[1] for it in group])  # noqa: B031
 
     if menu_ids:
         remove_menus(cr, menu_ids)
