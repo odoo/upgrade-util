@@ -36,7 +36,7 @@ from .misc import on_CI, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import column_exists, table_exists
-from .records import remove_menus, remove_records, remove_view
+from .records import remove_menus, remove_records, remove_view, replace_record_references_batch
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
@@ -305,6 +305,42 @@ def merge_module(cr, old, into, update_dependers=True):
         )
 
         if table == "data":
+            # remove xmlids pointing to the same records
+            cr.execute(
+                """
+                    DELETE
+                      FROM ir_model_data o
+                     USING ir_model_data n
+                     WHERE o.module = %s
+                       AND n.module = %s
+                       AND o.model = n.model
+                       AND o.res_id = n.res_id
+                """,
+                [old, new],
+            )
+            # merge records when they have the same model
+            cr.execute(
+                """
+                    SELECT o.model,
+                           jsonb_object_agg(o.res_id, n.res_id)
+                      FROM ir_model_data o
+                      JOIN ir_model_data n
+                        ON n.model = o.model
+                       AND n.name = o.name
+                     WHERE o.module = %s
+                       AND n.module = %s
+                       AND o.model NOT LIKE 'ir.model%%'
+                       AND o.model NOT LIKE 'ir.module.module%%'
+                       AND o.model NOT IN ('ir.ui.view', 'ir.ui.menu')
+                  GROUP BY o.model
+                """,
+                [old, new],
+            )
+            for model, mapping in cr.fetchall():
+                mapping = {int(f): int(t) for f, t in mapping.items()}  # cast to int
+                replace_record_references_batch(cr, mapping, model, replace_xmlid=False)
+
+            # remove remaining records
             cr.execute(
                 """
                 SELECT model, array_agg(res_id)
