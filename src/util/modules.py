@@ -30,12 +30,13 @@ except ImportError:
         from openerp.addons.web.controllers.main import module_topological_sort as topological_sort
 
 from .const import ENVIRON, NEARLYWARN
-from .fields import IMD_FIELD_PATTERN, remove_field
-from .helpers import _validate_model
+from .exceptions import MigrationError, SleepyDeveloperError
+from .fields import remove_field
+from .helpers import _validate_model, table_of_model
 from .misc import on_CI, version_gte
 from .models import delete_model
 from .orm import env, flush
-from .pg import column_exists, table_exists
+from .pg import column_exists, table_exists, target_of
 from .records import remove_menus, remove_records, remove_view, replace_record_references_batch
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
@@ -743,51 +744,106 @@ def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
         ENVIRON["__modules_auto_discovery_force_upgrades"].update(dict.fromkeys(force_upgrades, (False, version)))
 
 
-def move_model(cr, model, from_module, to_module, move_data=False):
+def move_model(cr, model, from_module, to_module, move_data=False, keep=()):
     """
-    move model `model` from `from_module` to `to_module`.
-    if `to_module` is not installed, delete the model.
+    Move model `model` from `from_module` to `to_module`.
+    This method can also be called for moving overrides of a model to another module.
+    As we cannot distinct the two cases (source model or inherited model), if the destination
+    module isn't installed, an exception is raised.
     """
     _validate_model(model)
     if not module_installed(cr, to_module):
-        delete_model(cr, model)
-        return
+        raise MigrationError("Cannot move model {!r} to module {!r} as it isn't installed".format(model, to_module))
 
-    def update_imd(model, name=None, from_module=from_module, to_module=to_module):
-        where = "true"
-        if name:
-            where = "d.name {} %(name)s".format("LIKE" if "%" in name else "=")
+    if any("." in k for k in keep):
+        raise SleepyDeveloperError("The `keep` argument must not contain fully-qualified xmlids, only the local names")
+
+    def update_imd(data_model, path):
+        table = table_of_model(cr, data_model)
+        if not table_exists(cr, table):
+            return
+
+        joins = []
+        where = "d.name != ALL(%(keep)s)"
+        if path:
+            path = path.split(".")
+            column = path.pop()
+
+            working_table = table
+            for index, milestone in enumerate(path, 1):
+                working_table, working_column, _ = target_of(cr, working_table, milestone)
+
+                joins.append(
+                    "JOIN {t} t{i} ON t{i}.{c} = t{j}.{m}".format(
+                        t=working_table,
+                        i=index,
+                        c=working_column,
+                        j=index - 1,
+                        m=milestone,
+                    )
+                )
+
+            where += " AND t{}.{} = %(linked_model)s".format(len(path), column)
+
+        joins = "\n".join(joins)
+        params = {
+            "linked_model": model,
+            "from_module": from_module,
+            "to_module": to_module,
+            "data_model": data_model,
+            "keep": list(keep),
+        }
 
         query = """
             WITH dups AS (
                 SELECT d.id
-                  FROM ir_model_data d, ir_model_data t
-                 WHERE d.name = t.name
+                  FROM ir_model_data d
+                  JOIN ir_model_data o
+                    ON d.name = o.name
+                  JOIN {table} t0
+                    ON t0.id = d.res_id
+               {joins}
+                 WHERE d.model = %(data_model)s
                    AND d.module = %(from_module)s
-                   AND t.module = %(to_module)s
-                   AND d.model = %(model)s
-                   AND {}
+                   AND o.module = %(to_module)s
+                   AND {where}
             )
             DELETE FROM ir_model_data d
                   USING dups
-                 WHERE dups.id = d.id
+                  WHERE dups.id = d.id
         """
-        cr.execute(query.format(where), locals())
+        cr.execute(query.format(table=table, joins=joins, where=where), params)
 
         query = """
             UPDATE ir_model_data d
                SET module = %(to_module)s
-             WHERE module = %(from_module)s
-               AND model = %(model)s
-               AND {}
+              FROM {table} t0
+           {joins}
+             WHERE t0.id = d.res_id
+               AND d.model = %(data_model)s
+               AND d.module = %(from_module)s
+               AND {where}
         """
-        cr.execute(query.format(where), locals())
+        cr.execute(query.format(table=table, joins=joins, where=where), params)
 
-    model_u = model.replace(".", "_")
+    update_imd("ir.model", path="model")
+    update_imd("ir.model.fields", path="model_id.model")
+    update_imd("ir.model.fields.selection", path="field_id.model_id.model")
+    update_imd("ir.model.constraint", path="model.model")
+    update_imd("ir.model.relation", path="model.model")
+    update_imd("ir.rule", path="model_id.model")
+    update_imd("ir.model.access", path="model_id.model")
+    update_imd("ir.ui.view", path="model")
+    update_imd("ir.actions.act_window", path="res_model")
+    update_imd("ir.actions.server", path="model_id.model")
+    update_imd("ir.actions.report", path="model")
+    if column_exists(cr, "ir_cron", "model"):
+        # < 10.saas~14
+        update_imd("ir.cron", path="model")
+    else:
+        update_imd("ir.cron", path="ir_actions_server_id.model_id.model")
 
-    update_imd("ir.model", "model_%s" % model_u)
-    update_imd("ir.model.fields", (IMD_FIELD_PATTERN % (model_u, "%")).replace("_", r"\_"))
-    update_imd("ir.model.constraint", ("constraint_%s_%%" % (model_u,)).replace("_", r"\_"))
     if move_data:
-        update_imd(model)
+        update_imd(model, path=None)
+
     return
