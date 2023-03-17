@@ -275,13 +275,19 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
 
+    matched_count = 0
+    converted_count = 0
     with ProcessPoolExecutor(max_workers=util.get_max_workers()) as executor:
         convert = Convertor(converters, converter_callback)
         for query in util.log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
             cr.execute(query)
             for data in executor.map(convert, cr.fetchall()):
+                matched_count += 1
                 if "id" in data:
                     cr.execute(update_query, data)
+                    converted_count += 1
+
+    return matched_count, converted_count
 
 
 def determine_chunk_limit_ids(cr, table, column_arr, where):
@@ -304,6 +310,7 @@ def convert_html_content(
     cr,
     converter_callback,
     where_column="IS NOT NULL",
+    verbose=False,
     **kwargs,
 ):
     r"""
@@ -316,9 +323,16 @@ def convert_html_content(
     :param str where_column: filtering such as
         - "like '%abc%xyz%'"
         - "~* '\yabc.*xyz\y'"
+    :param bool verbose: print stats about the conversion
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
-    convert_html_columns(
+    if verbose:
+        _logger.info("Converting html fields data using %s", repr(converter_callback))
+
+    matched_count = 0
+    converted_count = 0
+
+    matched, converted = convert_html_columns(
         cr,
         "ir_ui_view",
         ["arch_db"],
@@ -326,6 +340,18 @@ def convert_html_content(
         where_column=where_column,
         **dict(kwargs, extra_where="type = 'qweb'"),
     )
+    matched_count += matched
+    converted_count += converted
 
     for table, columns in html_fields(cr):
-        convert_html_columns(cr, table, columns, converter_callback, where_column=where_column, **kwargs)
+        matched, converted = convert_html_columns(
+            cr, table, columns, converter_callback, where_column=where_column, **kwargs
+        )
+        matched_count += matched
+        converted_count += converted
+
+    if verbose:
+        if matched_count:
+            _logger.info("Converted %d/%d matched html fields values", converted_count, matched_count)
+        else:
+            _logger.info("Did not match any html fields values to convert")

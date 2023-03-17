@@ -1198,17 +1198,22 @@ if misc.version_gte("13.0"):
         if views_ids:
             convert_views(cr, views_ids, converter)
 
-    def convert_html_fields(cr, converter):
+    def convert_html_fields(cr, converter, verbose=False):
         """
         Convert all html fields data in the database using the provided converter.
 
         :param psycopg2.cursor cr: the database cursor.
         :param EtreeConverter converter: the converter to use.
+        :param bool verbose: whether to print stats about the conversion.
         :rtype: None
 
         :meta private: exclude from online docs
         """
-        _logger.info("Converting html fields data using %s", repr(converter))
+        if verbose:
+            _logger.info("Converting html fields data using %s", repr(converter))
+
+        matched_count = 0
+        converted_count = 0
 
         html_fields = list(snippets.html_fields(cr))
         for table, columns in misc.log_progress(html_fields, _logger, "tables", log_hundred_percent=True):
@@ -1217,7 +1222,18 @@ if misc.version_gte("13.0"):
                     "(%s)" % converter.build_where_clause(cr, pg.get_value_or_en_translation(cr, table, column))
                     for column in columns
                 )
-            snippets.convert_html_columns(cr, table, columns, converter.convert_callback, extra_where=extra_where)
+                # TODO abt: adapt to refactor, maybe make snippets compat w/ converter, instead of adapting?
+                matched, converted = snippets.convert_html_columns(
+                    cr, table, columns, converter.convert_callback, extra_where=extra_where
+                )
+                matched_count += matched
+                converted_count += converted
+
+        if verbose:
+            if matched_count:
+                _logger.info("Converted %d/%d matched html fields values", converted_count, matched_count)
+            else:
+                _logger.info("Did not match any html fields values to convert")
 
 else:
 
