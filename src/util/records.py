@@ -698,7 +698,13 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
 
 def update_record_from_xml(
-    cr, xmlid, reset_write_metadata=True, force_create=False, from_module=None, reset_translations=()
+    cr,
+    xmlid,
+    reset_write_metadata=True,
+    force_create=False,
+    from_module=None,
+    reset_translations=(),
+    ensure_references=False,
 ):
     from .modules import get_manifest
 
@@ -741,6 +747,14 @@ def update_record_from_xml(
     from_module = from_module or module
     manifest = get_manifest(from_module)
     template = False
+    extra_references = []
+
+    def add_ref(ref):
+        if "." not in ref:
+            extra_references.append(from_module + "." + ref)
+        elif ref.split(".")[0] == from_module:
+            extra_references.append(ref)
+
     for f in manifest.get("data", []):
         if not f.endswith(".xml"):
             continue
@@ -750,6 +764,22 @@ def update_record_from_xml(
                 new_root[0].append(node)
                 if node.tag == "template":
                     template = True
+                if ensure_references:
+                    for ref_node in node.xpath("//field[@ref]"):
+                        add_ref(ref_node.get("ref"))
+                    for eval_node in node.xpath("//field[@eval]"):
+                        for ref_match in re.finditer(r"\bref\((['\"])(.*?)\1\)", eval_node.get("eval")):
+                            add_ref(ref_match.group(2))
+
+    done_refs = set()
+    for ref in extra_references:
+        if ref in done_refs:
+            continue
+        done_refs.add(ref)
+        _logger.info("Update of %s - ensuring the reference %s exists", xmlid, ref)
+        update_record_from_xml(
+            cr, ref, reset_write_metadata=reset_write_metadata, force_create=True, ensure_references=True
+        )
 
     cr_or_env = env(cr) if version_gte("saas~16.2") else cr
     importer = xml_import(cr_or_env, from_module, idref={}, mode="update")
