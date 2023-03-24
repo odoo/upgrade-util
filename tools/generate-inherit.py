@@ -192,7 +192,7 @@ VIRTUAL_INHERITS = {
         Inherit(model="ir.mail_server", born=Version("12.0"), dead=Version("saas-15.3"), via=None),
     ],
     "pos.order.line": [
-        Inherit(model="pos.order_line_pro_forma_be", born=Version("14.0"), dead=Version("saas-15.3")),
+        Inherit(model="pos.order_line_pro_forma_be", born=Version("14.0"), dead=Version("saas-16.1")),
     ],
     "studio.mixin": [
         Inherit(model="ir.default", born=Version("14.0"), dead=Version("saas-14.2")),
