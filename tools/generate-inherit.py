@@ -381,9 +381,11 @@ def main(options: Namespace):
                 if virtual.apply_on(version):
                     visitor.inh[model].add((virtual.model, virtual.via))
 
+        any_repo = False
         for repo in REPOSITORIES:
             if not checkout(wd, repo, version):
                 continue
+            any_repo = True
             logger.info("🔎 Process %s at version %s", repo.name, version.name)
             r = wd / repo.name
             for pyfile in r.glob("**/*.py"):
@@ -397,6 +399,10 @@ def main(options: Namespace):
                 except Exception:
                     logger.critical("💥 Cannot parse %s (%s %s)", pyfile, repo.name, version.name)
                     raise
+
+        if not any_repo:
+            # branch not found in any repo, don't store any inherits, even virtual ones
+            continue
 
         if not visitor.inh:
             continue
