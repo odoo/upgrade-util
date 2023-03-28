@@ -771,10 +771,10 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
             _validate_model(model)
 
     p = {
-        "old": r"\y%s\y" % (old,),
-        "new": new,
-        "def_old": r"\ydefault_%s\y" % (old,),
-        "def_new": "default_%s" % (new,),
+        "old": r"\y%s\y" % (re.escape(old),),
+        "new": re.escape(new),
+        "def_old": r"\ydefault_%s\y" % (re.escape(old),),
+        "def_new": "default_%s" % (re.escape(new),),
         "models": tuple(only_models) if only_models else (),
     }
 
@@ -952,7 +952,7 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
 
     target_model = model
 
-    match_old = r"\y{}\y".format(old)
+    match_old = r"\y{}\y".format(re.escape(old))
     cr.execute(
         """
         SELECT id, model, related

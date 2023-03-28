@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import collections
 import logging
+import re
 
 try:
     from odoo.osv import expression
@@ -246,7 +247,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     _validate_model(model)
     target_model = model
 
-    match_old = r"\y{}\y".format(old)
+    match_old = r"\y{}\y".format(re.escape(old))
     for df in _get_domain_fields(cr):
         cr.execute(
             """
