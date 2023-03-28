@@ -11,6 +11,7 @@ except ImportError:
     import mock
 
 from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
+from odoo.tools import mute_logger
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
@@ -483,7 +484,8 @@ class TestRecords(UnitTestCase):
             util.rename_xmlid(cr, "base.TX1", "base.TX2", on_collision="fail")
 
         # As TX2 is not free, TX1 is merged with TX2
-        res = util.rename_xmlid(cr, "base.TX1", "base.TX2", on_collision="merge")
+        with mute_logger(util.helpers._logger.name):
+            res = util.rename_xmlid(cr, "base.TX1", "base.TX2", on_collision="merge")
         self.assertEqual(res, new.id)
         self.assertEqual(util.ref(cr, "base.TX1"), None)
 
