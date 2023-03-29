@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+import re
 
 from .const import ENVIRON
 from .fields import IMD_FIELD_PATTERN, remove_field
@@ -457,6 +458,22 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
                 parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
             else:
                 cr.execute(fmt_query)
+
+    # adapt computes of manual fields
+    if column_exists(cr, "ir_model_fields", "compute"):
+        cr.execute(
+            r"""
+            UPDATE ir_model_fields
+               SET compute = regexp_replace(compute, %s, %s, 'g')
+             WHERE state = 'manual'
+               AND compute IS NOT NULL
+               AND name LIKE 'x\_%%'
+            """,
+            [
+                r"""\yenv\[('|"){}\1\]""".format(re.escape(source)),
+                "env['{}']".format(target),
+            ],
+        )
 
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
