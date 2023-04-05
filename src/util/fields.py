@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import re
+import warnings
 
 import psycopg2
 
@@ -439,7 +440,7 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
 
     if update_references:
         # skip all inherit, they will be handled by the resursive call
-        update_field_references(cr, old, new, only_models=(model,), domain_adapter=domain_adapter, skip_inherit="*")
+        update_field_usage(cr, model, old, new, domain_adapter=domain_adapter, skip_inherit="*")
 
     # rename field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
@@ -757,7 +758,7 @@ def register_unanonymization_query(cr, model, field, query, query_type="sql", se
     )
 
 
-def update_field_references(cr, old, new, only_models=None, domain_adapter=None, skip_inherit=()):
+def update_field_usage(cr, model, old, new, domain_adapter=None, skip_inherit=()):
     """
     Replace all references to field `old` to `new` in:
         - ir_filters
@@ -765,7 +766,27 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
         - ir_act_server
         - mail_alias
         - ir_ui_view_custom (dashboard)
+        - domains (using `domain_adapter`)
+        - related fields
+
     """
+    return _update_field_usage_multi(cr, [model], old, new, domain_adapter=domain_adapter, skip_inherit=skip_inherit)
+
+
+def update_field_references(cr, old, new, only_models=None, domain_adapter=None, skip_inherit=()):
+    warnings.warn(
+        "The `update_field_references` function is deprecated. Use `update_field_usage` instead.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+    models = "*" if only_models is None else only_models
+    return _update_field_usage_multi(cr, models, old, new, domain_adapter=domain_adapter, skip_inherit=skip_inherit)
+
+
+def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_inherit=()):
+    assert models
+    only_models = None if models == "*" else tuple(models)
+
     if only_models:
         for model in only_models:
             _validate_model(model)
@@ -938,8 +959,8 @@ def update_field_references(cr, old, new, only_models=None, domain_adapter=None,
             inh.model for model in only_models for inh in for_each_inherit(cr, model, skip_inherit)
         )
         if inherited_models:
-            update_field_references(
-                cr, old, new, only_models=inherited_models, domain_adapter=domain_adapter, skip_inherit=skip_inherit
+            _update_field_usage_multi(
+                cr, inherited_models, old, new, domain_adapter=domain_adapter, skip_inherit=skip_inherit
             )
 
 
