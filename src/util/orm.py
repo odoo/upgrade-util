@@ -435,43 +435,6 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     )
     updated_many2one_fields = env.cr.fetchall()
 
-    # 3.4. Custom model set as mail thread will try to load all the fields of the `mail.thread`,
-    #      even if the column in database as not been created yet because the -u on the custom module did not occur yet.
-    #      Fields of the mails threads are in the `ir_model_fields` table, so not need to automatically add them anyway
-    #      e.g. `message_main_attachment_id` is added between 12.0 and 13.0.
-    updated_mixin_ids = {}
-    for mixin, mixin_column in [
-        ("mail.thread", "is_mail_thread"),
-        ("mail.activity.mixin", "is_mail_activity"),
-        ("mail.thread.blacklist", "is_mail_blacklist"),
-    ]:
-        if column_exists(env.cr, "ir_model", mixin_column):
-            env.cr.execute(
-                """
-                       UPDATE ir_model
-                          SET %(column)s = false
-                        WHERE state = 'manual'
-                          AND %(column)s
-                    RETURNING id
-                """
-                % {"column": mixin_column}
-            )
-            ids = [r[0] for r in env.cr.fetchall()]
-            if ids:
-                updated_mixin_ids[mixin_column] = ids
-                env.cr.execute(
-                    """
-                           UPDATE ir_model_fields
-                              SET state = 'manual'
-                            WHERE state = 'base'
-                              AND model_id IN %s
-                              AND name IN %s
-                        RETURNING id
-                    """,
-                    [tuple(ids), tuple(env[mixin]._fields.keys())],
-                )
-                updated_field_ids += [r[0] for r in env.cr.fetchall()]
-
     # 3.4. models `_rec_name` are not reloaded correctly.
     #      If the model has no `_rec_name` and there is a manual field `name` or `x_name`,
     #      the `_rec_name` becomes this name field. But then, when we convert back the manual fields to base field,
@@ -532,8 +495,6 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
             env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
         for field_id, on_delete in updated_many2one_fields:
             env.cr.execute("UPDATE ir_model_fields SET on_delete = %s WHERE id = %s", [on_delete, field_id])
-        for mixin_column, ids in updated_mixin_ids.items():
-            env.cr.execute("UPDATE ir_model SET %s = true WHERE id IN %%s" % mixin_column, (tuple(ids),))
         for model, rec_name in rec_names.items():
             env.registry[model]._rec_name = rec_name
 
