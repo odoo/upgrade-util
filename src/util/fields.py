@@ -799,47 +799,6 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         "models": tuple(only_models) if only_models else (),
     }
 
-    col_prefix = ""
-    if not column_exists(cr, "ir_filters", "sort"):
-        col_prefix = "--"  # sql comment the line
-    q = """
-        UPDATE ir_filters
-           SET {col_prefix} sort = regexp_replace(sort, %(old)s, %(new)s, 'g'),
-               context = regexp_replace(regexp_replace(context,
-                                                       %(old)s, %(new)s, 'g'),
-                                                       %(def_old)s, %(def_new)s, 'g')
-    """
-
-    if only_models:
-        q += " WHERE model_id IN %(models)s AND "
-    else:
-        q += " WHERE "
-    q += """
-        (
-            context ~ %(old)s
-            OR context ~ %(def_old)s
-            {col_prefix} OR sort ~ %(old)s
-        )
-    """
-    cr.execute(q.format(col_prefix=col_prefix), p)
-
-    # ir.exports.line
-    q = """
-        UPDATE ir_exports_line l
-           SET name = regexp_replace(l.name, %(old)s, %(new)s, 'g')
-    """
-    if only_models:
-        q += """
-          FROM ir_exports e
-         WHERE e.id = l.export_id
-           AND e.resource IN %(models)s
-           AND
-        """
-    else:
-        q += "WHERE "
-    q += "l.name ~ %(old)s"
-    cr.execute(q, p)
-
     # ir.action.server
     # Modifying server action is dangerous.
     # The search pattern can be anywhere in the code, leading to invalid codes.
@@ -882,77 +841,122 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             format="html",
         )
 
-    # mail.alias
-    if column_exists(cr, "mail_alias", "alias_defaults"):
+    # if we don't replace the field by a dotted-path alternative (only works for domains and related)
+    if "." not in new:
+        # ir.filters
+        col_prefix = ""
+        if not column_exists(cr, "ir_filters", "sort"):
+            col_prefix = "--"  # sql comment the line
         q = """
-            UPDATE mail_alias a
-               SET alias_defaults = regexp_replace(a.alias_defaults, %(old)s, %(new)s, 'g')
+            UPDATE ir_filters
+               SET {col_prefix} sort = regexp_replace(sort, %(old)s, %(new)s, 'g'),
+                   context = regexp_replace(regexp_replace(context,
+                                                           %(old)s, %(new)s, 'g'),
+                                                           %(def_old)s, %(def_new)s, 'g')
+        """
+
+        if only_models:
+            q += " WHERE model_id IN %(models)s AND "
+        else:
+            q += " WHERE "
+        q += """
+            (
+                context ~ %(old)s
+                OR context ~ %(def_old)s
+                {col_prefix} OR sort ~ %(old)s
+            )
+        """
+        cr.execute(q.format(col_prefix=col_prefix), p)
+
+        # ir.exports.line
+        q = """
+            UPDATE ir_exports_line l
+               SET name = regexp_replace(l.name, %(old)s, %(new)s, 'g')
         """
         if only_models:
             q += """
-              FROM ir_model m
-             WHERE m.id = a.alias_model_id
-               AND m.model IN %(models)s
+              FROM ir_exports e
+             WHERE e.id = l.export_id
+               AND e.resource IN %(models)s
                AND
             """
         else:
             q += "WHERE "
-        q += "a.alias_defaults ~ %(old)s"
+        q += "l.name ~ %(old)s"
         cr.execute(q, p)
 
-    # ir.ui.view.custom
-    # adapt the context. The domain will be done by `adapt_domain`
-    eval_context = SelfPrintEvalContext()
-    def_old = "default_{}".format(old)
-    def_new = "default_{}".format(new)
-    match = "{0[old]}|{0[def_old]}".format(p)
+        # mail.alias
+        if column_exists(cr, "mail_alias", "alias_defaults"):
+            q = """
+                UPDATE mail_alias a
+                   SET alias_defaults = regexp_replace(a.alias_defaults, %(old)s, %(new)s, 'g')
+            """
+            if only_models:
+                q += """
+                  FROM ir_model m
+                 WHERE m.id = a.alias_model_id
+                   AND m.model IN %(models)s
+                   AND
+                """
+            else:
+                q += "WHERE "
+            q += "a.alias_defaults ~ %(old)s"
+            cr.execute(q, p)
 
-    def adapt_value(key, value):
-        if key == "orderedBy" and isinstance(value, dict):
-            # only adapt the "name" key
-            return {k: (adapt_value(None, v) if k == "name" else v) for k, v in value.items()}
+        # ir.ui.view.custom
+        # adapt the context. The domain will be done by `adapt_domain`
+        eval_context = SelfPrintEvalContext()
+        def_old = "default_{}".format(old)
+        def_new = "default_{}".format(new)
+        match = "{0[old]}|{0[def_old]}".format(p)
 
-        if not isinstance(value, basestring):
-            # ignore if not a string
-            return value
+        def adapt_value(key, value):
+            if key == "orderedBy" and isinstance(value, dict):
+                # only adapt the "name" key
+                return {k: (adapt_value(None, v) if k == "name" else v) for k, v in value.items()}
 
-        parts = value.split(":", 1)
-        if parts[0] != old:
-            # if not match old, leave it
-            return value
-        # change to new, and return it
-        parts[0] = new
-        return ":".join(parts)
+            if not isinstance(value, basestring):
+                # ignore if not a string
+                return value
 
-    def adapt_dict(d):
-        # adapt (in place) dictionary values
-        if not isinstance(d, dict):
-            return
+            parts = value.split(":", 1)
+            if parts[0] != old:
+                # if not match old, leave it
+                return value
+            # change to new, and return it
+            parts[0] = new
+            return ":".join(parts)
 
-        for key in _CONTEXT_KEYS_TO_CLEAN:
-            if d.get(key):
-                d[key] = [adapt_value(key, e) for e in d[key]]
+        def adapt_dict(d):
+            # adapt (in place) dictionary values
+            if not isinstance(d, dict):
+                return
 
-        for vt in {"pivot", "graph", "cohort"}:
-            key = "{}_measure".format(vt)
-            if key in d:
-                d[key] = adapt_value(key, d[key])
+            for key in _CONTEXT_KEYS_TO_CLEAN:
+                if d.get(key):
+                    d[key] = [adapt_value(key, e) for e in d[key]]
 
-            if vt in d:
-                adapt_dict(d[vt])
+            for vt in {"pivot", "graph", "cohort"}:
+                key = "{}_measure".format(vt)
+                if key in d:
+                    d[key] = adapt_value(key, d[key])
 
-    for _, act in _dashboard_actions(cr, match, def_old, *only_models or ()):
-        context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
-        adapt_dict(context)
+                if vt in d:
+                    adapt_dict(d[vt])
 
-        if def_old in context:
-            context[def_new] = context.pop(def_old)
-        act.set("context", unicode(context))
+        for _, act in _dashboard_actions(cr, match, def_old, *only_models or ()):
+            context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
+            adapt_dict(context)
 
+            if def_old in context:
+                context[def_new] = context.pop(def_old)
+            act.set("context", unicode(context))
+
+    # domains, related and inhited models
     if only_models:
         for model in only_models:
             # skip all inherit, they will be handled by the resursive call
-            adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*")
+            adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*", force_adapt=True)
             adapt_related(cr, model, old, new, skip_inherit="*")
 
         inherited_models = tuple(
