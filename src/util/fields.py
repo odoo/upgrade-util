@@ -793,9 +793,9 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
 
     p = {
         "old": r"\y%s\y" % (re.escape(old),),
-        "new": re.escape(new),
+        "new": new,
         "def_old": r"\ydefault_%s\y" % (re.escape(old),),
-        "def_new": "default_%s" % (re.escape(new),),
+        "def_new": "default_%s" % (new,),
         "models": tuple(only_models) if only_models else (),
     }
 
