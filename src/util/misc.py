@@ -24,7 +24,7 @@ from .exceptions import SleepyDeveloperError
 
 # python3 shim
 try:
-    unicode
+    unicode  # noqa: B018
 except NameError:
     unicode = str
 

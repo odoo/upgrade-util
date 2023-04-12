@@ -49,7 +49,7 @@ from .report import add_to_migration_reports, get_anchor_link_to_record
 
 # python3 shims
 try:
-    basestring
+    basestring  # noqa: B018
 except NameError:
     basestring = unicode = str
 

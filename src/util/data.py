@@ -9,7 +9,7 @@ _logger = logging.getLogger(__name__.rpartition(".")[0])
 
 # python3 shims
 try:
-    basestring
+    basestring  # noqa: B018
 except NameError:
     basestring = str
 

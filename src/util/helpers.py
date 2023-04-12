@@ -25,7 +25,7 @@ _VALID_MODELS = frozenset(
 
 # python3 shims
 try:
-    unicode
+    unicode  # noqa: B018
 except NameError:
     unicode = str
 

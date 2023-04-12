@@ -12,7 +12,7 @@ from .misc import parse_version
 
 # python3 shims
 try:
-    basestring
+    basestring  # noqa: B018
 except NameError:
     basestring = unicode = str
 
@@ -152,7 +152,6 @@ def announce(
     footer=_DEFAULT_FOOTER,
     pluses_for_enterprise=None,
 ):
-
     if pluses_for_enterprise is None:
         # default value depend on format and version
         major = version[0]

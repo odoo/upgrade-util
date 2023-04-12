@@ -1062,7 +1062,7 @@ class BootstrapConverter:
 
         tree, ops_count = cls(tree, is_html, **converter_kwargs).convert(src_version, dst_version)
         if not ops_count:
-            logging.info(f"No conversion operations applied, skipping file: {path}")
+            logging.info("No conversion operations applied, skipping file %s", path)
             return
 
         tree.write(path, encoding="utf-8", method="html" if is_html else None, xml_declaration=not is_html)

@@ -20,7 +20,7 @@ from .pg import column_exists, table_exists
 
 # python3 shims
 try:
-    basestring
+    basestring  # noqa: B018
 except NameError:
     basestring = unicode = str
 
