@@ -1,10 +1,45 @@
 [tool.black]
 line-length = 120
 
-[tool.isort]
-profile = 'black'
-line_length = 120
-sections = ['FUTURE', 'STDLIB', 'THIRDPARTY', 'FIRSTPARTY', 'ODOOADDONS', 'LOCALFOLDER']
-known_first_party = ['odoo', 'openerp']
-known_odooaddons = ['odoo.addons', 'openerp.addons']
-known_local_folder = ['odoo.upgrade', 'odoo.addons.base.maintenance.migrations', 'openerp.addons.base.maintenance.migrations']
+[tool.ruff]
+required-version = "0.0.262"
+fix = true
+ignore = [
+    "B905",  # zip-without-explicit-strict; not python2 compatible
+    "E501",  # line-too-long; handled by `black` formatting
+    "E731",  # lambda-assignment
+
+    # not (yet) supported rules
+    # "E301",
+    # "E302",
+    # "E265",
+    # "E241",
+    # "W503",
+    # "E203",
+    # "B907",
+]
+line-length = 120
+select = [
+    "B",   # flake8-bugbear
+    "E",   # pycodestyle
+    "F",   # Pyflakes
+    "G",   # flake8-logging-format
+    "I",   # isort
+    "ISC", # flake8-implicit-str-concat
+    "W",   # pycodestyle
+]
+
+[tool.ruff.isort]
+section-order = ["future", "standard-library", "third-party", "first-party", "odoo-addons", "local-folder"]
+known-first-party = ["odoo", "openerp"]
+known-local-folder = ["odoo.upgrade", "odoo.addons.base.maintenance.migrations", "openerp.addons.base.maintenance.migrations"]
+
+[tool.ruff.isort.sections]
+odoo-addons = ["odoo.addons", "openerp.addons"]
+
+
+[tool.ruff.per-file-ignores]
+"*/__init__.py" = [
+    "F401",
+    "F403",
+]
