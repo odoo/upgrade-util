@@ -22,7 +22,7 @@ try:
 except ImportError:
     from openerp.sql_db import db_connect
 
-from .exceptions import MigrationError
+from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table
 from .misc import log_progress
 
@@ -547,11 +547,9 @@ def _get_unique_indexes_with(cr, table, *columns):
 def create_index(cr, name, table_name, *columns):
     # create index if table and columns exists and index don't already exists
     _validate_table(table_name)
-    if (
-        columns
-        and all(column_exists(cr, table_name, c) for c in columns)
-        and get_index_on(cr, table_name, *columns) is None
-    ):
+    if not columns:
+        raise SleepyDeveloperError("Missing `columns` for index")
+    if all(column_exists(cr, table_name, c) for c in columns) and get_index_on(cr, table_name, *columns) is None:
         cr.execute(
             "CREATE INDEX {index_name} ON {table_name}({columns})".format(
                 index_name=name, table_name=table_name, columns=",".join(columns)
