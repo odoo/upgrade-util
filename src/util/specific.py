@@ -2,7 +2,7 @@
 import logging
 
 from .helpers import _validate_table
-from .pg import column_exists, table_exists
+from .pg import column_exists, rename_table
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -40,12 +40,15 @@ def dispatch_by_dbuuid(cr, version, callbacks):
         func(cr, version)
 
 
-def rename_custom_table(cr, table_name, new_table_name, custom_module=None, report_details=""):
-    _validate_table(table_name)
-    _validate_table(new_table_name)
-    if not table_exists(cr, table_name):
-        return
-    cr.execute('ALTER TABLE "{}" RENAME TO "{}"'.format(table_name, new_table_name))
+def rename_custom_table(
+    cr,
+    table_name,
+    new_table_name,
+    custom_module=None,
+    report_details="",
+):
+    rename_table(cr, table_name, new_table_name, remove_constraints=False)
+
     module_details = " from module '{}'".format(custom_module) if custom_module else ""  # noqa
     add_to_migration_reports(
         category="Custom tables/columns",

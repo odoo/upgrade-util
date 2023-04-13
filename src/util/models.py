@@ -19,10 +19,12 @@ from .pg import (
     get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
-    remove_constraint,
     table_exists,
     view_exists,
 )
+
+# avoid namespace clash
+from .pg import rename_table as pg_rename_table
 from .records import _rm_refs, remove_records, remove_view, replace_record_references_batch
 from .report import add_to_migration_reports
 
@@ -210,77 +212,11 @@ def rename_model(cr, old, new, rename_table=True):
     if old in ENVIRON["__renamed_fields"]:
         ENVIRON["__renamed_fields"][new] = ENVIRON["__renamed_fields"].pop(old)
     if rename_table:
-        old_table = table_of_model(cr, old)
-        new_table = table_of_model(cr, new)
-        cr.execute('ALTER TABLE "{0}" RENAME TO "{1}"'.format(old_table, new_table))
-        cr.execute('ALTER SEQUENCE "{0}_id_seq" RENAME TO "{1}_id_seq"'.format(old_table, new_table))
-
-        # update moved0 references
-        ENVIRON["moved0"] = {(new_table if t == old_table else t, c) for t, c in ENVIRON.get("moved0", ())}
-
-        # find & rename primary key, may still use an old name from a former migration
-        cr.execute(
-            """
-            SELECT conname
-              FROM pg_index, pg_constraint
-             WHERE indrelid = %s::regclass
-               AND indisprimary
-               AND conrelid = indrelid
-               AND conindid = indexrelid
-               AND confrelid = 0
-        """,
-            [new_table],
+        pg_rename_table(
+            cr,
+            table_of_model(cr, old),
+            table_of_model(cr, new),
         )
-        (primary_key,) = cr.fetchone()
-        cr.execute('ALTER INDEX "{0}" RENAME TO "{1}_pkey"'.format(primary_key, new_table))
-
-        # DELETE all constraints, except Primary/Foreign keys, the rest will be handled by the ORM
-        cr.execute(
-            """
-            SELECT constraint_name
-              FROM information_schema.table_constraints
-             WHERE table_name = %s
-               AND constraint_name !~ '^[0-9_]+_not_null$'
-               AND (  constraint_type NOT IN ('PRIMARY KEY', 'FOREIGN KEY')
-                   -- For long table names the constraint name is shortened by PG to fit 63 chars, in
-                   -- such cases it's better to just drop the constraint and let the ORM re-create it.
-                   OR (constraint_type = 'FOREIGN KEY' AND constraint_name NOT LIKE %s)
-                   )
-            """,
-            [new_table, old_table.replace("_", r"\_") + r"\_%"],
-        )
-        for (const,) in cr.fetchall():
-            _logger.info("Dropping constraint %s on table %s", const, new_table)
-            remove_constraint(cr, new_table, const)
-
-        # Rename FK constraints
-        cr.execute(
-            """
-            SELECT constraint_name
-              FROM information_schema.table_constraints
-             WHERE table_name = %s
-               AND constraint_type = 'FOREIGN KEY'
-               AND constraint_name LIKE %s
-            """,
-            [new_table, old_table.replace("_", r"\_") + r"\_%"],
-        )
-        for (const,) in cr.fetchall():
-            const_new = new_table + const[len(old_table) :]
-            _logger.info("Renaming FK %r to %r", const, const_new)
-            cr.execute('ALTER TABLE "{}" RENAME CONSTRAINT "{}" TO "{}"'.format(new_table, const, const_new))
-
-        # Rename indexes
-        cr.execute(
-            """
-            SELECT concat(%(old_table)s, '_', column_name, '_index') as old_index,
-                   concat(%(new_table)s, '_', column_name, '_index') as new_index
-              FROM information_schema.columns
-             WHERE table_name = %(new_table)s
-            """,
-            {"old_table": old_table, "new_table": new_table},
-        )
-        for old_idx, new_idx in cr.fetchall():
-            cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(old_idx, new_idx))
 
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]

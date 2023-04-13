@@ -22,6 +22,7 @@ try:
 except ImportError:
     from openerp.sql_db import db_connect
 
+from .const import ENVIRON
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table
 from .misc import log_progress
@@ -620,6 +621,114 @@ def get_columns(cr, table, ignore=("id",)):
         [table, list(ignore)],
     )
     return [c for c, in cr.fetchall()]
+
+
+def rename_table(cr, old_table, new_table, remove_constraints=True):
+    """
+    Rename table `old_table` to `new_table`, as well as `old_table`'s:
+        * Primary key sequence
+        * Primary key
+        * Indexes
+        * Foreign keys
+    """
+    if not table_exists(cr, old_table):
+        return
+
+    if table_exists(cr, new_table):
+        raise MigrationError(
+            "Table {new_table} already exists. Can't rename table {old_table} to {new_table}.".format(**locals())
+        )
+
+    cr.execute(sql.SQL("ALTER TABLE {} RENAME TO {}").format(sql.Identifier(old_table), sql.Identifier(new_table)))
+
+    # rename pkey sequence
+    cr.execute(
+        sql.SQL("ALTER SEQUENCE {} RENAME TO {}").format(
+            sql.Identifier(old_table + "_id_seq"), sql.Identifier(new_table + "_id_seq")
+        )
+    )
+
+    # update moved0 references
+    ENVIRON["moved0"] = {(new_table if t == old_table else t, c) for t, c in ENVIRON.get("moved0", ())}
+
+    # find and rename pkey, may still use an old name from a former migration
+    cr.execute(
+        """
+        SELECT pgc.conname
+          FROM pg_constraint pgc
+          JOIN pg_index pgi
+            ON pgi.indrelid = pgc.conrelid
+           AND pgi.indexrelid = pgc.conindid
+           AND pgi.indrelid = %s::regclass
+           AND pgi.indisprimary
+         WHERE pgc.confrelid = 0
+        """,
+        [new_table],
+    )
+    (old_pkey,) = cr.fetchone()
+    new_pkey = new_table + "_pkey"
+    cr.execute(sql.SQL("ALTER INDEX {} RENAME TO {}").format(sql.Identifier(old_pkey), sql.Identifier(new_pkey)))
+
+    # rename indexes (except the pkey's one and those not containing $old_table)
+    cr.execute(
+        """
+        SELECT indexname
+          FROM pg_indexes
+         WHERE tablename = %s
+           AND indexname != %s
+           AND indexname LIKE %s
+        """,
+        [new_table, new_pkey, "%" + old_table.replace("_", r"\_") + r"\_%"],
+    )
+    for (idx,) in cr.fetchall():
+        cr.execute(
+            sql.SQL("ALTER INDEX {} RENAME TO {}").format(
+                sql.Identifier(idx),
+                sql.Identifier(idx.replace(old_table, new_table)),
+            )
+        )
+
+    if remove_constraints:
+        # DELETE all constraints, except Primary/Foreign keys, they will be re-created by the ORM
+        # NOTE: Custom constraints will instead be lost
+        cr.execute(
+            """
+            SELECT constraint_name
+              FROM information_schema.table_constraints
+             WHERE table_name = %s
+               AND constraint_name !~ '^[0-9_]+_not_null$'
+               AND (  constraint_type NOT IN ('PRIMARY KEY', 'FOREIGN KEY')
+                   -- For long table names the constraint name is shortened by PG to fit 63 chars, in such cases
+                   -- it's better to drop the constraint, even if it's a foreign key, and let the ORM re-create it.
+                   OR (constraint_type = 'FOREIGN KEY' AND constraint_name NOT LIKE %s)
+                   )
+            """,
+            [new_table, old_table.replace("_", r"\_") + r"\_%"],
+        )
+        for (const,) in cr.fetchall():
+            _logger.info("Dropping constraint %s on table %s", const, new_table)
+            remove_constraint(cr, new_table, const)
+
+    # rename fkeys
+    cr.execute(
+        """
+        SELECT constraint_name
+          FROM information_schema.table_constraints
+         WHERE table_name = %s
+           AND constraint_type = 'FOREIGN KEY'
+           AND constraint_name LIKE %s
+        """,
+        [new_table, old_table.replace("_", r"\_") + r"\_%"],
+    )
+    old_table_length = len(old_table)
+    for (old_fkey,) in cr.fetchall():
+        new_fkey = new_table + old_fkey[old_table_length:]
+        _logger.info("Renaming FK %r to %r", old_fkey, new_fkey)
+        cr.execute(
+            sql.SQL("ALTER TABLE {} RENAME CONSTRAINT {} TO {}").format(
+                sql.Identifier(new_table), sql.Identifier(old_fkey), sql.Identifier(new_fkey)
+            )
+        )
 
 
 def find_new_table_column_name(cr, table, name):
