@@ -59,6 +59,9 @@ def env(cr):
 
 
 def get_admin_channel(cr):
+    """
+    Retrieves the admin channel or create it if it does not exist.
+    """
     e = env(cr)
     admin_channel = None
     # mail.channel was renamed to discuss.channel in 16.3
@@ -77,7 +80,10 @@ def get_admin_channel(cr):
             ]
             if "public" in e[channel_model_name]._fields:
                 search_rules.append(("public", "=", "groups"))
-            admin_channel = e[channel_model_name].search(search_rules)
+            admin_channel = next(
+                iter(e[channel_model_name].search(search_rules).sorted(lambda c: "admin" not in c.name.lower()) or []),
+                None,
+            )
             if not admin_channel:
                 channel_values = {
                     "name": "Administrators",
@@ -88,6 +94,7 @@ def get_admin_channel(cr):
                 if "public" in e[channel_model_name]._fields:
                     channel_values["public"] = "groups"
                 admin_channel = e[channel_model_name].create(channel_values)
+
             e["ir.model.data"].create(
                 {
                     "name": "channel_administrators",
@@ -96,6 +103,7 @@ def get_admin_channel(cr):
                     "res_id": admin_channel.id,
                 }
             )
+
     return admin_channel
 
 
