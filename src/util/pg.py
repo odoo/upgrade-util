@@ -315,6 +315,19 @@ def create_column(cr, table, column, definition, **kwargs):
         return True
 
 
+def create_fk(cr, table, column, fk_table, on_delete_action=""):
+    assert on_delete_action in {"SET NULL", "CASCADE", "RESTRICT", "NO ACTION", "SET DEFAULT", ""}
+    on_delete = "" if not on_delete_action else "ON DELETE {}".format(on_delete_action)
+    cr.execute(
+        """
+            ALTER TABLE "{table}"
+        ADD FOREIGN KEY ("{column}") REFERENCES "{fk_table}"(id) {on_delete}
+        """.format(
+            **locals()
+        )
+    )
+
+
 def remove_column(cr, table, column, cascade=False):
     if column_exists(cr, table, column):
         drop_depending_views(cr, table, column)
