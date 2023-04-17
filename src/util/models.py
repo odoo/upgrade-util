@@ -233,19 +233,40 @@ def rename_model(cr, old, new, rename_table=True):
         (primary_key,) = cr.fetchone()
         cr.execute('ALTER INDEX "{0}" RENAME TO "{1}_pkey"'.format(primary_key, new_table))
 
-        # DELETE all constraints and indexes (ignore the PK), ORM will recreate them.
+        # DELETE all constraints, except Primary/Foreign keys, the rest will be handled by the ORM
         cr.execute(
             """
-                SELECT constraint_name
-                  FROM information_schema.table_constraints
-                 WHERE table_name = %s
-                   AND constraint_type != %s
-                   AND constraint_name !~ '^[0-9_]+_not_null$'
-        """,
-            [new_table, "PRIMARY KEY"],
+            SELECT constraint_name
+              FROM information_schema.table_constraints
+             WHERE table_name = %s
+               AND constraint_name !~ '^[0-9_]+_not_null$'
+               AND (  constraint_type NOT IN ('PRIMARY KEY', 'FOREIGN KEY')
+                   -- For long table names the constraint name is shortened by PG to fit 63 chars, in
+                   -- such cases it's better to just drop the constraint and let the ORM re-create it.
+                   OR (constraint_type = 'FOREIGN KEY' AND constraint_name NOT LIKE %s)
+                   )
+            """,
+            [new_table, old_table.replace("_", r"\_") + r"\_%"],
         )
         for (const,) in cr.fetchall():
+            _logger.info("Dropping constraint %s on table %s", const, new_table)
             remove_constraint(cr, new_table, const)
+
+        # Rename FK constraints
+        cr.execute(
+            """
+            SELECT constraint_name
+              FROM information_schema.table_constraints
+             WHERE table_name = %s
+               AND constraint_type = 'FOREIGN KEY'
+               AND constraint_name LIKE %s
+            """,
+            [new_table, old_table.replace("_", r"\_") + r"\_%"],
+        )
+        for (const,) in cr.fetchall():
+            const_new = new_table + const[len(old_table) :]
+            _logger.info("Renaming FK %r to %r", const, const_new)
+            cr.execute('ALTER TABLE "{}" RENAME CONSTRAINT "{}" TO "{}"'.format(new_table, const, const_new))
 
         # Rename indexes
         cr.execute(
