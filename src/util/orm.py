@@ -322,6 +322,26 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     # 1. Convert models which are not in the registry to `manual` models
     #    and list the models that were converted, to restore them back afterwards.
     models = list(env.registry.models)
+    # Get all models that seem to come from uninstalled odoo modules, they won't be loaded
+    # but we cannot consider them as custom models
+    env.cr.execute(
+        """
+        SELECT m.model
+          FROM ir_model m
+          JOIN ir_model_data d
+            ON d.res_id = m.id
+           AND d.model = 'ir.model'
+          JOIN ir_module_module x
+            ON x.name = d.module
+         WHERE d.module IN %s
+         GROUP BY m.model
+        HAVING bool_and(COALESCE(x.state, 'uninstalled') = 'uninstalled')
+        """,
+        [tuple(modules.get_modules())],
+    )
+    models_uninstalled_standard_modules = [r[0] for r in env.cr.fetchall()]
+    if models_uninstalled_standard_modules:
+        _logger.warning("Leftover models from uninstalled standard modules: %s", models_uninstalled_standard_modules)
     env.cr.execute(
         """
         UPDATE ir_model
@@ -330,7 +350,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
            AND model not in %s
      RETURNING id, model
     """,
-        (tuple(models),),
+        (tuple(models + models_uninstalled_standard_modules),),
     )
     updated_models = env.cr.fetchall()
     updated_model_ids, custom_models = zip(*updated_models) if updated_models else [[], []]
