@@ -61,7 +61,9 @@ def env(cr):
 def get_admin_channel(cr):
     e = env(cr)
     admin_channel = None
-    if "mail.channel" in e:
+    # mail.channel was renamed to discuss.channel in 16.3
+    channel_model_name = "mail.channel" if "mail.channel" in e else "discuss.channel"
+    if channel_model_name in e:
         admin_group = e.ref("base.group_system", raise_if_not_found=False)
         if admin_group:
             admin_channel = e.ref("__upgrade__.channel_administrators", raise_if_not_found=False)
@@ -73,9 +75,9 @@ def get_admin_channel(cr):
                 ("group_public_id", "=", admin_group.id),
                 ("group_ids", "in", admin_group.id),
             ]
-            if "public" in e["mail.channel"]._fields:
+            if "public" in e[channel_model_name]._fields:
                 search_rules.append(("public", "=", "groups"))
-            admin_channel = e["mail.channel"].search(search_rules)
+            admin_channel = e[channel_model_name].search(search_rules)
             if not admin_channel:
                 channel_values = {
                     "name": "Administrators",
@@ -83,14 +85,14 @@ def get_admin_channel(cr):
                     "group_public_id": admin_group.id,
                     "group_ids": [(6, 0, [admin_group.id])],
                 }
-                if "public" in e["mail.channel"]._fields:
+                if "public" in e[channel_model_name]._fields:
                     channel_values["public"] = "groups"
-                admin_channel = e["mail.channel"].create(channel_values)
+                admin_channel = e[channel_model_name].create(channel_values)
             e["ir.model.data"].create(
                 {
                     "name": "channel_administrators",
                     "module": "__upgrade__",
-                    "model": "mail.channel",
+                    "model": channel_model_name,
                     "res_id": admin_channel.id,
                 }
             )
