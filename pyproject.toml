@@ -26,6 +26,7 @@ select = [
     "G",   # flake8-logging-format
     "I",   # isort
     "ISC", # flake8-implicit-str-concat
+    "SIM", # flake8-simplify
     "W",   # pycodestyle
 ]
 
