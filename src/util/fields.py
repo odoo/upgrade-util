@@ -101,7 +101,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             if "name" not in res or res["name"] is not None:
                 # return if name didn't match fieldname
                 return res
-        elif not isinstance(value, basestring):
+        elif not isinstance(value, basestring):  # noqa: SIM114
             # if not a string, ignore it
             return value
         elif value.split(":")[0] != fieldname:
@@ -546,7 +546,7 @@ def convert_field_to_property(
         where_clause = "true"
         # and we need to unanonymize its values
         ano_default_value = cr.mogrify("%s", [default_value])
-        if type != "many2one":
+        if type != "many2one":  # noqa: SIM108
             ano_value_select = "%(value)s"
         else:
             ano_value_select = "CONCAT('{0},', %(value)s)".format(target_model)
@@ -625,7 +625,7 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
     if not column_exists(cr, table, field):
         return
     name_query = "COALESCE({0}, '{1}('|| id || ').{2}')".format(
-        "NULL" if not name_field else name_field,
+        name_field if name_field else "NULL",
         model.title().replace(".", ""),
         field,
     )
@@ -713,7 +713,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
 
     def adapter(leaf, _or, _neg):
         left, op, right = leaf
-        if isinstance(right, (tuple, list)):
+        if isinstance(right, (tuple, list)):  # noqa: SIM108
             right = [mapping.get(r, r) for r in right]
         else:
             right = mapping.get(right, right)

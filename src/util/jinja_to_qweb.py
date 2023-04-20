@@ -1,3 +1,4 @@
+import contextlib
 import functools
 import html
 import logging
@@ -402,7 +403,7 @@ def upgrade_jinja_fields(
 
 def verify_upgraded_jinja_fields(cr):
     env = get_env(cr)
-    for table_name in templates_to_check.keys():
+    for table_name in templates_to_check:
         field_errors = {}
         missing_records = []
         for (
@@ -490,10 +491,8 @@ def verify_upgraded_jinja_fields(cr):
 
 def is_converted_template_valid(env, template_before, template_after, model_name, record_id, engine="inline_template"):
     render_before = None
-    try:
+    with contextlib.suppress(Exception):
         render_before = _render_template_jinja(env, Markup(template_before), model_name, record_id)
-    except Exception:
-        pass
 
     render_after = None
     if render_before is not None:

@@ -237,10 +237,7 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
             )
     arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
     jsonb_column = column_type(cr, "ir_ui_view", arch_col) == "jsonb"
-    if jsonb_column:
-        arch_column_value = Json({"en_US": arch_db})
-    else:
-        arch_column_value = arch_db
+    arch_column_value = Json({"en_US": arch_db}) if jsonb_column else arch_db
     cr.execute(
         """
         INSERT INTO ir_ui_view(name, "type",  model, inherit_id, mode, active, priority, %s)

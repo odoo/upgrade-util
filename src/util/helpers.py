@@ -168,10 +168,7 @@ def _ir_values_value(cr, prefix=None):
     else:
         column_read, cast_write = cache
 
-    if prefix:
-        prefix = prefix + "."
-    else:
-        prefix = ""
+    prefix = prefix + "." if prefix else ""
     return column_read % prefix, cast_write
 
 

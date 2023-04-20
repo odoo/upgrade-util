@@ -190,7 +190,7 @@ def announce(
 
     if recipient:
         try:
-            if isinstance(recipient, str):
+            if isinstance(recipient, str):  # noqa: SIM108
                 recipient = ref(recipient)
             else:
                 recipient = recipient.with_context(**ctx)
