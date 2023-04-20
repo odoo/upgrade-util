@@ -837,6 +837,8 @@ def move_model(cr, model, from_module, to_module, move_data=False, keep=()):
     update_imd("ir.actions.act_window", path="res_model")
     update_imd("ir.actions.server", path="model_id.model")
     update_imd("ir.actions.report", path="model")
+    update_imd("email.template", path="model")  # OpenERP <= 8.0
+    update_imd("mail.template", path="model")
     if column_exists(cr, "ir_cron", "model"):
         # < 10.saas~14
         update_imd("ir.cron", path="model")
