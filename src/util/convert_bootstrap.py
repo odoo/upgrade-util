@@ -492,9 +492,10 @@ class RenameAttribute(ElementOperation):
     Renames an attribute. Silently ignores elements that do not have the attribute.
     """
 
-    def __init__(self, old_name, new_name):
+    def __init__(self, old_name, new_name, extra_xpath=""):
         self.old_name = old_name
         self.new_name = new_name
+        self.extra_xpath = extra_xpath
 
     def __call__(self, element, converter):
         rename_map = {self.old_name: self.new_name}
@@ -519,7 +520,7 @@ class RenameAttribute(ElementOperation):
         :param str | None xpath: an optional XPath expression to further filter the elements to match.
         :rtype: str
         """
-        return (xpath or "//*") + f"[@{self.old_name}]"
+        return (xpath or "//*") + f"[@{self.old_name}]{self.extra_xpath}"
 
 
 class RegexReplace(ElementOperation):
@@ -881,10 +882,11 @@ class BootstrapConverter:
             # jumbotron
             ReplaceClasses.op("jumbotron", "container-fluid py-5"),
             # new data-bs- attributes
+            RenameAttribute.op("data-display", "data-bs-display", "[not(@data-snippet='s_countdown')]"),
             *[
                 RenameAttribute.op(f"data-{attr}", f"data-bs-{attr}")
                 for attr in (
-                    "animation attributes autohide backdrop body container content delay dismiss display focus"
+                    "animation attributes autohide backdrop body container content delay dismiss focus"
                     " interval margin-right no-jquery offset original-title padding-right parent placement"
                     " ride sanitize show slide slide-to spy target toggle touch trigger whatever"
                 ).split(" ")
