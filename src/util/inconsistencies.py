@@ -4,7 +4,6 @@ from textwrap import dedent
 
 from psycopg2.extensions import quote_ident
 
-from .exceptions import MigrationError
 from .helpers import _validate_model, table_of_model
 from .misc import chunks
 from .report import add_to_migration_reports
@@ -163,7 +162,7 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         )
         for line_id, line_uom, line_uom_category, product_uom, product_uom_category in rows
     )
-    raise MigrationError("\n{}\n".format(msg))
+    _logger.warning("\n%s\n", msg)
 
 
 def verify_products(
@@ -244,4 +243,4 @@ def verify_products(
         )
         for foreign_line_id, foreign_line_product, line_id, line_product in rows
     )
-    raise MigrationError("\n{}\n".format(msg))
+    _logger.warning("\n%s\n", msg)
