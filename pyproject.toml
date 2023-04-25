@@ -4,6 +4,7 @@ line-length = 120
 [tool.ruff]
 required-version = "0.0.262"
 fix = true
+show-fixes = true
 ignore = [
     "B905",  # zip-without-explicit-strict; not python2 compatible
     "E501",  # line-too-long; handled by `black` formatting
