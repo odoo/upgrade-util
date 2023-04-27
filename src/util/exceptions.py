@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 
 
-class MigrationError(Exception):
+class UpgradeError(Exception):
     pass
 
 
 class SleepyDeveloperError(ValueError):
     pass
+
+
+# Compat
+MigrationError = UpgradeError
