@@ -4,6 +4,12 @@ import logging
 import re
 
 try:
+    from html import unescape
+except ImportError:
+    # should not be needed in python2
+    unescape = lambda x: x
+
+try:
     from odoo.osv import expression
     from odoo.tools import ustr
     from odoo.tools.safe_eval import safe_eval
@@ -281,8 +287,14 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
             if not cr.rowcount:
                 continue
             [act_model] = cr.fetchone()
+
+            domain = act.get("domain")
+            if any(entity in domain for entity in ("&#27;", "&amp;", "&lt;", "&gt;")):
+                # There is a bug Odoo 16.0 that double escape the domains in dashboad...
+                # See https://github.com/odoo/odoo/pull/119518
+                domain = unescape(domain)
             domain = _adapt_one_domain(
-                cr, target_model, old, new, act_model, act.get("domain"), adapter=adapter, force_adapt=force_adapt
+                cr, target_model, old, new, act_model, domain, adapter=adapter, force_adapt=force_adapt
             )
             if domain:
                 act.set("domain", unicode(domain))
