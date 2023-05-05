@@ -40,23 +40,10 @@ def migrate(cr, version):
     """
     )
 
-    respawn = []
     for model, field, transient, store in cr.fetchall():
-        qualifier = "field"
-        if not store:
-            qualifier = "non-stored field"
+        qualifier = "field" if store else "non-stored field"
         if transient:
             qualifier = "transient " + qualifier
-        name = "%s/%s" % (model, field)
-        if transient or not store:
-            lvl = util.NEARLYWARN
-        else:
-            lvl = logging.WARNING
-            respawn.append(name)
+        lvl = util.NEARLYWARN if transient or not store else logging.CRITICAL
 
-        _logger.log(lvl, "%s %s has respawn!", qualifier, name)
-
-    # XXX temporarily let the upgrade pass
-    # if respawn:
-    #     cs_fields = ", ".join(respawn)
-    #     raise util.SleepyDeveloperError("Fields %s has respawn" % (cs_fields,))
+        _logger.log(lvl, "%s %s/%s has respawn!", qualifier, model, field)
