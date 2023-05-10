@@ -363,6 +363,27 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     updated_models = env.cr.fetchall()
     updated_model_ids, custom_models = zip(*updated_models) if updated_models else [[], []]
 
+    mock_x_email_fields = []
+    if updated_model_ids and version_gte("14.0") and "mail.thread.blacklist" in env:
+        # 1.1 Add a mock x_email field for custom mail.blacklist models
+        env.cr.execute(
+            """
+            INSERT INTO ir_model_fields(name, model, model_id, field_description,
+                                        state, compute, store, ttype)
+                 SELECT 'x_email', model, id, jsonb_build_object('en_US', 'Mock email field for custom model'){},
+                        'manual', 'for record in records: record["x_email"] = "upgrade@example.com"', false, 'char'
+                   FROM ir_model
+                  WHERE id IN %s
+                    AND is_mail_blacklist
+            ON CONFLICT DO NOTHING
+              RETURNING id
+            """.format(
+                "" if version_gte("16.0") else "->>'en_US'"
+            ),
+            [tuple(updated_model_ids)],
+        )
+        mock_x_email_fields = [r[0] for r in env.cr.fetchall()]
+
     # 2. Convert fields which are not in the registry to `manual` fields
     # and list the fields that were converted, to restore them back afterwards.
     # Also temporarily disable rules (ir.rule) that come from custom modules.
@@ -515,6 +536,10 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
         # 6. Restore back models and fields converted from `base` to `manual`.
         if updated_model_ids:
             env.cr.execute("UPDATE ir_model SET state = 'base' WHERE id IN %s", (tuple(updated_model_ids),))
+            if mock_x_email_fields:
+                # Remove mock x_email field for custom mail.blacklist models
+                env.cr.execute("DELETE FROM ir_model_fields WHERE id IN %s", [tuple(mock_x_email_fields)])
+
         if updated_field_ids:
             env.cr.execute("UPDATE ir_model_fields SET state = 'base' WHERE id IN %s", (tuple(updated_field_ids),))
         if disabled_ir_rule_ids:
