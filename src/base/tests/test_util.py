@@ -286,7 +286,7 @@ class TestIterBrowse(UnitTestCase):
         func = "fetch" if util.version_gte("saas~16.2") else "_read" if util.version_gte("saas~12.5") else "read"
         with mock.patch.object(Country, func, autospec=True, side_effect=getattr(Country, func)) as read:
             for c in util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size):
-                c.name
+                c.name  # noqa: B018
         expected = (len(ids) + chunk_size - 1) // chunk_size
         self.assertEqual(read.call_count, expected)
 
@@ -506,11 +506,11 @@ class TestRecords(UnitTestCase):
         self.assertEqual(res, new.id)
 
     def test_update_record_from_xml(self):
-        # reset all translated fields on a <record>
+        # reset all fields on a <record>
         xmlid = "base.res_partner_title_mister"
         data_after = {"name": "Fortytwo", "shortcut": "42"}
         record = self.env.ref(xmlid)
-        data_before = {key: record[key] for key in data_after.keys()}
+        data_before = {key: record[key] for key in data_after}
         for key, value in data_after.items():
             record.write({key: value})
             self.assertEqual(record[key], value)
@@ -523,12 +523,12 @@ class TestRecords(UnitTestCase):
         for key, value in data_before.items():
             self.assertEqual(record[key], value)
 
-        # reset all translated fields on a <template>
+        # reset all fields on a <template>
         template_xmlid = "base.contact_name"
         record = self.env.ref(template_xmlid)
         non_xpath = etree.XPath("/non")
         data_after = {"name": "42", "arch_db": "<non>sense</non>"}
-        data_before = {key: record[key] for key in data_after.keys()}
+        data_before = {key: record[key] for key in data_after}
         record.write(data_after)
         for key, value in data_after.items():
             if key == "arch_db":
@@ -551,6 +551,40 @@ class TestRecords(UnitTestCase):
         self.assertEqual(len(non_query_result), 0)
         [template_element] = tree.xpath("/t")
         self.assertEqual(template_element.attrib["t-name"], template_xmlid)
+
+    def test_update_record_translations_from_xml(self):
+        # reset all translated fields on a <record>
+        be_lang = self.env["res.lang"].with_context(active_test=False).search([("code", "=", "fr_BE")])
+        be_lang.write({"active": True})
+
+        xmlid = "base.res_partner_title_mister"
+        util.update_record_from_xml(self.env.cr, xmlid, reset_translations=True)
+
+        # change the translations to something arbitrary for all installed languages
+        langs = self.env["res.lang"].get_installed()
+        filter_lang = [code for code, _ in langs]
+        self.assertIn(be_lang.code, filter_lang)
+        data_after = {"name": "Fortytwo", "shortcut": "42"}
+        fieldnames = list(data_after.keys())
+        template_record = self.env.ref(xmlid)
+
+        data_before = {}
+        for lang in filter_lang:
+            data_before[lang] = {fname: template_record.with_context(lang=lang)[fname] for fname in fieldnames}
+
+            # write & assert arbitrary translations
+            for fname, value in data_after.items():
+                template_record.with_context(lang=lang).write({fname: value})
+                self.assertEqual(template_record.with_context(lang=lang)[fname], value)
+        util.invalidate(template_record)
+
+        # re-reset all translated fields on a <record>
+        util.update_record_from_xml(self.env.cr, xmlid, reset_translations=True)
+        util.invalidate(template_record)
+
+        for lang, field_to_value in data_before.items():
+            for fname, value in field_to_value.items():
+                self.assertEqual(template_record.with_context(lang=lang)[fname], value)
 
     @unittest.skipUnless(util.version_gte("16.0"), "Only work on Odoo >= 16")
     def test_replace_in_all_jsonb_values(self):

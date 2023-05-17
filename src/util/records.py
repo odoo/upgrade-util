@@ -825,6 +825,17 @@ def update_record_from_xml(
             )
             cr.execute(query, [res_id])
 
+        env_ = env(cr)
+        module_to_reload_from = env_["ir.module.module"].search(
+            [("name", "=", from_module), ("state", "=", "installed")]
+        )
+        if module_to_reload_from:
+            if hasattr(module_to_reload_from, "_update_translations"):
+                module_to_reload_from._update_translations()
+            else:
+                # < 9.0
+                module_to_reload_from.update_translations()
+
 
 def delete_unused(cr, *xmlids, **kwargs):
     deactivate = kwargs.pop("deactivate", False)
