@@ -632,6 +632,8 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
 
+    logger = _logger.getChild("ensure_xmlid_match_record")
+
     module, _, name = xmlid.partition(".")
     cr.execute(
         """
@@ -642,19 +644,11 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     """,
         [module, name],
     )
+    data_id, res_id = cr.fetchone() or (None, None)
 
     table = table_of_model(cr, model)
-    data = cr.fetchone()
-    if data:
-        data_id, res_id = data
-        # check that record still exists
-        cr.execute("SELECT id FROM %s WHERE id=%%s" % table, (res_id,))
-        if cr.fetchone():
-            return res_id
-    else:
-        data_id = None
 
-    # search for existing record marching values
+    # search for existing records matching values
     where = []
     data = ()
     for k, v in values.items():
@@ -667,31 +661,39 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
     query = ("SELECT id FROM %s WHERE " % table) + " AND ".join(where)
     cr.execute(query, data)
-    record = cr.fetchone()
-    if not record:
-        return None
-
-    res_id = record[0]
+    records = [id for id, in cr.fetchall()]
+    if res_id and res_id in records:
+        return res_id
+    if not records:
+        if res_id:
+            logger.debug("`%s` refers %s(%s); values differ %r; no other match found.", xmlid, model, res_id, values)
+            return res_id
+        else:
+            logger.debug("`%s` doesn't exist; no match found for values %r", xmlid, values)
+            return None
+    new_res_id = records[0]
 
     if data_id:
+        logger.info("update `%s` from %s(%s) to %s(%s); values %r", xmlid, model, new_res_id, model, res_id, values)
         cr.execute(
             """
                 UPDATE ir_model_data
                    SET res_id=%s
                  WHERE id=%s
         """,
-            [res_id, data_id],
+            [new_res_id, data_id],
         )
     else:
+        logger.info("create `%s` that point to %s(%s); matching values %r", xmlid, model, new_res_id, values)
         cr.execute(
             """
                 INSERT INTO ir_model_data(module, name, model, res_id, noupdate)
                      VALUES (%s, %s, %s, %s, %s)
         """,
-            [module, name, model, res_id, True],
+            [module, name, model, new_res_id, True],
         )
 
-    return res_id
+    return new_res_id
 
 
 def update_record_from_xml(
