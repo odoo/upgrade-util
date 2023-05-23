@@ -14,6 +14,7 @@ from .pg import (
     column_exists,
     column_type,
     column_updatable,
+    explode_execute,
     explode_query_range,
     get_m2m_tables,
     get_value_or_en_translation,
@@ -285,8 +286,8 @@ def rename_model(cr, old, new, rename_table=True):
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]
 
     for table, column in updates:
-        query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column)
-        cr.execute(query, (new, old))
+        query = cr.mogrify("UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column), [new, old]).decode()
+        explode_execute(cr, query, table=table)
 
     # "model-comma" fields
     cr.execute(
@@ -299,7 +300,7 @@ def rename_model(cr, old, new, rename_table=True):
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_updatable(cr, table, column):
-            cr.execute(
+            query = cr.mogrify(
                 """
                     UPDATE "{table}"
                        SET "{column}"='{new}' || substring("{column}" FROM '%#",%#"' FOR '#')
@@ -307,7 +308,8 @@ def rename_model(cr, old, new, rename_table=True):
             """.format(
                     table=table, column=column, new=new, old=old
                 )
-            )
+            ).decode()
+            explode_execute(cr, query, table=table)
 
     # defaults
     if table_exists(cr, "ir_values"):
