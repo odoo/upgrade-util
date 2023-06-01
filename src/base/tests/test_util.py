@@ -586,6 +586,52 @@ class TestRecords(UnitTestCase):
             for fname, value in field_to_value.items():
                 self.assertEqual(template_record.with_context(lang=lang)[fname], value)
 
+    def test_ensure_xmlid_match_record(self):
+        cr = self.env.cr
+        tx1 = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})
+        tx2 = self.env["res.currency"].create({"name": "TX2", "symbol": "TX2"})
+        self.env["ir.model.data"].create({"name": "TX1", "module": "base", "model": "res.currency", "res_id": tx1.id})
+        self.env["ir.model.data"].create({"name": "TX2", "module": "base", "model": "res.currency", "res_id": tx2.id})
+
+        # case: `base.TX1` points to ResCurrency(168) and matches values {'name': 'TX1'}
+        ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX1"})
+        self.assertEqual(ensured_id, tx1.id)
+        newtx1 = util.ref(cr, "base.TX1")
+        self.assertEqual(newtx1, tx1.id)
+
+        # break one res_id
+        cr.execute("UPDATE ir_model_data SET res_id=%s WHERE module='base' AND name='TX1'", [tx2.id])
+
+        # case: `base.TX1` points to ResCurrency(169) but doesn't match values {'name': 'TX3'}; no other matches found.
+        ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX3"})
+        self.assertEqual(ensured_id, tx2.id)
+
+        # check it still point to tx2
+        newtx1 = util.ref(cr, "base.TX1")
+        self.assertEqual(newtx1, tx2.id)
+
+        # case: `base.TX4` doesn't exist; no match found for values {'name': 'TX4'}
+        ensured_id = util.ensure_xmlid_match_record(cr, "base.TX4", "res.currency", {"name": "TX4"})
+        self.assertIsNone(ensured_id)
+
+        # case: update `base.TX1` to point to ResCurrency(168) instead of ResCurrency(169); matching values {'name': 'TX1'}
+        ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX1"})
+        self.assertEqual(ensured_id, tx1.id)
+
+        newtx1 = util.ref(cr, "base.TX1")
+        self.assertEqual(newtx1, tx1.id)
+
+        # delete model data entry
+        cr.execute("DELETE FROM ir_model_data WHERE module='base' AND name='TX1'")
+        self.assertIsNone(util.ref(cr, "base.TX1"))
+
+        # case: create `base.TX1` that point to ResCurrency(168); matching values {'name': 'TX1'}
+        ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX1"})
+        self.assertEqual(ensured_id, tx1.id)
+
+        newtx1 = util.ref(cr, "base.TX1")
+        self.assertEqual(newtx1, tx1.id)
+
     @unittest.skipUnless(util.version_gte("16.0"), "Only work on Odoo >= 16")
     def test_replace_in_all_jsonb_values(self):
         test_partner_title = self.env["res.partner.title"].create({"name": "object.number object.numbercombined"})
