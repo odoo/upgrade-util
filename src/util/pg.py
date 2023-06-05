@@ -23,7 +23,6 @@ try:
 except ImportError:
     from openerp.sql_db import db_connect
 
-from .const import ENVIRON
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table
 from .misc import log_progress
@@ -662,8 +661,16 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
         )
     )
 
-    # update moved0 references
-    ENVIRON["moved0"] = {(new_table if t == old_table else t, c) for t, c in ENVIRON.get("moved0", ())}
+    # track renamed table
+    if table_exists(cr, "upgrade_test_data"):
+        cr.execute(
+            """
+                UPDATE upgrade_test_data
+                   SET value = replace(value::text, %s, %s)::jsonb
+                 WHERE key = 'base.tests.test_moved0.TestMoved0'
+            """,
+            ['["{}",'.format(old_table), '["{}",'.format(new_table)],
+        )
 
     # find and rename pkey, may still use an old name from a former migration
     cr.execute(
