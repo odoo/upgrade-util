@@ -422,6 +422,11 @@ def _rm_refs(cr, model, ids=None):
 
 
 def is_changed(cr, xmlid, interval="1 minute"):
+    """
+    This utility will return a false positive on xmlids of records that match the following conditions:
+        * Have been updated in an upgrade preceding the current one
+        * Have not been updated in the current upgrade
+    """
     assert "." in xmlid
     module, _, name = xmlid.partition(".")
     cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
