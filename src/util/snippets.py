@@ -286,6 +286,22 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
                     cr.execute(update_query, data)
 
 
+def determine_chunk_limit_ids(cr, table, column_arr, where):
+    bytes_per_chunk = 200 * 1024 * 1024
+    columns = ", ".join(quote_ident(column, cr._cnx) for column in column_arr if column != "id")
+    cr.execute(
+        f"""
+         WITH info AS (
+             SELECT id,
+                    sum(pg_column_size(({columns}, id))) OVER (ORDER BY id) / {bytes_per_chunk} AS chunk
+               FROM {table}
+              WHERE {where}
+         ) SELECT min(id), max(id) FROM info GROUP BY chunk
+         """
+    )
+    return cr.fetchall()
+
+
 def convert_html_content(
     cr,
     converter_callback,
