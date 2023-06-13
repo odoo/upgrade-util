@@ -2,6 +2,7 @@
 import logging
 import re
 from contextlib import contextmanager
+from functools import wraps
 from itertools import chain
 from operator import itemgetter
 from textwrap import dedent
@@ -203,6 +204,7 @@ def no_selection_cache_validation(f=None):
     if f is None:
         return patch(ofields.__name__ + ".Selection.convert_to_cache", _convert)
 
+    @wraps(f)
     def wrapper(*args, **kwargs):
         with patch(ofields.__name__ + ".Selection.convert_to_cache", _convert):
             return f(*args, **kwargs)
