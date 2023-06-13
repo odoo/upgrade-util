@@ -304,6 +304,32 @@ class TestIterBrowse(UnitTestCase):
         expected = (len(ids) + chunk_size - 1) // chunk_size
         self.assertEqual(write.call_count, expected)
 
+    def test_iter_browse_iter_twice(self):
+        cr = self.env.cr
+        cr.execute("SELECT id FROM res_country")
+        ids = [c for c, in cr.fetchall()]
+        chunk_size = 10
+
+        ib = util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size)
+        for c in ib:
+            c.name  # noqa: B018
+
+        with self.assertRaises(RuntimeError):
+            for c in ib:
+                c.name  # noqa: B018
+
+    def test_iter_browse_call_twice(self):
+        cr = self.env.cr
+        cr.execute("SELECT id FROM res_country")
+        ids = [c for c, in cr.fetchall()]
+        chunk_size = 10
+
+        ib = util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size)
+        ib.write({"vat_label": "VAT"})
+
+        with self.assertRaises(RuntimeError):
+            ib.write({"name": "FAIL"})
+
 
 class TestPG(UnitTestCase):
     @parametrize(

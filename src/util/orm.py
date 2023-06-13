@@ -285,12 +285,19 @@ class iter_browse(object):
             yield
 
     def __iter__(self):
+        if self._it is None:
+            raise RuntimeError("%r ran twice" % (self,))
+
         it = chain.from_iterable(self._it)
         if self._logger:
             it = log_progress(it, self._logger, qualifier=self._model._name, size=self._size)
+        self._it = None
         return chain(it, self._end())
 
     def __getattr__(self, attr):
+        if self._it is None:
+            raise RuntimeError("%r ran twice" % (self,))
+
         if not callable(getattr(self._model, attr)):
             raise AttributeError("The attribute %r is not callable" % attr)
 
@@ -303,6 +310,7 @@ class iter_browse(object):
         def caller(*args, **kwargs):
             return [getattr(chnk, attr)(*args, **kwargs) for chnk in chain(it, self._end())]
 
+        self._it = None
         return caller
 
     def create(self, values):
