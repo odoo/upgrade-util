@@ -26,6 +26,7 @@ from .inherit import for_each_inherit
 from .misc import parse_version, version_gte
 from .orm import env
 from .pg import (
+    PGRegexp,
     _get_unique_indexes_with,
     _validate_table,
     column_exists,
@@ -1129,9 +1130,10 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
     Will replace `old` by `new` (whole word match) in all jsonb value of `column` of `table`.
     The `extra_filter` should use the `t` alias. It can also include `{parallel_filter}` to
     execute the query in parallel.
+    `old` can be a simple term (str) or a regexp (util.PGRegexp)
     """
-    re_old = r"\y{}\y".format(re.escape(old))
-    match = 'exists($.* ? (@ like_regex "{}"))'.format(re_old.replace("\\", "\\\\"))
+    re_old = old if isinstance(old, PGRegexp) else r"\y{}\y".format(re.escape(old))
+    match = 'exists($.* ? (@ like_regex "{}"))'.format(re_old.replace("\\", "\\\\").replace('"', r"\""))
 
     if extra_filter is None:
         extra_filter = "true"

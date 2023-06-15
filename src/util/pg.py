@@ -30,6 +30,14 @@ from .misc import log_progress
 _logger = logging.getLogger(__name__)
 
 
+class PGRegexp(str):
+    """
+    Wrapper for semantic meaning of parameters
+    """
+
+    pass
+
+
 def get_max_workers():
     force_max_worker = os.getenv("MAX_WORKER")
     if force_max_worker:
