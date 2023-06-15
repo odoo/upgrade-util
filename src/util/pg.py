@@ -643,7 +643,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
 
     # rename pkey sequence
     cr.execute(
-        sql.SQL("ALTER SEQUENCE {} RENAME TO {}").format(
+        sql.SQL("ALTER SEQUENCE IF EXISTS {} RENAME TO {}").format(
             sql.Identifier(old_table + "_id_seq"), sql.Identifier(new_table + "_id_seq")
         )
     )
