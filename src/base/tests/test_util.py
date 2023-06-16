@@ -376,7 +376,7 @@ class TestORM(UnitTestCase):
         cr = self.env.cr
         util.create_cron(cr, "Test cron creation don't fail", "res.partner", "answer = 42")
 
-        cron_id = util.ref(cr, "__upgrade__.cron_test_cron_creation_don_t_fail")
+        cron_id = util.ref(cr, "__upgrade__.cron_post_upgrade_test_cron_creation_don_t_fail")
         self.assertIsNotNone(cron_id)
         cron = self.env["ir.cron"].browse(cron_id)
         self.assertEqual(cron.code, "answer = 42")

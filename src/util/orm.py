@@ -131,8 +131,6 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
     # (Cursor, str, str, str, Tuple[int, str]) -> None
     cr.execute("SELECT id FROM ir_model WHERE model = %s", [model])
     model_id = cr.fetchone()[0]
-    xid_name = "cron_" + re.sub(r"\W+", "_", name.lower())
-    xid = "__upgrade__." + xid_name
     number, unit = interval
     # TODO handle version <=10.saas-14
     cron = {
@@ -144,6 +142,8 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
         "interval_type": unit,
         "numbercall": -1,
     }
+    xid_name = "cron_" + re.sub(r"\W+", "_", cron["name"].lower())
+    xid = "__upgrade__." + xid_name
 
     e = env(cr)
     data = dict(module="__upgrade__", xml_id=xid, values=cron, noupdate=True)
