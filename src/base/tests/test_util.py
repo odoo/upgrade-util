@@ -782,10 +782,17 @@ class TestRecords(UnitTestCase):
         newtx1 = util.ref(cr, "base.TX1")
         self.assertEqual(newtx1, tx1.id)
 
-        # break one res_id
-        cr.execute("UPDATE ir_model_data SET res_id=%s WHERE module='base' AND name='TX1'", [tx2.id])
+        # break one res_id, with noupdate
+        cr.execute("UPDATE ir_model_data SET res_id=%s,noupdate=TRUE WHERE module='base' AND name='TX1'", [tx2.id])
 
-        # case: `base.TX1` points to ResCurrency(169) but doesn't match values {'name': 'TX3'}; no other matches found.
+        # case: NO update `base.TX1` from res.currency(168) to res.currency(169); values {'name': 'TX1'}
+        ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX1"})
+        self.assertEqual(ensured_id, tx2.id)
+
+        # reset noupdate
+        cr.execute("UPDATE ir_model_data SET noupdate=FALSE WHERE module='base' AND name='TX1'")
+
+        # case: `base.TX1` refers res.currency(169); values differ {'name': 'TX3'}; no other match found.
         ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX3"})
         self.assertEqual(ensured_id, tx2.id)
 
@@ -797,7 +804,7 @@ class TestRecords(UnitTestCase):
         ensured_id = util.ensure_xmlid_match_record(cr, "base.TX4", "res.currency", {"name": "TX4"})
         self.assertIsNone(ensured_id)
 
-        # case: update `base.TX1` to point to ResCurrency(168) instead of ResCurrency(169); matching values {'name': 'TX1'}
+        # case: update `base.TX1` from res.currency(168) to res.currency(169); values {'name': 'TX1'}
         ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX1"})
         self.assertEqual(ensured_id, tx1.id)
 
@@ -808,7 +815,7 @@ class TestRecords(UnitTestCase):
         cr.execute("DELETE FROM ir_model_data WHERE module='base' AND name='TX1'")
         self.assertIsNone(util.ref(cr, "base.TX1"))
 
-        # case: create `base.TX1` that point to ResCurrency(168); matching values {'name': 'TX1'}
+        # case: create `base.TX1` that point to res.currency(168); matching values {'name': 'TX1'}
         ensured_id = util.ensure_xmlid_match_record(cr, "base.TX1", "res.currency", {"name": "TX1"})
         self.assertEqual(ensured_id, tx1.id)
 
