@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from operator import itemgetter
 
 import lxml
+from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json, execute_values
 
 try:
@@ -647,16 +648,21 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     module, _, name = xmlid.partition(".")
     cr.execute(
         """
-            SELECT id, res_id
+            SELECT id, res_id, noupdate
               FROM ir_model_data
              WHERE module = %s
                AND name = %s
     """,
         [module, name],
     )
-    data_id, res_id = cr.fetchone() or (None, None)
+    data_id, res_id, noupdate = cr.fetchone() or (None, None, False)
 
     table = table_of_model(cr, model)
+    if noupdate and data_id and res_id:
+        # make sure to respect noupdate when xmlid and referred record exist
+        cr.execute("SELECT id FROM {} WHERE id=%s".format(quote_ident(table, cr._cnx)), [res_id])
+        if cr.fetchone():
+            return res_id
 
     # search for existing records matching values
     where = []
