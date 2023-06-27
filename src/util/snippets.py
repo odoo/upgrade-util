@@ -271,13 +271,15 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
          WHERE ({where})
            AND ({extra_where})
     """
-
-    split_queries = util.explode_query_range(cr, base_select_query, table=table)
+    split_queries = [
+        (base_select_query + "\n       AND id BETWEEN {} AND  {}".format(*x))
+        for x in determine_chunk_limit_ids(cr, table, columns, "({}) AND ({})".format(where, extra_where))
+    ]
 
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
 
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=util.get_max_workers()) as executor:
         convert = Convertor(converters, converter_callback)
         for query in util.log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
             cr.execute(query)
