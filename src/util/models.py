@@ -434,6 +434,29 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
             ],
         )
 
+    # Adapt translations
+    if table_exists(cr, "ir_translation"):
+        cr.execute(
+            """
+            UPDATE ir_translation it
+               SET name = %(target)s || substr(name, %(len_source)s)
+             WHERE it.name LIKE %(source_like)s
+               AND NOT EXISTS (
+                            -- Some translations may already exist in the target model
+                            SELECT 1 FROM ir_translation itt
+                             WHERE itt.name = %(target)s || substr(it.name, %(len_source)s)
+                               AND itt.type = it.type
+                               AND itt.lang = it.lang
+                               AND itt.res_id = it.res_id
+                               )
+            """,
+            {
+                "target": target,
+                "source_like": source.replace("_", r"\_") + ",%",
+                "len_source": len(source) + 1,
+            },
+        )
+
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
 
