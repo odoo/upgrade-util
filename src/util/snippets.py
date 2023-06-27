@@ -69,21 +69,9 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
         """,
         dict(regex=regex),
     ).decode()
-    bytes_per_chunk = 1024 * 1024 * 200
-    cr.execute(
-        cr.mogrify(
-            f"""
-            WITH info AS (
-                SELECT id,
-                       sum(pg_column_size(({column}, id))) OVER (ORDER BY id) / {bytes_per_chunk} AS chunk
-                  FROM {table}
-                 WHERE {column} ~ %(regex)s
-            ) SELECT min(id), max(id) FROM info GROUP BY chunk
-            """,
-            dict(regex=regex),
-        ).decode()
-    )
-    for id0, id1 in cr.fetchall():
+    where = cr.mogrify(f"{column} ~ %s", [regex]).decode()
+    ids_ranges = determine_chunk_limit_ids(cr, table, [column], where)
+    for id0, id1 in ids_ranges:
         add_snippet_names(cr, table, column, snippets, query + f" AND id BETWEEN {id0} AND {id1}")
 
 
