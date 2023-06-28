@@ -5,6 +5,7 @@ import os
 import re
 import time
 import uuid
+import warnings
 from contextlib import contextmanager
 from functools import reduce
 from multiprocessing import cpu_count
@@ -120,6 +121,11 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
 
     Use modulo stategy to separate queries in buckets
     """
+    warnings.warn(
+        "`explode_query` has been deprecated in favor of `explode_query_range`. Consider also `explode_execute`.",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
     if prefix is not None:
         if alias is not None:
             raise ValueError("Cannot use both `alias` and deprecated `prefix` arguments.")

@@ -32,7 +32,7 @@ from .pg import (
     column_exists,
     column_type,
     column_updatable,
-    explode_query,
+    explode_execute,
     explode_query_range,
     get_columns,
     get_fk,
@@ -1010,7 +1010,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
 
             else:  # it's a model
                 fmt_query = cr.mogrify(query.format(table=table, fk=fk)).decode()
-                parallel_execute(cr, explode_query(cr, fmt_query, alias="t"))
+                parallel_execute(cr, explode_query_range(cr, fmt_query, table=table, alias="t"))
 
                 # track default values to update
                 model = model_of_table(cr, table)
@@ -1161,7 +1161,7 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
     ).decode()
 
     if "{parallel_filter}" in query:
-        parallel_execute(cr, explode_query_range(cr, query, table=table, alias="t"))
+        explode_execute(cr, query, table=table, alias="t")
     else:
         cr.execute(query)
 

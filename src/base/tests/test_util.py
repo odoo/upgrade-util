@@ -367,7 +367,7 @@ class TestPG(UnitTestCase):
         # as we are in a test, we should not commit as we are in a subtransaction
         with mock.patch.object(cr, "commit", lambda: ...):
             query = "UPDATE res_lang SET name = name"
-            rowcount = util.parallel_execute(cr, util.explode_query(cr, query))
+            rowcount = util.explode_execute(cr, query, table="res_lang", bucket_size=10)
         self.assertEqual(rowcount, expected)
 
 
