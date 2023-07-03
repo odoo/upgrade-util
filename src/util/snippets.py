@@ -40,6 +40,9 @@ def add_snippet_names(cr, table, column, snippets, select_query):
 
     it = util.log_progress(cr.fetchall(), _logger, qualifier="rows", size=cr.rowcount, log_hundred_percent=True)
 
+    def quote(ident):
+        return quote_ident(ident, cr._cnx)
+
     for res_id, regex_matches, arch in it:
         regex_matches = [match[0] for match in regex_matches]
         arch = arch.replace("\r", "")  # otherwise html parser below will transform \r -> &#13;
@@ -53,7 +56,7 @@ def add_snippet_names(cr, table, column, snippets, select_query):
                     changed = True
         if changed:
             body = etree.tostring(body, encoding="unicode")
-            cr.execute(f"UPDATE {table} SET {column} = %s WHERE id = %s", [body, res_id])
+            cr.execute(f"UPDATE {quote(table)} SET {quote(column)} = %s WHERE id = %s", [body, res_id])
 
 
 def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
@@ -61,15 +64,19 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
     Will search for all the snippets in the fields mentionned (should be html fields) and add
     the corresponding data-snippet on them.
     """
+
+    def quote(ident):
+        return quote_ident(ident, cr._cnx)
+
     query = cr.mogrify(
         f"""
-            SELECT id, array((SELECT regexp_matches({column}, %(regex)s, 'g'))), {column}
-              FROM {table}
-             WHERE {column} ~ %(regex)s
+        SELECT id, array((SELECT regexp_matches({quote(column)}, %(regex)s, 'g'))), {column}
+          FROM {quote(table)}
+         WHERE {quote(column)} ~ %(regex)s
         """,
         dict(regex=regex),
     ).decode()
-    where = cr.mogrify(f"{column} ~ %s", [regex]).decode()
+    where = cr.mogrify(f"{quote(column)} ~ %s", [regex]).decode()
     ids_ranges = determine_chunk_limit_ids(cr, table, [column], where)
     for id0, id1 in ids_ranges:
         add_snippet_names(cr, table, column, snippets, query + f" AND id BETWEEN {id0} AND {id1}")
