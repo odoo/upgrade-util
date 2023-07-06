@@ -119,8 +119,7 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
             disable_view_query = """
                 UPDATE ir_ui_view
                 SET name = (name || ' - old view, inherited from ' || %%s),
-                    inherit_id = NULL,
-                    active = false
+                    inherit_id = NULL
                     %s
                     WHERE id = %%s
             """
@@ -128,6 +127,10 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
             extra_set_sql = ""
             if column_exists(cr, "ir_ui_view", "mode"):
                 extra_set_sql = ",  mode = 'primary' "
+
+            # Column was not present in v7 and it's older version
+            if column_exists(cr, "ir_ui_view", "active"):
+                extra_set_sql += ", active = false "
 
             disable_view_query = disable_view_query % extra_set_sql
             cr.execute(disable_view_query, (key or xml_id, child_id))
