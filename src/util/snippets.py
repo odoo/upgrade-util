@@ -284,7 +284,7 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
 
 
 def determine_chunk_limit_ids(cr, table, column_arr, where):
-    bytes_per_chunk = 200 * 1024 * 1024
+    bytes_per_chunk = 100 * 1024 * 1024
     columns = ", ".join(quote_ident(column, cr._cnx) for column in column_arr if column != "id")
     cr.execute(
         f"""
