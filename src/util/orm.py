@@ -402,6 +402,9 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     # 2.1 Convert fields not in the registry of models already in the registry.
     # In the past, some models added the reserved word `env` as field (e.g. `payment.acquirer`)
     # if the field was not correctly removed from the database during past upgrades, the field remains in the database.
+    if version_gte("saas~16.4"):
+        # defuse constraint for manual fields, ref: odoo/odoo@3d2f766
+        env.cr.execute("ALTER TABLE ir_model_fields DROP CONSTRAINT IF EXISTS ir_model_fields_name_manual_field")
     reserved_words = ["env"]
     ignores = {"ir.actions.server": ["condition"], "ir.ui.view": ["page"]}
     for model in models:
@@ -552,6 +555,15 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
 
         if updated_field_ids:
             env.cr.execute("UPDATE ir_model_fields SET state = 'base' WHERE id IN %s", (tuple(updated_field_ids),))
+        if version_gte("saas~16.4"):
+            # restore constraint for manual fields, ref: odoo/odoo@3d2f766
+            env.cr.execute(
+                r"""
+                ALTER TABLE ir_model_fields
+                  ADD CONSTRAINT ir_model_fields_name_manual_field
+                CHECK (state != 'manual' OR name LIKE 'x\_%')
+                """
+            )
         if disabled_ir_rule_ids:
             env.cr.execute("UPDATE ir_rule SET active = 't' WHERE id IN %s", (tuple(disabled_ir_rule_ids),))
         for field_id, selection in updated_selection_fields:
