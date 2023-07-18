@@ -9,6 +9,8 @@ ignore = [
     "B905",  # zip-without-explicit-strict; not python2 compatible
     "E501",  # line-too-long; handled by `black` formatting
     "E731",  # lambda-assignment
+    "PERF203",  # try-except-in-loop
+    "RUF012",  # mutable-class-default; we know about the risk
 
     # not (yet) supported rules
     # "E301",
@@ -27,6 +29,8 @@ select = [
     "G",   # flake8-logging-format
     "I",   # isort
     "ISC", # flake8-implicit-str-concat
+    "PERF",# perflint
+    "RUF", # ruff specific rules
     "SIM", # flake8-simplify
     "W",   # pycodestyle
 ]
@@ -44,4 +48,9 @@ odoo-addons = ["odoo.addons", "openerp.addons"]
 "*/__init__.py" = [
     "F401",
     "F403",
+]
+"src/util/*.py" = [
+    # python3 only rules
+    "RUF005",
+    "RUF007",
 ]
