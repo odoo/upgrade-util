@@ -1009,8 +1009,32 @@ def create_id_sequence(cr, table, set_as_default=True):
     if not table_exists(cr, table):
         raise MigrationError("The table `%s` doesn't exist, sequence can't be created." % table)
 
+    # inheritance lookup
+    cr.execute(
+        """
+        WITH RECURSIVE recursive_lookup AS (
+            SELECT %s::regclass AS table_id,
+                   0 AS level
+             UNION
+                -- add parents with id column recursively
+            SELECT i.inhparent AS table_id,
+                   recursive_lookup.level + 1 AS level
+              FROM pg_inherits i
+              JOIN recursive_lookup
+                ON i.inhrelid = recursive_lookup.table_id
+              JOIN pg_attribute c
+                ON i.inhparent = c.attrelid
+             WHERE c.attname = 'id'
+        ) SELECT table_id::regclass
+            FROM recursive_lookup
+           ORDER BY level DESC LIMIT 1
+        """,
+        [table],
+    )
+    table = cr.fetchone()[0]  # will be different from param if inherited
     sequence = table + "_id_seq"
     sequence_sql, table_sql = sql.Identifier(sequence), sql.Identifier(table)
+
     if not sequence_exists(cr, sequence):
         cr.execute(
             sql.SQL("CREATE SEQUENCE {sequence} OWNED BY {table}.id").format(
