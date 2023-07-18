@@ -141,7 +141,7 @@ def uninstall_module(cr, module):
             for _, res_id in group:
                 remove_view(cr, view_id=res_id, silent=True)
         else:
-            remove_records(cr, model, [it[1] for it in group])  # noqa: B031
+            remove_records(cr, model, [it[1] for it in group])
 
     if menu_ids:
         remove_menus(cr, menu_ids)

@@ -49,7 +49,7 @@ def rename_custom_table(
 ):
     rename_table(cr, table_name, new_table_name, remove_constraints=False)
 
-    module_details = " from module '{}'".format(custom_module) if custom_module else ""  # noqa
+    module_details = " from module '{}'".format(custom_module) if custom_module else ""
     add_to_migration_reports(
         category="Custom tables/columns",
         message="The custom table '{table_name}'{module_details} was renamed to '{new_table_name}'. {report_details}".format(
@@ -63,7 +63,7 @@ def rename_custom_column(cr, table_name, col_name, new_col_name, custom_module=N
     if not column_exists(cr, table_name, col_name):
         return
     cr.execute('ALTER TABLE "{}" RENAME COLUMN "{}" TO "{}"'.format(table_name, col_name, new_col_name))
-    module_details = " from module '{}'".format(custom_module) if custom_module else ""  # noqa
+    module_details = " from module '{}'".format(custom_module) if custom_module else ""
     add_to_migration_reports(
         category="Custom tables/columns",
         message="The custom column '{col_name}' of the table '{table_name}'{module_details} was renamed to '{new_col_name}'."

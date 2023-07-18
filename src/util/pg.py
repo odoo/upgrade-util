@@ -203,7 +203,7 @@ def pg_array_uniq(a, drop_null=False):
 
 
 def pg_replace(s, replacements):
-    q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode("utf-8")  # noqa: E731
+    q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode("utf-8")
     return reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s)
 
 
