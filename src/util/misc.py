@@ -277,9 +277,7 @@ class SelfPrint(object):
         return SelfPrint("%r.%s" % (self, attr))
 
     def __call__(self, *args, **kwargs):
-        s = []
-        for a in args:
-            s.append(repr(a))
+        s = [repr(a) for a in args]
         for k, v in kwargs.items():
             s.append("%s=%r" % (k, v))
         return SelfPrint("%r(%s)" % (self, ", ".join(s)))
