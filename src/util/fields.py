@@ -944,7 +944,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                 if vt in d:
                     adapt_dict(d[vt])
 
-        for _, act in _dashboard_actions(cr, match, def_old, *only_models or ()):
+        for _, act in _dashboard_actions(cr, match, *only_models or ()):
             context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
             adapt_dict(context)
 
