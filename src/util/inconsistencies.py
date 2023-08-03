@@ -166,7 +166,13 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
 
 
 def verify_products(
-    cr, model, foreign_model, foreign_model_reference_field, model_product_field="product_id", ids=None
+    cr,
+    model,
+    foreign_model,
+    foreign_model_reference_field,
+    model_product_field="product_id",
+    foreign_model_product_field="product_id",
+    ids=None,
 ):
     """
     Check if the product on the `foreign_model` is the same as the product on the `model`.
@@ -176,11 +182,10 @@ def verify_products(
     schema:
         >>> `foreign_model`.`foreign_reference_field` = `model`.id
 
-    In case of the `model` own a product field that is not `product_id`, you can specify the
-    `model_product_field` argument following this schema:
-        >>> `model`.`model_product_field` = product_product.id
+    In case where the model/foreign model own a specific product field (different than `product_id`),
+    you NEED to provide it using model_product_field/foreign_model_product_field
 
-    For example, if you want to check if the product defined on the `account_move_line`
+    As a function example, if you want to check if the product defined on the `account_move_line`
     is the same as the product defined on the `purchase_order_line` using `purchase_line_id`
     as reference, you should call this function in this way:
         >>> verify_products(cr, "purchase.order.line", "account.move.line", "purchase_line_id", ids=ids)
@@ -194,19 +199,18 @@ def verify_products(
     q = lambda s: quote_ident(s, cr._cnx)
     query = """
         SELECT f.id,
-               f.product_id,
+               f.{foreign_model_product_field},
                t.id,
-               t.product_id
+               t.{model_product_field}
           FROM {table} t
           JOIN {foreign_table} f ON f.{foreign_model_reference_field} = t.id
-          JOIN product_product pp ON t.{model_product_field} = pp.id
-          JOIN product_template pt ON pp.product_tmpl_id = pt.id
-         WHERE f.product_id != t.product_id
+         WHERE f.{foreign_model_product_field} != t.{model_product_field}
     """.format(
         table=q(table),
         foreign_table=q(foreign_table),
         foreign_model_reference_field=q(foreign_model_reference_field),
         model_product_field=q(model_product_field),
+        foreign_model_product_field=q(foreign_model_product_field),
     )
 
     if ids is None:
