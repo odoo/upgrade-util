@@ -106,6 +106,8 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
     """
     Check if the category of uom  on `model` is the same as the category of uom on `product.template`.
     When `ids` is not provided, every ids would be verified.
+
+    Returns list of ids if inconsistencies found, else []
     """
     _validate_model(model)
     table = table_of_model(cr, model)
@@ -129,21 +131,19 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         product_column=q(product_field),
     )
 
+    rows = []
     if ids is None:
         cr.execute(query)
         rows = cr.fetchall()
     elif ids:
         query += " AND t.id IN %s"
-        rows = []
         ids_chunks = chunks(ids, size=cr.IN_MAX, fmt=tuple)
         for chunk in ids_chunks:
             cr.execute(query, [chunk])
             rows.extend(cr.fetchall())
-    else:
-        return
 
     if not rows:
-        return
+        return []
 
     title = model.replace(".", " ").title()
     msg = dedent(
@@ -163,6 +163,7 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         for line_id, line_uom, line_uom_category, product_uom, product_uom_category in rows
     )
     _logger.warning("\n%s\n", msg)
+    return [r[0] for r in rows]
 
 
 def verify_products(
@@ -190,6 +191,7 @@ def verify_products(
     as reference, you should call this function in this way:
         >>> verify_products(cr, "purchase.order.line", "account.move.line", "purchase_line_id", ids=ids)
 
+    Returns list of ids if inconsistencies found, else [].
     """
     _validate_model(model)
     _validate_model(foreign_model)
@@ -213,21 +215,19 @@ def verify_products(
         foreign_model_product_field=q(foreign_model_product_field),
     )
 
+    rows = []
     if ids is None:
         cr.execute(query)
         rows = cr.fetchall()
     elif ids:
         query += " AND t.id IN %s"
-        rows = []
         ids_chunks = chunks(ids, size=cr.IN_MAX, fmt=tuple)
         for chunk in ids_chunks:
             cr.execute(query, [chunk])
             rows.extend(cr.fetchall())
-    else:
-        return
 
     if not rows:
-        return
+        return []
 
     title = model.replace(".", " ").title()
     foreign_title = foreign_model.replace(".", " ").title()
@@ -248,3 +248,4 @@ def verify_products(
         for foreign_line_id, foreign_line_product, line_id, line_product in rows
     )
     _logger.warning("\n%s\n", msg)
+    return [r[0] for r in rows]
