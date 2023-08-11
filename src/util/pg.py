@@ -1013,20 +1013,24 @@ def create_id_sequence(cr, table, set_as_default=True):
     cr.execute(
         """
         WITH RECURSIVE recursive_lookup AS (
-            SELECT %s::regclass AS table_id,
+            SELECT oid AS table_oid,
                    0 AS level
+              FROM pg_class
+             WHERE relname = %s
              UNION
                 -- add parents with id column recursively
-            SELECT i.inhparent AS table_id,
+            SELECT i.inhparent AS table_oid,
                    recursive_lookup.level + 1 AS level
               FROM pg_inherits i
               JOIN recursive_lookup
-                ON i.inhrelid = recursive_lookup.table_id
+                ON i.inhrelid = recursive_lookup.table_oid
               JOIN pg_attribute c
                 ON i.inhparent = c.attrelid
              WHERE c.attname = 'id'
-        ) SELECT table_id::regclass
-            FROM recursive_lookup
+        ) SELECT t.relname
+            FROM pg_class t
+            JOIN recursive_lookup
+              ON t.oid = recursive_lookup.table_oid
            ORDER BY level DESC LIMIT 1
         """,
         [table],
