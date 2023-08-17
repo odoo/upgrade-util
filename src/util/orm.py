@@ -317,12 +317,37 @@ class iter_browse(object):
         self._it = None
         return caller
 
-    def create(self, values):
+    def create(self, values, **kw):
+        multi = kw.pop("multi", version_gte("saas~11.5"))
+        if kw:
+            raise TypeError("Unknow arguments: %s" % ", ".join(kw))
+
+        if not values:
+            raise ValueError("`create` cannot be called with an empty `values` argument")
+
+        if self._size:
+            raise ValueError("`create` can only called on empty `browse_record` objects.")
+
         ids = []
+        size = len(values)
+        it = chunks(values, self._chunk_size, fmt=list)
+        if self._logger:
+            sz = (size + self._chunk_size - 1) // self._chunk_size
+            qualifier = "env[%r].create([:%d])" % (self._model._name, self._chunk_size)
+            it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
+
         self._patch = no_selection_cache_validation()
-        for sub_values in chunks(values, self._chunk_size, fmt=list):
+        for sub_values in it:
             self._patch.start()
-            ids += self._model.create(sub_values).ids
+
+            if multi:
+                ids += self._model.create(sub_values).ids
+            elif not self._cr_uid:
+                ids += [self._model.create(sub_value).id for sub_value in sub_values]
+            else:
+                # old API, `create` directly return the id
+                ids += [self._model.create(*(self._cr_uid + (sub_value,))) for sub_value in sub_values]
+
             next(self._end(), None)
         args = self._cr_uid + (ids,)
         return iter_browse(

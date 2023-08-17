@@ -304,6 +304,21 @@ class TestIterBrowse(UnitTestCase):
         expected = (len(ids) + chunk_size - 1) // chunk_size
         self.assertEqual(write.call_count, expected)
 
+    def test_iter_browse_create_non_empty(self):
+        RPT = self.env["res.partner.title"]
+        with self.assertRaises(ValueError):
+            util.iter_browse(RPT, [42]).create([{}])
+
+    @parametrize([(True,), (False,)])
+    def test_iter_browse_create(self, multi):
+        chunk_size = 2
+        RPT = self.env["res.partner.title"]
+
+        names = [f"Title {i}" for i in range(7)]
+        ib = util.iter_browse(RPT, [], chunk_size=chunk_size)
+        records = ib.create([{"name": name} for name in names], multi=multi)
+        self.assertEquals([t.name for t in records], names)
+
     def test_iter_browse_iter_twice(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
