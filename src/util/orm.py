@@ -264,14 +264,16 @@ class iter_browse(object):
         if kw:
             raise TypeError("Unknow arguments: %s" % ", ".join(kw))
 
-        self._patch = no_selection_cache_validation()
-        self._patch.start()  # this is needed because _browse calls _end first :/
+        self._patch = None
         self._it = chunks(ids, self._chunk_size, fmt=self._browse)
 
     def _browse(self, ids):
         next(self._end(), None)
         args = self._cr_uid + (list(ids),)
+        if not self._patch:
+            self._patch = no_selection_cache_validation()
         self._patch.start()
+
         return self._model.browse(*args)
 
     def _end(self):
@@ -280,7 +282,8 @@ class iter_browse(object):
         else:
             flush(self._model)
         invalidate(self._model, *self._cr_uid)
-        self._patch.stop()
+        if self._patch:
+            self._patch.stop()
         if 0:
             yield
 
@@ -315,6 +318,7 @@ class iter_browse(object):
 
     def create(self, values):
         ids = []
+        self._patch = no_selection_cache_validation()
         for sub_values in chunks(values, self._chunk_size, fmt=list):
             self._patch.start()
             ids += self._model.create(sub_values).ids
