@@ -311,6 +311,7 @@ class iter_browse(object):
             it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
         def caller(*args, **kwargs):
+            args = self._cr_uid + args
             return [getattr(chnk, attr)(*args, **kwargs) for chnk in chain(it, self._end())]
 
         self._it = None
