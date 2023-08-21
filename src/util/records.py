@@ -551,6 +551,8 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
         raise ValueError("Please use fully qualified name <module>.<name>")
     if on_collision not in {"fail", "merge"}:
         raise ValueError("Invalid value for the `on_collision` argument: {0!r}".format(on_collision))
+    if old == new:
+        raise ValueError("Cannot rename an XMLID to itself")
 
     old_module, _, old_name = old.partition(".")
     new_module, _, new_name = new.partition(".")
@@ -560,16 +562,18 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
     model, old_id = cr.fetchone() or (None, None)
 
     if new_id and old_id:
-        if on_collision == "merge":
+        if (model, old_id) != (new_model, new_id):
+            if on_collision == "fail":
+                raise MigrationError("Can't rename {} to {} as it already exists".format(old, new))
+
             if model != new_model:
                 raise MigrationError("Model mismatch while renaming xmlid {}. {} to {}".format(old, model, new_model))
 
             replace_record_references(cr, (model, old_id), (model, new_id), replace_xmlid=False)
-            if noupdate is not None:
-                force_noupdate(cr, new, bool(noupdate))
-            cr.execute("DELETE FROM ir_model_data WHERE module=%s AND name=%s", [old_module, old_name])
-        else:
-            raise MigrationError("Can't rename {} to {} as it already exists".format(old, new))
+
+        if noupdate is not None:
+            force_noupdate(cr, new, bool(noupdate))
+        cr.execute("DELETE FROM ir_model_data WHERE module=%s AND name=%s", [old_module, old_name])
     else:
         nu = "" if noupdate is None else (", noupdate=" + str(bool(noupdate)).lower())
 
