@@ -39,20 +39,20 @@ def _get_domain_fields(cr):
     # Meanwile, we have to enumerate them explicitly
     # false friends: the `domain` fields on `website` and `amazon.marketplace` are actually domain names.
     # NOTE: domains on transient models have been ignored
-    mmm = []
+    result = []
     if column_exists(cr, "mail_mass_mailing", "mailing_model_id"):
         # >= saas~18
-        mmm = [
+        result = [
             DomainField(
                 "mail_mass_mailing", "mailing_domain", "(SELECT model FROM ir_model m WHERE m.id = t.mailing_model_id)"
             )
         ]
     elif column_exists(cr, "mail_mass_mailing", "mailing_model"):
         # >= saas~4
-        mmm = [DomainField("mail_mass_mailing", "mailing_domain", "mailing_model")]
+        result = [DomainField("mail_mass_mailing", "mailing_domain", "mailing_model")]
     else:
         mail_template = "mail_template" if table_exists(cr, "mail_template") else "email_template"
-        mmm = [
+        result = [
             DomainField(
                 "mail_mass_mailing",
                 "mailing_domain",
@@ -60,9 +60,30 @@ def _get_domain_fields(cr):
             )
         ]
 
+    if column_exists(cr, "base_automation", "action_server_id"):
+        result += [
+            DomainField(
+                "base_automation",
+                "filter_domain",
+                "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)",
+            ),
+            DomainField(
+                "base_automation",
+                "filter_pre_domain",
+                "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)",
+            ),
+        ]
+    else:
+        result = result + [
+            DomainField("base_automation", "filter_domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
+            DomainField(
+                "base_automation", "filter_pre_domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"
+            ),
+        ]
+
     documents_domains_target = "'documents.document'" if table_exists(cr, "documents_document") else "'ir.attachment'"
 
-    result = mmm + [
+    result = result + [
         DomainField("ir_model_fields", "domain", "model"),
         DomainField("ir_act_window", "domain", "res_model"),
         DomainField("ir_filters", "domain", "model_id"),  # model_id is a varchar
@@ -73,14 +94,6 @@ def _get_domain_fields(cr):
         ),
         DomainField("base_action_rule", "filter_domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
         DomainField("base_action_rule", "filter_pre_domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
-        DomainField(
-            "base_automation", "filter_domain", "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)"
-        ),
-        DomainField(
-            "base_automation",
-            "filter_pre_domain",
-            "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)",
-        ),
         DomainField("gamification_goal_definition", "domain", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
         DomainField("marketing_campaign", "domain", "model_name"),
         DomainField(

@@ -162,16 +162,17 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     # clean domains
     adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
 
-    cr.execute(
-        """
-        DELETE FROM ir_server_object_lines
-              WHERE col1 IN (SELECT id
-                               FROM ir_model_fields
-                              WHERE model = %s
-                                AND name = %s)
-    """,
-        [model, fieldname],
-    )
+    if table_exists(cr, "ir_server_object_lines"):
+        cr.execute(
+            """
+            DELETE FROM ir_server_object_lines
+                  WHERE col1 IN (SELECT id
+                                   FROM ir_model_fields
+                                  WHERE model = %s
+                                    AND name = %s)
+            """,
+            [model, fieldname],
+        )
 
     # remove this field from dependencies of other fields
     if column_exists(cr, "ir_model_fields", "depends"):
