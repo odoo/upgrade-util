@@ -10,8 +10,7 @@ def migrate(cr, version):
     pre = util.import_script("base/0.0.0/pre-moved0.py")
 
     cr.execute("SELECT value FROM upgrade_test_data WHERE key = %s", [pre.KEY])
-    expected = cr.fetchone()[0] if cr.rowcount else []
-
+    expected = [tuple(i) for i in cr.fetchone()[0]] if cr.rowcount else []
     value = pre.get_moved0_columns(cr)
     if value != expected:
         moved_fields = set(value) - set(expected)
