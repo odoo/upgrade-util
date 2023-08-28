@@ -24,7 +24,7 @@ except ImportError:
     from openerp.sql_db import db_connect
 
 from .exceptions import MigrationError, SleepyDeveloperError
-from .helpers import _validate_table
+from .helpers import _validate_table, model_of_table
 from .misc import log_progress
 
 _logger = logging.getLogger(__name__)
@@ -350,6 +350,18 @@ def remove_column(cr, table, column, cascade=False):
 
 
 def alter_column_type(cr, table, column, type, using=None, logger=_logger):
+    # remove the existing linked `ir_model_fields_selection` recods in case it was a selection field
+    if table_exists(cr, "ir_model_fields_selection"):
+        cr.execute(
+            """
+            DELETE FROM ir_model_fields_selection s
+                  USING ir_model_fields f
+                  WHERE f.id = s.field_id
+                    AND f.model = %s
+                    AND f.name = %s
+            """,
+            [model_of_table(cr, table), column],
+        )
     if not using:
         # Simple case. Use general SQL syntax
         cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE %s' % (table, column, type))
