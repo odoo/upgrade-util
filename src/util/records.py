@@ -282,18 +282,16 @@ def remove_record(cr, name):
         module, _, name = name.partition(".")
         cr.execute(
             """
-                DELETE
+                SELECT model, res_id
                   FROM ir_model_data
                  WHERE module = %s
                    AND name = %s
-             RETURNING model, res_id
         """,
             [module, name],
         )
-        data = cr.fetchone()
-        if not data:
+        if not cr.rowcount:
             return
-        model, res_id = data
+        model, res_id = cr.fetchone()
     elif isinstance(name, tuple):
         if len(name) != 2:
             raise ValueError("Please use a 2-tuple (<model>, <res_id>)")
