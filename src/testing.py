@@ -327,3 +327,8 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
         patcher = patch.object(odoo.sql_db.Cursor, "commit", commit)
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def skip_if_demo(self):
+        self.env.cr.execute("SELECT 1 FROM ir_module_module WHERE name='base' AND demo")
+        if self.env.cr.rowcount:
+            self.skipTest("This invariant is not guaranteed with demo data.")
