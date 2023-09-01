@@ -33,10 +33,10 @@ def _cached(func):
     sentinel = object()
 
     @functools.wraps(func)
-    def wrapper():
+    def wrapper(*args, **kwargs):
         result = getattr(func, "_result", sentinel)
         if result == sentinel:
-            result = func._result = func()
+            result = func._result = func(*args, **kwargs)
         return result
 
     return wrapper
