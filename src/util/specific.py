@@ -2,12 +2,14 @@
 import logging
 
 from .helpers import _validate_table
+from .misc import _cached
 from .pg import column_exists, rename_table
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
 
 
+@_cached
 def dbuuid(cr):
     cr.execute(
         """
