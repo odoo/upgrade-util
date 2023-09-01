@@ -8,7 +8,7 @@ from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit, inherit_parents
-from .misc import chunks, log_progress
+from .misc import _cached, chunks, log_progress
 from .pg import (
     _get_unique_indexes_with,
     column_exists,
@@ -31,27 +31,25 @@ from .report import add_to_migration_reports
 _logger = logging.getLogger(__name__)
 
 
+@_cached
 def _unknown_model_id(cr):
-    result = getattr(_unknown_model_id, "result", None)
-    if result is None:
-        order = column_exists(cr, "ir_model", "order")
-        extra_columns = ', "order"' if order else ""
-        extra_values = ", 'id'" if order else ""
-        name_value = (
-            "jsonb_build_object('en_US', 'Unknown')" if column_type(cr, "ir_model", "name") == "jsonb" else "'Unknown'"
+    order = column_exists(cr, "ir_model", "order")
+    extra_columns = ', "order"' if order else ""
+    extra_values = ", 'id'" if order else ""
+    name_value = (
+        "jsonb_build_object('en_US', 'Unknown')" if column_type(cr, "ir_model", "name") == "jsonb" else "'Unknown'"
+    )
+    cr.execute(
+        """
+            INSERT INTO ir_model(name, model{})
+                 SELECT {}, '_unknown'{}
+                  WHERE NOT EXISTS (SELECT 1 FROM ir_model WHERE model = '_unknown')
+        """.format(
+            extra_columns, name_value, extra_values
         )
-        cr.execute(
-            """
-                INSERT INTO ir_model(name, model{})
-                     SELECT {}, '_unknown'{}
-                      WHERE NOT EXISTS (SELECT 1 FROM ir_model WHERE model = '_unknown')
-            """.format(
-                extra_columns, name_value, extra_values
-            )
-        )
-        cr.execute("SELECT id FROM ir_model WHERE model = '_unknown'")
-        _unknown_model_id.result = result = cr.fetchone()[0]
-    return result
+    )
+    cr.execute("SELECT id FROM ir_model WHERE model = '_unknown'")
+    return cr.fetchone()[0]
 
 
 def remove_model(cr, model, drop_table=True, ignore_m2m=()):
