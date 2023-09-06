@@ -235,6 +235,64 @@ class TestAdaptOneDomain(UnitTestCase):
         self.assertEqual(res, self.mock_adapter.return_value)
 
 
+class TestAdaptDomainView(UnitTestCase):
+    def test_adapt_domain_view(self):
+        view_form = self.env["ir.ui.view"].create(
+            {
+                "name": "test_adapt_domain_view_form",
+                "model": "res.currency",
+                "arch": """\
+                <form>
+                  <field name="rate_ids">
+                    <tree>
+                      <field name="company_id" domain="[('email', '!=', False)]"/>
+                      <field name="company_id" domain="[('email', 'not like', 'odoo.com')]"/>
+                    </tree>
+                  </field>
+                </form>
+            """,
+            }
+        )
+
+        view_search_1 = self.env["ir.ui.view"].create(
+            {
+                "name": "test_adapt_domain_view_search",
+                "model": "res.company",
+                "arch": """\
+                <search>
+                  <field name="email" string="Mail" filter_domain="[('email', '=', self)]"/>
+                </search>
+            """,
+            }
+        )
+
+        view_search_2 = self.env["ir.ui.view"].create(
+            {
+                "name": "test_adapt_domain_view_search",
+                "model": "res.company",
+                "arch": """\
+                <search>
+                  <filter name="mail" string="Mail" domain="[('email', '=', self)]"/>
+                </search>
+            """,
+            }
+        )
+
+        util.adapt_domains(self.env.cr, "res.partner", "email", "courriel")
+        util.invalidate(view_form | view_search_1 | view_search_2)
+
+        self.assertIn("email", view_form.arch)
+        self.assertIn("email", view_search_1.arch)
+        self.assertIn("email", view_search_2.arch)
+
+        util.adapt_domains(self.env.cr, "res.company", "email", "courriel")
+        util.invalidate(view_form | view_search_1 | view_search_2)
+
+        self.assertIn("courriel", view_form.arch)
+        self.assertIn("courriel", view_search_1.arch)
+        self.assertIn("courriel", view_search_2.arch)
+
+
 class TestRemoveFieldDomains(UnitTestCase):
     @parametrize(
         [

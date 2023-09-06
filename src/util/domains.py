@@ -22,7 +22,8 @@ from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext
-from .pg import column_exists, table_exists
+from .pg import column_exists, get_value_or_en_translation, table_exists
+from .records import edit_view
 
 # python3 shims
 try:
@@ -133,10 +134,8 @@ def _get_domain_fields(cr):
             yield df
 
 
-def _valid_path_to(cr, path, from_, to):
-    model = from_
-    while path:
-        field = path.pop(0)
+def _model_of_path(cr, model, path):
+    for field in path:
         cr.execute(
             """
             SELECT relation
@@ -147,11 +146,15 @@ def _valid_path_to(cr, path, from_, to):
             [model, field],
         )
         if not cr.rowcount:
-            # unknown field. Maybe an old domain. Cannot validate it.
-            return False
+            return None
         [model] = cr.fetchone()
 
-    return model == to
+    return model
+
+
+def _valid_path_to(cr, path, from_, to):
+    model = _model_of_path(cr, from_, path)
+    return model is not None and model == to
 
 
 def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
@@ -258,7 +261,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     it is part of an and ("&") domain. The other parameter signals if the leaf is
     {negated} ("!").
 
-    Note that the {adapter} is called ony on leafs that use the {old} field of {model}.
+    Note that the {adapter} is called only on leafs that use the {old} field of {model}.
 
     {force_adapt} will run the adapter on all leaves having the removed field in the path. Useful
     when deleting a field (in which case {new} is ignored).
@@ -287,6 +290,41 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                     "UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df),
                     [unicode(new_domain), id_],
                 )
+
+    # adapt search views
+    arch_db = get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
+    cr.execute("SELECT id, model FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
+    for view_id, view_model in cr.fetchall():
+        with edit_view(cr, view_id=view_id) as view:
+            for node in view.xpath(
+                "//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)
+            ):
+                attr = "domain" if "domain" in node.attrib else "filter_domain"
+                domain = _adapt_one_domain(
+                    cr, target_model, old, new, view_model, node.get(attr), adapter=adapter, force_adapt=force_adapt
+                )
+                if domain:
+                    node.set(attr, unicode(domain))
+
+            for node in view.xpath("//field[contains(@domain, '{0}')]".format(old)):
+                # as <fields> can happen in sub-views, we should deternine the actual model the field belongs to
+                path = list(reversed([p.get("name") for p in node.iterancestors("field")])) + [node.get("name")]
+                field_model = _model_of_path(cr, view_model, path)
+                if not field_model:
+                    continue
+
+                domain = _adapt_one_domain(
+                    cr,
+                    target_model,
+                    old,
+                    new,
+                    field_model,
+                    node.get("domain"),
+                    adapter=adapter,
+                    force_adapt=force_adapt,
+                )
+                if domain:
+                    node.set("domain", unicode(domain))
 
     # adapt domain in dashboards.
     # NOTE: does not filter on model at dashboard selection for handle dotted domains
