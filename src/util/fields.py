@@ -98,15 +98,15 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     def filter_value(key, value):
         if key == "orderedBy" and isinstance(value, dict):
             res = {k: (filter_value(None, v) if k == "name" else v) for k, v in value.items()}
-            if "name" not in res or res["name"] is not None:
-                # return if name didn't match fieldname
-                return res
-        elif not isinstance(value, basestring):  # noqa: SIM114
+            # return if name didn't match fieldname
+            return res if "name" not in res or res["name"] is not None else None
+        if not isinstance(value, basestring):
             # if not a string, ignore it
             return value
-        elif value.split(":")[0] != fieldname:
+        if value.split(":")[0] != fieldname:
             # only return if not matching fieldname
             return value
+        return None  # value filtered out
 
     def clean_context(context):
         if not isinstance(context, dict):
@@ -119,7 +119,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
                 changed |= context_part != context[key]
                 context[key] = [e for e in context_part if e is not None]
 
-        for vt in {"pivot", "graph", "cohort"}:
+        for vt in ["pivot", "graph", "cohort"]:
             key = "{}_measure".format(vt)
             if key in context:
                 new_value = filter_value(key, context[key])
@@ -146,8 +146,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         "SELECT id, name, context FROM ir_filters WHERE model_id = %s AND context ~ %s",
         [model, r"\y{}\y".format(fieldname)],
     )
-    for id_, name, context in cr.fetchall():
-        context = safe_eval(context or "{}", SelfPrintEvalContext(), nocopy=True)
+    for id_, name, context_s in cr.fetchall():
+        context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
         changed = clean_context(context)
         cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
         if changed:
@@ -255,9 +255,9 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         """,
             [model, r"\y%s\y" % (fieldname,)],
         )
-        for alias_id, defaults in cr.fetchall():
+        for alias_id, defaults_s in cr.fetchall():
             try:
-                defaults = dict(safe_eval(defaults))  # XXX literal_eval should works.
+                defaults = dict(safe_eval(defaults_s))  # XXX literal_eval should works.
             except Exception:
                 continue
             defaults.pop(fieldname, None)
@@ -638,12 +638,12 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
     for rid, data, name in iter_cur:
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
-        data = bytes(data)
+        data = bytes(data)  # noqa: PLW2901
         if re.match(b"^\\d+ (bytes|[KMG]b)$", data, re.I):
             # badly saved data, no need to create an attachment.
             continue
         if not encoded:
-            data = base64.b64encode(data)
+            data = base64.b64encode(data)  # noqa: PLW2901
         att = A.create({"name": name, "datas": data, "type": "binary"})
         cr.execute(
             """
@@ -937,7 +937,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                 if d.get(key):
                     d[key] = [adapt_value(key, e) for e in d[key]]
 
-            for vt in {"pivot", "graph", "cohort"}:
+            for vt in ["pivot", "graph", "cohort"]:
                 key = "{}_measure".format(vt)
                 if key in d:
                     d[key] = adapt_value(key, d[key])
@@ -990,8 +990,7 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
     for id_, model, related in cr.fetchall():
         domain = _adapt_one_domain(cr, target_model, old, new, model, [(related, "=", "related")])
         if domain:
-            related = domain[0][0]
-            cr.execute("UPDATE ir_model_fields SET related = %s WHERE id = %s", [related, id_])
+            cr.execute("UPDATE ir_model_fields SET related = %s WHERE id = %s", [domain[0][0], id_])
 
     # TODO adapt paths in email templates?
 
@@ -1059,7 +1058,7 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
 
     # update ir_act_server records to point to the right model if set
     if dst_model is not None and src_model != dst_model and cr.rowcount > 0:
-        action_ids = tuple(set([row[0] for row in cr.fetchall()]))
+        action_ids = tuple({row[0] for row in cr.fetchall()})  # uniquify ids
 
         cr.execute(
             """

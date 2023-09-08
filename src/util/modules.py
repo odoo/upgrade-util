@@ -338,8 +338,12 @@ def merge_module(cr, old, into, update_dependers=True):
                 [old, new],
             )
             for model, mapping in cr.fetchall():
-                mapping = {int(f): int(t) for f, t in mapping.items()}  # cast to int
-                replace_record_references_batch(cr, mapping, model, replace_xmlid=False)
+                replace_record_references_batch(
+                    cr,
+                    {int(f): int(t) for f, t in mapping.items()},  # jsonb keys are always string
+                    model,
+                    replace_xmlid=False,
+                )
 
             # remove remaining records
             cr.execute(
@@ -660,7 +664,7 @@ def force_upgrade_of_fresh_module(cr, module, init=True):
     if version_gte("saas~14.5"):
         # We must delay until the modules actually exists. They are added by the auto discovery process.
         ENVIRON["__modules_auto_discovery_force_upgrades"][module] = (init, version)
-        return
+        return None
 
     return _force_upgrade_of_fresh_module(cr, module, init, version)
 
@@ -847,5 +851,3 @@ def move_model(cr, model, from_module, to_module, move_data=False, keep=()):
 
     if move_data:
         update_imd(model, path=None)
-
-    return

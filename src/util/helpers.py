@@ -20,7 +20,7 @@ _VALID_MODELS = frozenset(
         "o2m_changes_parent",
         "o2m_changes_children",
     }
-    | set(m.strip() for m in os.getenv("UPG_VALID_MODELS", "").split(";")) - {""}
+    | {m.strip() for m in os.getenv("UPG_VALID_MODELS", "").split(";")} - {""}
 )
 
 # python3 shims
@@ -184,10 +184,10 @@ def _dashboard_actions(cr, arch_match, *models):
     for dash_id, arch in cr.fetchall():
         try:
             if isinstance(arch, unicode):
-                arch = arch.encode("utf-8")
+                arch = arch.encode("utf-8")  # noqa: PLW2901
             dash = lxml.etree.fromstring(arch)
         except lxml.etree.XMLSyntaxError:
-            _logger.error("Cannot parse dashboard %s", dash_id)
+            _logger.exception("Cannot parse dashboard %s", dash_id)
             continue
         for act in dash.xpath("//action"):
             if models:

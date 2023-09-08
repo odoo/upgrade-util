@@ -5,8 +5,8 @@ import logging
 import re
 
 import babel
-import dateutil.relativedelta as relativedelta
 import lxml
+from dateutil import relativedelta
 from jinja2.sandbox import SandboxedEnvironment
 from markupsafe import Markup
 from werkzeug import urls
@@ -164,8 +164,7 @@ def convert_jinja_to_qweb(string):
     result = lxml.etree.tostring(lxml.html.fragment_fromstring(result, create_parent="div"), encoding="unicode")
 
     # Remove the parent div
-    result = result[5:-6]
-    return result
+    return result[5:-6]
 
 
 def _get_set(matchobj):

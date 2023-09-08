@@ -44,8 +44,8 @@ def add_snippet_names(cr, table, column, snippets, select_query):
         return quote_ident(ident, cr._cnx)
 
     for res_id, regex_matches, arch in it:
-        regex_matches = [match[0] for match in regex_matches]
-        arch = arch.replace("\r", "")  # otherwise html parser below will transform \r -> &#13;
+        regex_matches = [match[0] for match in regex_matches]  # noqa: PLW2901
+        arch = arch.replace("\r", "")  # otherwise html parser below will transform \r -> &#13;  # noqa: PLW2901
         body = html.fromstring(arch, parser=utf8_parser)
         changed = False
         for snippet in snippets:
@@ -74,7 +74,7 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
           FROM {quote(table)}
          WHERE {quote(column)} ~ %(regex)s
         """,
-        dict(regex=regex),
+        {"regex": regex},
     ).decode()
     where = cr.mogrify(f"{quote(column)} ~ %s", [regex]).decode()
     ids_ranges = determine_chunk_limit_ids(cr, table, [column], where)
@@ -112,9 +112,9 @@ def html_fields(cr):
         if not util.table_exists(cr, table):
             # an SQL VIEW
             continue
-        columns = [column for column in columns if util.column_exists(cr, table, column)]
-        if columns:
-            yield table, columns
+        existing_columns = [column for column in columns if util.column_exists(cr, table, column)]
+        if existing_columns:
+            yield table, existing_columns
 
 
 def parse_style(attr):
@@ -190,7 +190,8 @@ class HTMLConverter:
 
     def has_changed(self, els):
         if self.selector:
-            return any([self.callback(el) for el in els.xpath(self.selector)])
+            converted = [self.callback(el) for el in els.xpath(self.selector)]
+            return any(converted)
         return self.callback(els)
 
     def __call__(self, content):

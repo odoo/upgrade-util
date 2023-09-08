@@ -206,5 +206,5 @@ def drop_workflow(cr, osv):
             FOREIGN KEY (instance_id) REFERENCES wkf_instance(id)
             ON DELETE CASCADE;
         """,
-        dict(osv=osv),
+        {"osv": osv},
     )

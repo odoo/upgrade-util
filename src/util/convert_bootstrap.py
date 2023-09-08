@@ -253,9 +253,7 @@ def simple_css_selector_to_xpath(selector, prefix="//"):
     separator = prefix
     xpath_parts = []
     combinators = "+>,~ "
-    for selector_part in re.split(rf"(\s*[{combinators}]\s*)", selector):
-        selector_part = selector_part.strip()
-
+    for selector_part in map(str.strip, re.split(rf"(\s*[{combinators}]\s*)", selector)):
         if not selector_part:
             separator = "//"
         elif selector_part == ">":
@@ -310,8 +308,7 @@ def adapt_xpath_for_qweb(xpath):
         r"normalize-space(concat(@\1, ' ', @t-att-\1, ' ', @t-attf-\1))",
         xpath,
     )
-    xpath = re.sub(r"\[@(?<!t-)([\w-]+)\]", r"[@\1 or @t-att-\1 or @t-attf-\1]", xpath)
-    return xpath
+    return re.sub(r"\[@(?<!t-)([\w-]+)\]", r"[@\1 or @t-att-\1 or @t-attf-\1]", xpath)
 
 
 class ElementOperation:
@@ -367,7 +364,6 @@ class RemoveElement(ElementOperation):
         if parent is None:
             raise ValueError(f"Cannot remove root element {element}")
         parent.remove(element)
-        return None
 
 
 class EditClasses(ElementOperation):
@@ -484,7 +480,6 @@ class PullUp(ElementOperation):
             element.addprevious(child)
 
         parent.remove(element)
-        return None
 
 
 class RenameAttribute(ElementOperation):
@@ -711,7 +706,7 @@ class BS4to5ConvertCardDeck(ElementOperation):
     def __call__(self, element, converter):
         cards = element.xpath(converter.adapt_xpath("./*[hasclass('card')]"))
 
-        cols_class = f"row-cols-{len(cards) if 0 < len(cards) <= 6 else 'auto'}"
+        cols_class = f"row-cols-{len(cards)}" if len(cards) in range(1, 7) else "row-cols-auto"
         edit_element_classes(element, add=["row", cols_class], remove="card-deck", is_qweb=converter.is_qweb)
 
         for card in cards:
@@ -1008,7 +1003,7 @@ class BootstrapConverter:
                 for operation in operations:
                     if element is None:  # previous operations that returned None (i.e. deleted element)
                         raise ValueError("Matched xml element is not available anymore! Check operations.")
-                    element = operation(element, self)
+                    element = operation(element, self)  # noqa: PLW2901
                     applied_operations_count += 1
         return self.tree, applied_operations_count
 

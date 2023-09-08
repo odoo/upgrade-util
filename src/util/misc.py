@@ -144,7 +144,7 @@ try:
             if full_path.exists():
                 break
         else:
-            raise ImportError(path)
+            raise ImportError(path)  # noqa: TRY301
         spec = importlib.util.spec_from_file_location(name, full_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -219,7 +219,8 @@ def log_progress(it, logger, qualifier="elements", size=None, estimate=True, log
     for i, e in enumerate(it, 1):
         yield e
         t2 = datetime.datetime.now()
-        if (t2 - t1).total_seconds() > 60 or (log_hundred_percent and i == size and (t2 - t0).total_seconds() > 10):
+        secs_last, secs_start = (t2 - t1).total_seconds(), (t2 - t0).total_seconds()
+        if secs_last > 60 or (log_hundred_percent and i == size and secs_start > 10):
             t1 = datetime.datetime.now()
             tdiff = t2 - t0
             j = float(i)

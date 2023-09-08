@@ -74,7 +74,7 @@ def indirect_references(cr, bound_only=False):
         IR("marketing_participant", "model_name", "res_id", "model_id", set_unknown=True),
         IR("payment_transaction", None, "callback_res_id", "callback_model_id"),
         IR("project_project", "alias_model", None, set_unknown=True),
-        # IR("pos_blackbox_be_log", "model_name", None),  # ACTUALLY NOT. We need to keep records intact, even when renaming a model
+        # IR("pos_blackbox_be_log", "model_name", None),  # ACTUALLY NOT. We need to keep records intact, even when renaming a model  # noqa: ERA001
         IR("quality_point", "worksheet_model_name", None),
         IR("rating_rating", "res_model", "res_id", "res_model_id"),
         IR("rating_rating", "parent_res_model", "parent_res_id", "parent_res_model_id"),
@@ -97,9 +97,9 @@ def indirect_references(cr, bound_only=False):
         # versions (i.e. rating_rating.res_model_id was added in saas~15).
         # we need to verify existance of columns before using them.
         if ir.res_model and not column_exists(cr, ir.table, ir.res_model):
-            ir = ir._replace(res_model=None)
+            ir = ir._replace(res_model=None)  # noqa: PLW2901
         if ir.res_model_id and not column_exists(cr, ir.table, ir.res_model_id):
-            ir = ir._replace(res_model_id=None)
+            ir = ir._replace(res_model_id=None)  # noqa: PLW2901
         if not ir.res_model and not ir.res_model_id:
             continue
 

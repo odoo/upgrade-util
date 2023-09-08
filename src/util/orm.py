@@ -146,7 +146,7 @@ def create_cron(cr, name, model, code, interval=(1, "hours")):
     xid = "__upgrade__." + xid_name
 
     e = env(cr)
-    data = dict(module="__upgrade__", xml_id=xid, values=cron, noupdate=True)
+    data = {"module": "__upgrade__", "xml_id": xid, "values": cron, "noupdate": True}
     if hasattr(e["ir.cron"], "_load_records"):
         e["ir.cron"]._load_records([data])
     else:
@@ -199,7 +199,7 @@ def no_selection_cache_validation(f=None):
     old_convert = ofields.Selection.convert_to_cache
 
     def _convert(self, value, record, validate=True):
-        return old_convert(self, value, record, False)
+        return old_convert(self, value, record, validate=False)
 
     if f is None:
         return patch(ofields.__name__ + ".Selection.convert_to_cache", _convert)
@@ -302,7 +302,7 @@ class iter_browse(object):
             raise RuntimeError("%r ran twice" % (self,))
 
         if not callable(getattr(self._model, attr)):
-            raise AttributeError("The attribute %r is not callable" % attr)
+            raise TypeError("The attribute %r is not callable" % attr)
 
         it = self._it
         if self._logger:

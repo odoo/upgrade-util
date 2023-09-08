@@ -15,7 +15,7 @@ class CriticalHandler(logging.Handler):
         super(CriticalHandler, self).__init__(logging.CRITICAL)
 
     def emit(self, record):
-        global _REGISTERED
+        global _REGISTERED  # noqa: PLW0603
         if _REGISTERED:
             return
 

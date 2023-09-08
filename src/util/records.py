@@ -259,8 +259,7 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
             "arch_db": arch_column_value,
         },
     )
-    view_id = cr.fetchone()[0]
-    return view_id
+    return cr.fetchone()[0]
 
 
 # fmt:off
@@ -290,14 +289,14 @@ def remove_record(cr, name):
             [module, name],
         )
         if not cr.rowcount:
-            return
+            return None
         model, res_id = cr.fetchone()
     elif isinstance(name, tuple):
         if len(name) != 2:
             raise ValueError("Please use a 2-tuple (<model>, <res_id>)")
         model, res_id = name
     else:
-        raise ValueError("Either use a fully qualified xmlid string <module>.<name> or a 2-tuple (<model>, <res_id>)")
+        raise TypeError("Either use a fully qualified xmlid string <module>.<name> or a 2-tuple (<model>, <res_id>)")
 
     # deleguate to the right method
     if model == "ir.ui.view":
@@ -434,7 +433,7 @@ def is_changed(cr, xmlid, interval="1 minute"):
     cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
     data = cr.fetchone()
     if not data:
-        return
+        return None
     model, res_id = data
     table = table_of_model(cr, model)
     cr.execute(
@@ -679,9 +678,9 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
         if res_id:
             logger.debug("`%s` refers %s(%s); values differ %r; no other match found.", xmlid, model, res_id, values)
             return res_id
-        else:
-            logger.debug("`%s` doesn't exist; no match found for values %r", xmlid, values)
-            return None
+
+        logger.debug("`%s` doesn't exist; no match found for values %r", xmlid, values)
+        return None
     new_res_id = records[0]
 
     if data_id:
@@ -793,11 +792,11 @@ def update_record_from_xml(
 
     cr_or_env = env(cr) if version_gte("saas~16.2") else cr
     importer = xml_import(cr_or_env, from_module, idref={}, mode="update")
-    kw = dict(mode="update") if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
+    kw = {"mode": "update"} if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
     importer.parse(new_root, **kw)
 
     if noupdate:
-        force_noupdate(cr, xmlid, True)
+        force_noupdate(cr, xmlid, noupdate=True)
     if reset_write_metadata and write_data:
         cr.execute("UPDATE {} SET write_uid=%s, write_date=%s WHERE id=%s".format(table), write_data)
 
@@ -911,9 +910,9 @@ def delete_unused(cr, *xmlids, **kwargs):
                 ),
                 [list(ids)],
             )
-            ids = map(itemgetter(0), cr.fetchall())
+            ids = map(itemgetter(0), cr.fetchall())  # noqa: PLW2901
 
-        ids = list(ids)
+        ids = list(ids)  # noqa: PLW2901
         if model == "res.lang" and table_exists(cr, "ir_translation"):
             cr.execute(
                 """
@@ -943,7 +942,7 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
     assert isinstance(new, tuple) and len(new) == 2
 
     if not old[1]:
-        return
+        return None
 
     return replace_record_references_batch(cr, {old[1]: new[1]}, old[0], new[0], replace_xmlid)
 
@@ -1086,7 +1085,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         if unique_indexes:
             conditions = []
             for _, uniq_cols in unique_indexes:
-                uniq_cols = set(uniq_cols) - set([ir.res_id, ir.res_model, ir.res_model_id])
+                uniq_cols = set(uniq_cols) - {ir.res_id, ir.res_model, ir.res_model_id}  # noqa: PLW2901
                 conditions.append(
                     """
                         NOT EXISTS(SELECT 1 FROM {ir.table} WHERE {res_model_whr} AND {jmap_expr} AND %(ands)s)

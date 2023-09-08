@@ -22,7 +22,7 @@ try:
     from odoo.tools.misc import html_escape
 
     if html_escape is not escape:
-        Markup = None  # noqa:F811 -- retarded flake8
+        Markup = None
 except ImportError:
     Markup = None
 
@@ -113,7 +113,12 @@ def announce_migration_report(cr):
 
 
 def rst2html(rst):
-    overrides = dict(embed_stylesheet=False, doctitle_xform=False, output_encoding="unicode", xml_declaration=False)
+    overrides = {
+        "embed_stylesheet": False,
+        "doctitle_xform": False,
+        "output_encoding": "unicode",
+        "xml_declaration": False,
+    }
     html = publish_string(source=dedent(rst), settings_overrides=overrides, writer=MyWriter())
     return html_sanitize(html, silent=False)
 

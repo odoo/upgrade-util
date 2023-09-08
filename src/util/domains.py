@@ -279,12 +279,13 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
             [match_old],
         )
         for id_, model, domain in cr.fetchall():
-            domain = _adapt_one_domain(
+            new_domain = _adapt_one_domain(
                 cr, target_model, old, new, model, domain, adapter=adapter, force_adapt=force_adapt
             )
-            if domain:
+            if new_domain:
                 cr.execute(
-                    "UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df), [unicode(domain), id_]
+                    "UPDATE {df.table} SET {df.domain_column} = %s WHERE id = %s".format(df=df),
+                    [unicode(new_domain), id_],
                 )
 
     # adapt domain in dashboards.

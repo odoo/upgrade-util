@@ -410,7 +410,7 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
                 )
             where = " AND ".join(wheres) or "true"
             query = "UPDATE {t} t SET {c}=%(new)s WHERE {w} AND {c}=%(old)s".format(t=ir.table, c=ir.res_model, w=where)
-            fmt_query = cr.mogrify(query, dict(new=target, old=source)).decode()
+            fmt_query = cr.mogrify(query, {"new": target, "old": source}).decode()
             if column_exists(cr, ir.table, "id"):
                 parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
             else:

@@ -35,8 +35,6 @@ class PGRegexp(str):
     Wrapper for semantic meaning of parameters
     """
 
-    pass
-
 
 def get_max_workers():
     force_max_worker = os.getenv("MAX_WORKER")
@@ -319,14 +317,14 @@ def create_column(cr, table, column, definition, **kwargs):
             query = cr.mogrify(query, [default]).decode()
             parallel_execute(cr, explode_query_range(cr, query, table=table))
         return False
+
+    create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition)
+    if default is no_def:
+        cr.execute(create_query)
     else:
-        create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition)
-        if default is no_def:
-            cr.execute(create_query)
-        else:
-            cr.execute(create_query + " DEFAULT %s", [default])
-            cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
-        return True
+        cr.execute(create_query + " DEFAULT %s", [default])
+        cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
+    return True
 
 
 def create_fk(cr, table, column, fk_table, on_delete_action=""):
