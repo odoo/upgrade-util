@@ -5,7 +5,7 @@ import os
 import lxml
 
 from .exceptions import SleepyDeveloperError
-from .misc import splitlines, version_gte
+from .misc import splitlines, version_between, version_gte
 
 _logger = logging.getLogger(__name__.rpartition(".")[0])
 
@@ -20,6 +20,7 @@ _VALID_MODELS = frozenset(
         "o2m_changes_parent",
         "o2m_changes_children",
     }
+    | ({"l10n_pl_tax_office"} if version_between("16.0", "17.0") else set())
     | {m.strip() for m in os.getenv("UPG_VALID_MODELS", "").split(";")} - {""}
 )
 
