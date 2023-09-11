@@ -662,7 +662,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     where = []
     data = ()
     for k, v in values.items():
-        if v:
+        if v is not None:
             where += ["%s = %%s" % (get_value_or_en_translation(cr, table, k),)]
             data += (v,)
         else:
