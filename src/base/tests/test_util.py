@@ -56,6 +56,8 @@ class TestAdaptOneDomain(UnitTestCase):
             self.cr, "res.partner", "user_id", "user_id", "res.users", domain, adapter=self.mock_adapter
         )  # even if new==old the adapter must be called
         self.mock_adapter.assert_called_once()
+        # Ignore `boolean-positional-value-in-call` lint violations in the whole file
+        # ruff: noqa: FBT003
         self.mock_adapter.assert_called_with(domain[0], False, False)
         self.assertEqual(None, new_domain)
 
@@ -445,16 +447,17 @@ class TestInherit(UnitTestCase):
     )
     def test_inherit_parents(self, model, expected):
         cr = self.env.cr
-        result = sorted(list(util.inherit_parents(cr, model)))
+        result = sorted(util.inherit_parents(cr, model))
         self.assertEqual(result, sorted(expected))
 
 
 class TestNamedCursors(UnitTestCase):
     @staticmethod
-    def exec(cr, which="", args=()):
+    def exec(cr, which="", args=()):  # noqa: A003
         cr.execute("SELECT * FROM ir_ui_view")
         if which:
             return getattr(cr, which)(*args)
+        return None
 
     @parametrize(
         [
