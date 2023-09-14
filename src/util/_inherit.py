@@ -73,6 +73,9 @@ inheritance_data = frozendict(
             Inherit(model="account.avatax", born=parse_version("14.0"), dead=None, via=None),
             Inherit(model="res.partner", born=parse_version("14.0"), dead=None, via=None),
         ],
+        "account.cash.flow.report.handler": [
+            Inherit(model="l10n_mn.cash.flow.report.handler", born=parse_version("16.0"), dead=None, via=None)
+        ],
         "account.coa.report": [
             Inherit(
                 model="l10n_mx.trial.report", born=parse_version("10.saas~14"), dead=parse_version("16.0"), via=None
@@ -217,8 +220,18 @@ inheritance_data = frozendict(
                 dead=parse_version("saas~16.2"),
                 via=None,
             ),
-            Inherit(model="l10n_ee.kmd.inf.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
-            Inherit(model="l10n_ee.tax.report.handler", born=parse_version("16.0"), dead=None, via=None),
+            Inherit(
+                model="l10n_ee.kmd.inf.report.handler",
+                born=parse_version("saas~16.2"),
+                dead=parse_version("saas~16.3"),
+                via=None,
+            ),
+            Inherit(
+                model="l10n_ee.tax.report.handler",
+                born=parse_version("16.0"),
+                dead=parse_version("saas~16.2"),
+                via=None,
+            ),
             Inherit(
                 model="l10n_es.tax.report.handler",
                 born=parse_version("16.0"),
@@ -238,11 +251,22 @@ inheritance_data = frozendict(
                 dead=parse_version("saas~16.3"),
                 via=None,
             ),
-            Inherit(model="l10n_no.tax.report.handler", born=parse_version("16.0"), dead=None, via=None),
+            Inherit(
+                model="l10n_no.tax.report.handler",
+                born=parse_version("16.0"),
+                dead=parse_version("saas~16.2"),
+                via=None,
+            ),
             Inherit(
                 model="l10n_pe.tax.ple.report.handler",
                 born=parse_version("16.0"),
                 dead=parse_version("saas~16.3"),
+                via=None,
+            ),
+            Inherit(
+                model="l10n_pl.tax.report.handler",
+                born=parse_version("16.0"),
+                dead=parse_version("saas~16.2"),
                 via=None,
             ),
             Inherit(
@@ -251,6 +275,8 @@ inheritance_data = frozendict(
                 dead=parse_version("saas~16.2"),
                 via=None,
             ),
+            Inherit(model="l10n_th.pnd.report.handler", born=parse_version("16.0"), dead=None, via=None),
+            Inherit(model="l10n_th.tax.report.handler", born=parse_version("16.0"), dead=None, via=None),
             Inherit(
                 model="l10n_uk.tax.report.handler",
                 born=parse_version("16.0"),
@@ -476,7 +502,10 @@ inheritance_data = frozendict(
             ),
             Inherit(model="account.asset.report.handler", born=parse_version("16.0"), dead=None, via=None),
             Inherit(
-                model="account.bank.reconciliation.report.handler", born=parse_version("16.0"), dead=None, via=None
+                model="account.bank.reconciliation.report.handler",
+                born=parse_version("16.0"),
+                dead=parse_version("saas~16.4"),
+                via=None,
             ),
             Inherit(model="account.cash.flow.report.handler", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="account.deferred.report.handler", born=parse_version("saas~16.3"), dead=None, via=None),
@@ -543,10 +572,16 @@ inheritance_data = frozendict(
             Inherit(model="l10n_ar.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
             Inherit(model="l10n_be.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
             Inherit(model="l10n_de.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
+            Inherit(model="l10n_ee.kmd.inf.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
+            Inherit(model="l10n_ee.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
             Inherit(model="l10n_es.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
+            Inherit(model="l10n_fr.report.handler", born=parse_version("saas~16.4"), dead=None, via=None),
+            Inherit(model="l10n_ie.tax.report.handler", born=parse_version("saas~16.4"), dead=None, via=None),
             Inherit(model="l10n_lu.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
             Inherit(model="l10n_nl.tax.report.handler", born=parse_version("saas~16.3"), dead=None, via=None),
+            Inherit(model="l10n_no.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
             Inherit(model="l10n_pe.tax.ple.report.handler", born=parse_version("saas~16.3"), dead=None, via=None),
+            Inherit(model="l10n_pl.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
             Inherit(model="l10n_se.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
             Inherit(model="l10n_uk.tax.report.handler", born=parse_version("saas~16.2"), dead=None, via=None),
         ],
@@ -564,10 +599,13 @@ inheritance_data = frozendict(
             Inherit(model="account.asset", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="account.move.line", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="account.reconcile.model.line", born=parse_version("16.0"), dead=None, via=None),
-            Inherit(model="bank.rec.widget", born=parse_version("16.0"), dead=None, via=None),
+            Inherit(model="bank.rec.widget", born=parse_version("16.0"), dead=parse_version("saas~16.4"), via=None),
             Inherit(model="bank.rec.widget.line", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="hr.expense", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="hr.expense.split", born=parse_version("16.0"), dead=None, via=None),
+            Inherit(model="mrp.bom", born=parse_version("saas~16.4"), dead=None, via=None),
+            Inherit(model="mrp.production", born=parse_version("saas~16.4"), dead=None, via=None),
+            Inherit(model="mrp.workcenter", born=parse_version("saas~16.4"), dead=None, via=None),
             Inherit(model="purchase.order.line", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="purchase.requisition.line", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="sale.order.line", born=parse_version("16.0"), dead=None, via=None),
@@ -906,6 +944,10 @@ inheritance_data = frozendict(
             )
         ],
         "ir.ui.view": [Inherit(model="website.page", born=parse_version("10.saas~18"), dead=None, via="view_id")],
+        "l10n_br.account.avatax": [
+            Inherit(model="account.move", born=parse_version("16.0"), dead=None, via=None),
+            Inherit(model="sale.order", born=parse_version("16.0"), dead=None, via=None),
+        ],
         "l10n_cl.edi.util": [
             Inherit(model="account.move", born=parse_version("13.0"), dead=parse_version("saas~13.1"), via=None),
             Inherit(model="account.move", born=parse_version("14.0"), dead=None, via=None),
@@ -1087,10 +1129,17 @@ inheritance_data = frozendict(
             Inherit(model="account.move", born=parse_version("saas~12.4"), dead=parse_version("saas~13.5"), via=None),
             Inherit(model="account.payment", born=parse_version("11.0"), dead=parse_version("saas~13.5"), via=None),
         ],
+        "l10n_nl_reports_sbr.tax.report.wizard": [
+            Inherit(model="l10n_nl_reports_sbr_icp.icp.wizard", born=parse_version("16.0"), dead=None, via=None)
+        ],
         "l10n_pe.tax.ple.report.handler": [
             Inherit(model="l10n_pe.tax.ple.14.1.report.handler", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="l10n_pe.tax.ple.8.1.report.handler", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="l10n_pe.tax.ple.8.2.report.handler", born=parse_version("16.0"), dead=None, via=None),
+        ],
+        "l10n_th.pnd.report.handler": [
+            Inherit(model="l10n_th.pnd3.report.handler", born=parse_version("16.0"), dead=None, via=None),
+            Inherit(model="l10n_th.pnd53.report.handler", born=parse_version("16.0"), dead=None, via=None),
         ],
         "mail.activity.mixin": [
             Inherit(model="account.asset", born=parse_version("saas~12.3"), dead=None, via=None),
@@ -1106,6 +1155,7 @@ inheritance_data = frozendict(
             Inherit(model="account.online.link", born=parse_version("saas~15.3"), dead=None, via=None),
             Inherit(model="account.payment", born=parse_version("saas~12.1"), dead=None, via=None),
             Inherit(model="approval.request", born=parse_version("saas~12.2"), dead=None, via=None),
+            Inherit(model="bacs.ddi", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="crm.lead", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="crossovered.budget", born=parse_version("saas~12.1"), dead=None, via=None),
             Inherit(model="documents.document", born=parse_version("saas~12.1"), dead=None, via=None),
@@ -1122,6 +1172,7 @@ inheritance_data = frozendict(
             Inherit(model="hr.appraisal", born=parse_version("10.saas~14"), dead=None, via=None),
             Inherit(model="hr.appraisal.goal", born=parse_version("saas~13.4"), dead=None, via=None),
             Inherit(model="hr.contract", born=parse_version("saas~11.4"), dead=None, via=None),
+            Inherit(model="hr.contract.salary.offer", born=parse_version("saas~16.4"), dead=None, via=None),
             Inherit(model="hr.employee", born=parse_version("saas~11.1"), dead=None, via=None),
             Inherit(model="hr.expense", born=parse_version("saas~11.3"), dead=None, via=None),
             Inherit(model="hr.expense.sheet", born=parse_version("saas~11.3"), dead=None, via=None),
@@ -1148,6 +1199,7 @@ inheritance_data = frozendict(
             Inherit(model="mrp.workorder", born=parse_version("saas~12.1"), dead=parse_version("saas~13.5"), via=None),
             Inherit(model="note.note", born=parse_version("10.saas~14"), dead=parse_version("saas~16.3"), via=None),
             Inherit(model="pos.session", born=parse_version("saas~12.3"), dead=None, via=None),
+            Inherit(model="product.pricelist", born=parse_version("saas~16.4"), dead=None, via=None),
             Inherit(model="product.product", born=parse_version("10.saas~18"), dead=None, via=None),
             Inherit(model="product.template", born=parse_version("10.saas~18"), dead=None, via=None),
             Inherit(
@@ -1330,6 +1382,7 @@ inheritance_data = frozendict(
             Inherit(
                 model="approval.request", born=parse_version("saas~12.2"), dead=parse_version("saas~16.2"), via=None
             ),
+            Inherit(model="bacs.ddi", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="blog.blog", born=parse_version("7.saas~3"), dead=None, via=None),
             Inherit(model="blog.post", born=parse_version("7.saas~3"), dead=None, via=None),
             Inherit(
@@ -1379,6 +1432,7 @@ inheritance_data = frozendict(
             Inherit(model="hr.appraisal", born=parse_version("9.0"), dead=None, via=None),
             Inherit(model="hr.appraisal.goal", born=parse_version("saas~13.4"), dead=None, via=None),
             Inherit(model="hr.contract", born=parse_version("8.saas~6"), dead=None, via=None),
+            Inherit(model="hr.contract.salary.offer", born=parse_version("saas~16.4"), dead=None, via=None),
             Inherit(model="hr.department", born=parse_version("8.saas~6"), dead=None, via=None),
             Inherit(model="hr.employee", born=parse_version("7.saas~1"), dead=parse_version("saas~16.2"), via=None),
             Inherit(model="hr.equipment", born=parse_version("9.0"), dead=parse_version("9.saas~12"), via=None),
@@ -1453,6 +1507,7 @@ inheritance_data = frozendict(
             Inherit(model="phone.blacklist", born=parse_version("saas~12.5"), dead=None, via=None),
             Inherit(model="pos.session", born=parse_version("saas~12.3"), dead=None, via=None),
             Inherit(model="procurement.order", born=parse_version("7.0"), dead=parse_version("10.saas~18"), via=None),
+            Inherit(model="product.pricelist", born=parse_version("saas~16.4"), dead=None, via=None),
             Inherit(model="product.product", born=parse_version("7.0"), dead=None, via=None),
             Inherit(model="product.template", born=parse_version("7.saas~3"), dead=None, via=None),
             Inherit(model="project.issue", born=parse_version("7.saas~2"), dead=parse_version("10.saas~18"), via=None),
@@ -1511,6 +1566,8 @@ inheritance_data = frozendict(
                 dead=parse_version("saas~11.5"),
                 via=None,
             ),
+            Inherit(model="whatsapp.account", born=parse_version("saas~16.3"), dead=None, via=None),
+            Inherit(model="whatsapp.template", born=parse_version("saas~16.3"), dead=None, via=None),
         ],
         "mail.thread.blacklist": [
             Inherit(model="crm.lead", born=parse_version("saas~12.4"), dead=None, via=None),
@@ -1552,6 +1609,11 @@ inheritance_data = frozendict(
             Inherit(model="crm.lead", born=parse_version("saas~13.3"), dead=None, via=None),
             Inherit(model="mailing.contact", born=parse_version("saas~12.5"), dead=None, via=None),
             Inherit(model="res.partner", born=parse_version("saas~12.5"), dead=None, via=None),
+        ],
+        "mail.tracking.duration.mixin": [
+            Inherit(model="crm.lead", born=parse_version("saas~16.4"), dead=None, via=None),
+            Inherit(model="helpdesk.ticket", born=parse_version("saas~16.4"), dead=None, via=None),
+            Inherit(model="project.task", born=parse_version("saas~16.4"), dead=None, via=None),
         ],
         "microsoft.calendar.sync": [
             Inherit(model="calendar.event", born=parse_version("saas~13.5"), dead=None, via=None),
@@ -2525,6 +2587,7 @@ inheritance_data = frozendict(
             Inherit(model="event.event", born=parse_version("saas~14.5"), dead=None, via=None),
             Inherit(model="forum.forum", born=parse_version("saas~14.5"), dead=None, via=None),
             Inherit(model="forum.post", born=parse_version("saas~14.5"), dead=None, via=None),
+            Inherit(model="forum.tag", born=parse_version("saas~16.4"), dead=None, via=None),
             Inherit(model="hr.job", born=parse_version("saas~16.3"), dead=None, via=None),
             Inherit(model="knowledge.article", born=parse_version("16.0"), dead=None, via=None),
             Inherit(model="product.public.category", born=parse_version("saas~14.5"), dead=None, via=None),
