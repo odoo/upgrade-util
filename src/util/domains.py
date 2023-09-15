@@ -292,7 +292,11 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                 )
 
     # adapt search views
-    arch_db = get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
+    arch_db = (
+        get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
+        if column_exists(cr, "ir_ui_view", "arch_db")
+        else "arch"
+    )
     cr.execute("SELECT id, model FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
     for view_id, view_model in cr.fetchall():
         # Note: active=None is important to not reactivate views!
