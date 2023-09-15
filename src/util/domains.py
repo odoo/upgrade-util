@@ -295,7 +295,8 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     arch_db = get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
     cr.execute("SELECT id, model FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
     for view_id, view_model in cr.fetchall():
-        with edit_view(cr, view_id=view_id) as view:
+        # Note: active=None is important to not reactivate views!
+        with edit_view(cr, view_id=view_id, active=None) as view:
             for node in view.xpath(
                 "//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)
             ):
