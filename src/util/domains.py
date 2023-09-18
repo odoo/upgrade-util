@@ -4,6 +4,12 @@ import logging
 import re
 
 try:
+    from contextlib import suppress
+except ImportError:
+    # python2 code, use the openerp vendor
+    from openerp.tools.misc import ignore as suppress
+
+try:
     from html import unescape
 except ImportError:
     # should not be needed in python2
@@ -33,6 +39,10 @@ except NameError:
 
 _logger = logging.getLogger(__name__)
 DomainField = collections.namedtuple("DomainField", "table domain_column model_select")
+
+
+class _Skip(Exception):
+    pass
 
 
 def _get_domain_fields(cr):
@@ -300,7 +310,8 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     cr.execute("SELECT id, model FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
     for view_id, view_model in cr.fetchall():
         # Note: active=None is important to not reactivate views!
-        with edit_view(cr, view_id=view_id, active=None) as view:
+        with suppress(_Skip), edit_view(cr, view_id=view_id, active=None) as view:
+            modified = False
             for node in view.xpath(
                 "//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)
             ):
@@ -310,6 +321,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                 )
                 if domain:
                     node.set(attr, unicode(domain))
+                    modified = True
 
             for node in view.xpath("//field[contains(@domain, '{0}')]".format(old)):
                 # as <fields> can happen in sub-views, we should deternine the actual model the field belongs to
@@ -330,6 +342,10 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                 )
                 if domain:
                     node.set("domain", unicode(domain))
+                    modified = True
+
+            if not modified:
+                raise _Skip
 
     # adapt domain in dashboards.
     # NOTE: does not filter on model at dashboard selection for handle dotted domains
