@@ -770,7 +770,18 @@ def update_record_from_xml(
         with file_open(os.path.join(from_module, f)) as fp:
             doc = lxml.etree.parse(fp)
             for node in doc.xpath(xpath):
+                parent = node.getparent()
                 new_root[0].append(node)
+
+                if node.tag == "menuitem" and parent.tag == "menuitem" and "parent_id" not in node.attrib:
+                    new_root[0].append(
+                        lxml.builder.E.record(
+                            lxml.builder.E.field(name="parent_id", ref=parent.attrib["id"]),
+                            model="ir.ui.menu",
+                            id=node.attrib["id"],
+                        )
+                    )
+
                 if node.tag == "template":
                     template = True
                 if ensure_references:

@@ -625,6 +625,23 @@ class TestRecords(UnitTestCase):
         for key, value in data_before.items():
             self.assertEqual(record[key], value)
 
+        # reset all fields on a <menuitem>
+        xmlid = "base.menu_security"
+        data_after = {"name": "ATotallyValidSecurityMenu", "sequence": 112, "parent_id": self.env["ir.ui.menu"]}
+        record = self.env.ref(xmlid)
+        data_before = {key: record[key] for key in data_after}
+        for key, value in data_after.items():
+            record.write({key: value})
+            self.assertEqual(record[key], value)
+
+        util.update_record_from_xml(self.env.cr, xmlid, ensure_references=True)
+        if util.version_gte("16.0"):
+            record.invalidate_recordset(["name"])
+        else:
+            record.invalidate_cache(["name"], record.ids)
+        for key, value in data_before.items():
+            self.assertEqual(record[key], value)
+
         # reset all fields on a <template>
         template_xmlid = "base.contact_name"
         record = self.env.ref(template_xmlid)
