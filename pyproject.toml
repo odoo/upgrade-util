@@ -2,7 +2,6 @@
 line-length = 120
 
 [tool.ruff]
-required-version = "0.0.288"
 fix = true
 show-fixes = true
 ignore = [
