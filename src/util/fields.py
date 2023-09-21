@@ -486,7 +486,18 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
             ),
             [ttype, "%s,%s" % (model, field)],
         )
-
+    cr.execute(
+        """
+        UPDATE ir_model_fields AS imf
+           SET ttype = 'html'
+          FROM ir_model_fields AS f
+         WHERE imf.related_field_id = f.id
+           AND f.name = %s
+           AND f.model = %s
+           AND imf.state = 'manual'
+        """,
+        [field, model],
+    )
     for inh in for_each_inherit(cr, model, skip_inherit):
         if not inh.via:
             convert_field_to_html(inh.model, field, skip_inherit=skip_inherit)
