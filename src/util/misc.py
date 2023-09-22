@@ -108,18 +108,14 @@ def splitlines(s):
 
 def expand_braces(s):
     # expand braces (a la bash)
-    # only handle one expension of a 2 parts (because we don't need more)
-    r = re.compile(r"(.*){([^},]*?,[^},]*?)}(.*)")
+    r = re.compile(r"(.*){((?:[^},]*?)(?:,[^},]*?)+)}(.*)", flags=re.DOTALL)
     m = r.search(s)
     if not m:
         raise ValueError("No expansion braces found")
-    head, match, tail = m.groups()
-    a, b = match.split(",")
-    first = head + a + tail
-    second = head + b + tail
-    if r.search(first):  # as the regexp will match the last expansion, we only need to verify first term
-        raise ValueError("Multiple expansion braces found")
-    return [first, second]
+    head, matches, tail = m.groups()
+    if re.search("[}{]", head + matches + tail):
+        raise ValueError("Extra braces detected")
+    return [head + x + tail for x in matches.split(",")]
 
 
 def split_osenv(name):

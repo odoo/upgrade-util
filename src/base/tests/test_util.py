@@ -753,3 +753,48 @@ class TestRecords(UnitTestCase):
         self.assertRegex(test_partner_title.name, pattern_new)
         self.assertRegex(test_partner_title.name, pattern_notouch)
         self.assertNotRegex(test_partner_title.name, pattern_old)
+
+
+class TestMisc(UnitTestCase):
+    @parametrize(
+        [
+            ("{a,b}", ["a", "b"]),
+            ("head_{a,b}_tail", ["head_a_tail", "head_b_tail"]),
+            ("head_only_{a,b}", ["head_only_a", "head_only_b"]),
+            ("{a,b}_tail_only", ["a_tail_only", "b_tail_only"]),
+            ("{with,more,than,one,comma}", ["with", "more", "than", "one", "comma"]),
+            ("head_{one,two,three}_tail", ["head_one_tail", "head_two_tail", "head_three_tail"]),
+            ("same_{a,a}", ["same_a", "same_a"]),
+            ("empty_part_{a,}", ["empty_part_a", "empty_part_"]),
+            ("empty_part_{,b}", ["empty_part_", "empty_part_b"]),
+            ("two_empty_{,}", ["two_empty_", "two_empty_"]),
+            ("with_cr\n_{a,b}", ["with_cr\n_a", "with_cr\n_b"]),
+            ("with_cr_in_{a\nb,c\nd}_end", ["with_cr_in_a\nb_end", "with_cr_in_c\nd_end"]),
+        ]
+    )
+    def test_expand_braces(self, value, expected):
+        self.assertEqual(util.expand_braces(value), expected)
+
+    @parametrize(
+        [
+            (value,)
+            for value in [
+                "",
+                "no_braces",
+                "empty_{}",
+                "one_{item}",
+                "unclosed_{_brace",
+                "two_{a,b}_expanses_{x,y}",
+                # braces into braces
+                "{a,{b,c},d}",
+                "{a,{}",
+                "{a,b}c}",
+                "{a,{b,}",
+                "{{}}",
+                "{{one}}",
+            ]
+        ]
+    )
+    def test_expand_braces_failure(self, value):
+        with self.assertRaises(ValueError):
+            util.expand_braces(value)
