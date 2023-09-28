@@ -335,9 +335,9 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
 
 def rename_field(cr, model, old, new, update_references=True, domain_adapter=None, skip_inherit=()):
     _validate_model(model)
-    rf = ENVIRON["__renamed_fields"].get(model)
-    if rf:
-        rf[new] = rf.pop(old, old)
+
+    rf = ENVIRON["__renamed_fields"][model]
+    rf[new] = rf.pop(old, old)
 
     try:
         with savepoint(cr):
