@@ -4,6 +4,7 @@ import os
 from textwrap import dedent
 
 from psycopg2.extensions import quote_ident
+from psycopg2.extras import Json
 
 from odoo.tools.misc import str2bool
 
@@ -18,6 +19,7 @@ INCLUDE_ARCHIVED_PRODUCTS = str2bool(
     os.environ.get("ODOO_MIG_DO_NOT_IGNORE_ARCHIVED_PRODUCTS_FOR_UOM_INCONSISTENCIES"),
     default=False,
 )
+FIX_PRODUCT_UOM = str2bool(os.environ.get("ODOO_MIG_FIX_ALL_UOM_INCONSISTENCIES"), default=False)
 
 
 def verify_companies(
@@ -122,22 +124,36 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
     table = table_of_model(cr, model)
 
     q = lambda s: quote_ident(s, cr._cnx)
+
     query = """
-        SELECT t.id,
-               t.{uom_column},
-               tu.category_id,
-               pt.uom_id,
-               ptu.category_id
-        FROM {table} t
-        JOIN uom_uom tu ON t.{uom_column} = tu.id
-        JOIN product_product pp ON t.{product_column} = pp.id
-        JOIN product_template pt ON pp.product_tmpl_id = pt.id
-        JOIN uom_uom ptu ON pt.uom_id = ptu.id
-        WHERE tu.category_id != ptu.category_id
+        SELECT t.id line_id,
+               t.{uom_column} line_uom_id,
+               tu.{uom_name} line_uom_name,
+               tuc.{category_name} line_uom_categ_name,
+               pt.uom_id product_uom_id,
+               ptu.{uom_name} product_uom_name,
+               pt.id product_template_id,
+               pt.{product_template_name} product_template_name,
+               ptuc.{category_name} product_uom_categ_name
+          FROM {table} t
+          JOIN uom_uom tu ON t.{uom_column} = tu.id
+          JOIN uom_category tuc ON tu.category_id = tuc.id
+          JOIN product_product pp ON t.{product_column} = pp.id
+          JOIN product_template pt ON pp.product_tmpl_id = pt.id
+          JOIN uom_uom ptu ON pt.uom_id = ptu.id
+          JOIN uom_category ptuc ON ptu.category_id = ptuc.id
+         WHERE tu.category_id != ptu.category_id
+               {ids}
+               {active}
     """.format(
         table=q(table),
         uom_column=q(uom_field),
         product_column=q(product_field),
+        uom_name=get_value_or_en_translation(cr, "uom_uom", "name"),
+        category_name=get_value_or_en_translation(cr, "uom_category", "name"),
+        product_template_name=get_value_or_en_translation(cr, "product_template", "name"),
+        ids=" AND t.id IN %s" if ids else "",
+        active=" AND pp.active" if INCLUDE_ARCHIVED_PRODUCTS else "",
     )
 
     rows = []
@@ -145,7 +161,6 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         cr.execute(query)
         rows = cr.fetchall()
     elif ids:
-        query += " AND t.id IN %s"
         ids_chunks = chunks(ids, size=cr.IN_MAX, fmt=tuple)
         for chunk in ids_chunks:
             cr.execute(query, [chunk])
@@ -155,24 +170,93 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         return []
 
     title = model.replace(".", " ").title()
-    msg = dedent(
+
+    if FIX_PRODUCT_UOM:
+        line_new_ids = {line_id: prod_uom_id for line_id, _, _, _, prod_uom_id, _, _, _, _ in rows}
+        cr.execute(
+            """
+            UPDATE {table} t
+            SET {uom_column} = (%s::jsonb->t.id::text)::int
+            WHERE t.id IN %s
+            """.format(
+                table=q(table),
+                uom_column=q(uom_field),
+            ),
+            [
+                Json(line_new_ids),
+                tuple(line_new_ids),
+            ],
+        )
+
+        msg = dedent(
+            """
+        Upon your request, we have automatically fixed the faulty UoMs by picking it from
+        the Product Template and setting it on the {title}s.
+
+        Please, take the time to check that the following {title}s inconsistencies have
+        been updated to the right UoM:\n\n{updated_uoms}
         """
+        ).format(
+            title=title,
+            updated_uoms="\n".join(
+                "         * {}(id={}): Updated UoM from `{}`(id={}, category: `{}`) to `{}`(id={}, category: `{}`) for Product Template `{}`(id={})".format(
+                    title,
+                    line_id,
+                    line_uom,
+                    line_uom_id,
+                    line_uom_categ,
+                    prod_uom,
+                    prod_uom_id,
+                    prod_uom_categ,
+                    prod_temp,
+                    prod_temp_id,
+                )
+                for line_id, line_uom_id, line_uom, line_uom_categ, prod_uom_id, prod_uom, prod_temp_id, prod_temp, prod_uom_categ in rows
+            ),
+        )
+        faulty_ids = []
+
+    else:
+        msg = """
         There is a UoM mismatch in some {title}s. The category of the UoM defined on the
-        {title} is different from that defined on the Product Template. To allow the upgrade to
-        continue, the UoM categories on the {title} and on the Product Template must be the same.
-        These {title}s have inconsistencies:
+        {title} is different from that defined on the Product Template and must be the same to
+        avoid errors. We allowed the upgrade to continue, but these inconsistencies may cause error
+        during the upgrade or issues on the upgraded database.
+
+        To avoid any issue, here are the options to consider:
+
+         * fix these inconsistencies manually (below, the details of the affected records)
+         * let this script automatically fix the affected records by setting the environment variable
+           ODOO_MIG_FIX_ALL_UOM_INCONSISTENCIES to 1. It will take the UoM from the Product Template
+           and set it on the faulty {title}s.
+
+        You can also take the archived products into account for listing or fixing faulty lines by setting the
+        environment variable ODOO_MIG_DO_NOT_IGNORE_ARCHIVED_PRODUCTS_FOR_UOM_INCONSISTENCIES to 1
+
+        These {title}s have UoM inconsistencies:\n\n{uom_inconsistencies}
         """.format(
-            **locals()
+            title=title,
+            uom_inconsistencies="\n".join(
+                "         * {}(id={}) has UoM `{}`(id={}, category: `{}`), Product Template `{}`(id={}) has UoM `{}`(id={}, category: `{}`)".format(
+                    title,
+                    line_id,
+                    line_uom,
+                    line_uom_id,
+                    line_uom_categ,
+                    prod_temp,
+                    prod_temp_id,
+                    prod_uom,
+                    prod_uom_id,
+                    prod_uom_categ,
+                )
+                for line_id, line_uom_id, line_uom, line_uom_categ, prod_uom_id, prod_uom, prod_temp_id, prod_temp, prod_uom_categ in rows
+            ),
         )
-    )
-    msg += "\n".join(
-        "  * {}(id={}) has UoM(id={},category={}), Product Template has UoM(id={},category={})".format(
-            title, line_id, line_uom, line_uom_category, product_uom, product_uom_category
-        )
-        for line_id, line_uom, line_uom_category, product_uom, product_uom_category in rows
-    )
+        faulty_ids = [r[0] for r in rows]
+
     _logger.warning("\n%s\n", msg)
-    return [r[0] for r in rows]
+    add_to_migration_reports(category=title + " UoM Inconsistencies", message=msg, format="md")
+    return faulty_ids
 
 
 def verify_products(
