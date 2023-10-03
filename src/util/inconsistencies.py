@@ -1,14 +1,23 @@
 # -*- coding: utf-8 -*-
 import logging
+import os
 from textwrap import dedent
 
 from psycopg2.extensions import quote_ident
 
+from odoo.tools.misc import str2bool
+
 from .helpers import _validate_model, table_of_model
 from .misc import chunks
+from .pg import get_value_or_en_translation
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
+
+INCLUDE_ARCHIVED_PRODUCTS = str2bool(
+    os.environ.get("ODOO_MIG_DO_NOT_IGNORE_ARCHIVED_PRODUCTS_FOR_UOM_INCONSISTENCIES"),
+    default=False,
+)
 
 
 def verify_companies(
@@ -202,17 +211,28 @@ def verify_products(
     query = """
         SELECT f.id,
                f.{foreign_model_product_field},
+               fpt.{name},
                t.id,
-               t.{model_product_field}
+               t.{model_product_field},
+               tpt.{name}
           FROM {table} t
           JOIN {foreign_table} f ON f.{foreign_model_reference_field} = t.id
+          JOIN product_product tpp ON t.{model_product_field} = tpp.id
+          JOIN product_template tpt ON tpp.product_tmpl_id = tpt.id
+          JOIN product_product fpp ON f.{foreign_model_product_field} = fpp.id
+          JOIN product_template fpt ON fpp.product_tmpl_id = fpt.id
          WHERE f.{foreign_model_product_field} != t.{model_product_field}
+               {ids}
+               {active}
     """.format(
+        name=get_value_or_en_translation(cr, "product_template", "name"),
         table=q(table),
         foreign_table=q(foreign_table),
         foreign_model_reference_field=q(foreign_model_reference_field),
         model_product_field=q(model_product_field),
         foreign_model_product_field=q(foreign_model_product_field),
+        ids=" AND t.id IN %s" if ids else "",
+        active=" AND tpp.active" if INCLUDE_ARCHIVED_PRODUCTS else "",
     )
 
     rows = []
@@ -220,7 +240,6 @@ def verify_products(
         cr.execute(query)
         rows = cr.fetchall()
     elif ids:
-        query += " AND t.id IN %s"
         ids_chunks = chunks(ids, size=cr.IN_MAX, fmt=tuple)
         for chunk in ids_chunks:
             cr.execute(query, [chunk])
@@ -231,21 +250,25 @@ def verify_products(
 
     title = model.replace(".", " ").title()
     foreign_title = foreign_model.replace(".", " ").title()
-    msg = dedent(
-        """
-        There is a product mismatch in some {foreign_title}. The product defined on the {foreign_title}
-        is different from that defined on the {title}. To allow the upgrade to continue, the product
-        on the {foreign_title} and on the {title} must be the same.
-        These {foreign_title} have inconsistencies:
-        """.format(
-            **locals()
-        )
+    msg = """
+    There is a product mismatch in some {foreign_title}. The product defined on the {foreign_title}
+    is different from that defined on the {title}. To allow the upgrade to continue, the product
+    on the {foreign_title} and on the {title} must be the same.
+    These {foreign_title} have inconsistencies:
+    """.format(
+        **locals()
     )
     msg += "\n".join(
-        "  * {}(id={}) has Product(id={}), {}(id={}) has Product(id={})".format(
-            foreign_title, foreign_line_id, foreign_line_product, title, line_id, line_product
+        "     * {}(id={}) has Product `{}`(id={}), {}(id={}) has Product `{}`(id={})".format(
+            foreign_title, fline_id, fline_product, fline_product_id, title, line_id, line_product, line_product_id
         )
-        for foreign_line_id, foreign_line_product, line_id, line_product in rows
+        for fline_id, fline_product_id, fline_product, line_id, line_product_id, line_product in rows
+    )
+
+    add_to_migration_reports(
+        category=title + " - " + foreign_title + " Products Inconsistencies",
+        message=msg,
+        format="md",
     )
     _logger.warning("\n%s\n", msg)
     return [r[0] for r in rows]
