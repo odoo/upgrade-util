@@ -174,6 +174,34 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             [model, fieldname],
         )
 
+    # update tracking values
+    if column_exists(cr, "mail_tracking_value", "field_info"):
+        cr.execute(
+            """
+                SELECT id, field_description, name, ttype
+                  FROM ir_model_fields
+                 WHERE model=%s
+                   AND name=%s
+            """,
+            (model, fieldname),
+        )
+        if cr.rowcount:
+            (field_id, field_desc_w_translation, name, ttype) = cr.fetchone()
+            field_desc = field_desc_w_translation.get("en_US", next(iter(field_desc_w_translation.values())))
+            fields_info = {
+                "desc": field_desc,
+                "name": name,
+                "type": ttype,
+            }
+            cr.execute(
+                """
+                UPDATE mail_tracking_value
+                   SET field_info = %s
+                 WHERE field_id = %s
+                """,
+                (psycopg2.extras.Json(fields_info), field_id),
+            )
+
     # remove this field from dependencies of other fields
     if column_exists(cr, "ir_model_fields", "depends"):
         cr.execute(
