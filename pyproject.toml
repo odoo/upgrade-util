@@ -50,6 +50,7 @@ select = [
     # explicit rules
     "COM818",  # trailing-comma-on-bare-tuple; other rules handled by autoformatter
     "FBT003",  # boolean-positional-value-in-call; other rules not python2 compatible
+    "UP005",   # deprecated-unittest-alias
 
 ]
 

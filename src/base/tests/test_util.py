@@ -377,7 +377,7 @@ class TestIterBrowse(UnitTestCase):
         names = [f"Title {i}" for i in range(7)]
         ib = util.iter_browse(RPT, [], chunk_size=chunk_size)
         records = ib.create([{"name": name} for name in names], multi=multi)
-        self.assertEquals([t.name for t in records], names)
+        self.assertEqual([t.name for t in records], names)
 
     def test_iter_browse_iter_twice(self):
         cr = self.env.cr
