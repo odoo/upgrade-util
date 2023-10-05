@@ -715,6 +715,28 @@ def update_record_from_xml(
     reset_translations=(),
     ensure_references=False,
 ):
+    __update_record_from_xml(
+        cr,
+        xmlid,
+        reset_write_metadata=reset_write_metadata,
+        force_create=force_create,
+        from_module=from_module,
+        reset_translations=reset_translations,
+        ensure_references=ensure_references,
+        done_refs=set(),
+    )
+
+
+def __update_record_from_xml(
+    cr,
+    xmlid,
+    reset_write_metadata,
+    force_create,
+    from_module,
+    reset_translations,
+    ensure_references,
+    done_refs,
+):
     from .modules import get_manifest
 
     # Force update of a record from xml file to bypass the noupdate flag
@@ -798,14 +820,20 @@ def update_record_from_xml(
                         for ref_match in re.finditer(r"\bref\((['\"])(.*?)\1\)", eval_node.get("eval")):
                             add_ref(ref_match.group(2))
 
-    done_refs = set()
+    done_refs.add(xmlid)
     for ref in extra_references:
         if ref in done_refs:
             continue
-        done_refs.add(ref)
         _logger.info("Update of %s - ensuring the reference %s exists", xmlid, ref)
-        update_record_from_xml(
-            cr, ref, reset_write_metadata=reset_write_metadata, force_create=True, ensure_references=True
+        __update_record_from_xml(
+            cr,
+            ref,
+            reset_write_metadata=reset_write_metadata,
+            force_create=True,
+            from_module=from_module,
+            reset_translations=reset_translations,
+            ensure_references=True,
+            done_refs=done_refs,
         )
 
     cr_or_env = env(cr) if version_gte("saas~16.2") else cr
