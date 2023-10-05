@@ -12,7 +12,7 @@ repos:
         files: '^src/\w+/(tests|0\.0\.0)/.*\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.288
+    rev: v0.0.292
     hooks:
     - id: ruff
       args: [ --fix, --exit-non-zero-on-fix ]
