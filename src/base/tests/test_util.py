@@ -753,7 +753,9 @@ class TestRecords(UnitTestCase):
 
     @unittest.skipUnless(util.version_gte("16.0"), "Only work on Odoo >= 16")
     def test_replace_in_all_jsonb_values(self):
-        test_partner_title = self.env["res.partner.title"].create({"name": "object.number object.numbercombined"})
+        test_partner_title = self.env["res.partner.title"].create(
+            {"name": r"""object.number '<"x">\y object.numbercombined"""}
+        )
 
         pattern_old = re.compile(r"\b\.number\b")
         pattern_new = re.compile(r"\b\.name\b")
@@ -765,11 +767,17 @@ class TestRecords(UnitTestCase):
 
         extra_filter = self.env.cr.mogrify("t.id = %s", (test_partner_title.id,)).decode()
         util.replace_in_all_jsonb_values(self.env.cr, "res_partner_title", "name", ".number", ".name", extra_filter)
+        util.replace_in_all_jsonb_values(
+            self.env.cr, "res_partner_title", "name", r"""'<"x">\y""", "GONE", extra_filter
+        )
         test_partner_title.invalidate_recordset(["name"])
 
         self.assertRegex(test_partner_title.name, pattern_new)
         self.assertRegex(test_partner_title.name, pattern_notouch)
         self.assertNotRegex(test_partner_title.name, pattern_old)
+        # ensure replacing works for patterns that do not start with a valid word start \w
+        # also ensure the replace works for multiple embedded quotes
+        self.assertEqual(test_partner_title.name, "object.name GONE object.numbercombined")
 
 
 class TestMisc(UnitTestCase):

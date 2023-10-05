@@ -1147,8 +1147,16 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
     execute the query in parallel.
     `old` can be a simple term (str) or a regexp (util.PGRegexp)
     """
-    re_old = old if isinstance(old, PGRegexp) else r"\y{}\y".format(re.escape(old))
-    match = 'exists($.* ? (@ like_regex "{}"))'.format(re_old.replace("\\", "\\\\").replace('"', r"\""))
+    re_old = (
+        old
+        if isinstance(old, PGRegexp)
+        else "{}{}{}".format(
+            r"\y" if re.match(r"\w", old[0]) else "",
+            re.escape(old),
+            r"\y" if re.match(r"\w", old[-1]) else "",
+        )
+    )
+    match = str(Json(re_old))[1:-1]  # escapes re_old into json string
 
     if extra_filter is None:
         extra_filter = "true"
@@ -1161,7 +1169,7 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
                FROM "{table}" t
                JOIN LATERAL jsonb_each_text(t."{column}") v
                  ON true
-              WHERE jsonb_path_match(t."{column}", %s)
+              WHERE jsonb_path_match(t."{column}", 'exists($.* ? (@ like_regex {match}))')
                 AND {extra_filter}
               GROUP BY t.id
         )
@@ -1172,7 +1180,7 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
         """.format(
             **locals()
         ),
-        [re_old, new, match],
+        [re_old, new],
     ).decode()
 
     if "{parallel_filter}" in query:
