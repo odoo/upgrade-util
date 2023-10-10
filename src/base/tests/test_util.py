@@ -625,6 +625,7 @@ class TestRecords(UnitTestCase):
         for key, value in data_before.items():
             self.assertEqual(record[key], value)
 
+    def test_update_record_from_xml_recursive_menuitem(self):
         # reset all fields on a <menuitem>
         xmlid = "base.menu_security"
         data_after = {"name": "ATotallyValidSecurityMenu", "sequence": 112, "parent_id": self.env["ir.ui.menu"]}
@@ -642,6 +643,7 @@ class TestRecords(UnitTestCase):
         for key, value in data_before.items():
             self.assertEqual(record[key], value)
 
+    def test_update_record_from_xml_template_tag(self):
         # reset all fields on a <template>
         template_xmlid = "base.contact_name"
         record = self.env.ref(template_xmlid)
