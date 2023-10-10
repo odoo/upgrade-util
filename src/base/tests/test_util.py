@@ -1,6 +1,7 @@
 import operator
 import re
 import unittest
+import uuid
 from ast import literal_eval
 
 from lxml import etree
@@ -635,13 +636,42 @@ class TestRecords(UnitTestCase):
             record.write({key: value})
             self.assertEqual(record[key], value)
 
-        util.update_record_from_xml(self.env.cr, xmlid, ensure_references=True)
+        util.update_record_from_xml(self.env.cr, xmlid)
         if util.version_gte("16.0"):
             record.invalidate_recordset(["name"])
         else:
             record.invalidate_cache(["name"], record.ids)
         for key, value in data_before.items():
             self.assertEqual(record[key], value)
+
+    def test_upgrade_record_from_xml_ensure_references(self):
+        def change(xmlid):
+            cat = self.env.ref(xmlid)
+            result = cat.name
+            cat.write({"name": str(uuid.uuid4())})
+            util.flush(cat)
+            util.invalidate(cat)
+            return result
+
+        if util.version_gte("saas~13.5"):
+            xmlid_tree = [
+                "base.module_category_accounting_localizations_account_charts",
+                "base.module_category_accounting_localizations",
+                "base.module_category_accounting",
+            ]
+        else:
+            xmlid_tree = [
+                "base.module_category_localization_account_charts",
+                "base.module_category_localization",
+            ]
+
+        old_names = [change(xmlid) for xmlid in xmlid_tree]
+
+        util.update_record_from_xml(self.env.cr, xmlid_tree[0], ensure_references=True)
+
+        for xmlid, expected in zip(xmlid_tree, old_names):
+            cat = self.env.ref(xmlid)
+            self.assertEqual(cat.name, expected)
 
     def test_update_record_from_xml_template_tag(self):
         # reset all fields on a <template>
