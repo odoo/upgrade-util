@@ -12,6 +12,7 @@ from operator import itemgetter
 
 try:
     import odoo
+    from odoo.modules.db import create_categories
     from odoo.tools.func import frame_codeinfo
     from odoo.tools.misc import topological_sort
 
@@ -22,6 +23,7 @@ try:
 except ImportError:
     import openerp as odoo
     from openerp.modules import load_information_from_description_file as get_manifest
+    from openerp.modules.db import create_categories
     from openerp.tools.func import frame_codeinfo
 
     try:
@@ -573,6 +575,7 @@ def module_auto_install(cr, module, auto_install):
         )
 
     cr.execute("UPDATE ir_module_module SET auto_install = %s WHERE name = %s", [auto_install is not False, module])
+    trigger_auto_install(cr, module)
 
 
 def trigger_auto_install(cr, module):
@@ -614,7 +617,12 @@ def trigger_auto_install(cr, module):
     return bool(cr.rowcount)
 
 
-def new_module(cr, module, deps=(), auto_install=False):
+def _set_module_category(cr, module, category):
+    cid = create_categories(cr, category.split("/"))
+    cr.execute("UPDATE ir_module_module SET category_id=%s WHERE name=%s", [cid, module])
+
+
+def new_module(cr, module, deps=(), auto_install=False, category=None):
     if deps:
         _assert_modules_exists(cr, *deps)
 
@@ -633,11 +641,7 @@ def new_module(cr, module, deps=(), auto_install=False):
         cr.execute("DELETE FROM ir_module_module_dependency WHERE module_id = %s", [mod_id])
 
     else:
-        if deps and auto_install and not module.startswith("test_"):
-            to_check = deps if auto_install is True else auto_install
-            state = "to install" if modules_installed(cr, *to_check) else "uninstalled"
-        else:
-            state = "uninstalled"
+        state = "uninstalled"
         cr.execute(
             """
             INSERT INTO ir_module_module (name, state, demo)
@@ -658,6 +662,9 @@ def new_module(cr, module, deps=(), auto_install=False):
 
     for dep in deps:
         new_module_dep(cr, module, dep)
+
+    if category is not None:
+        _set_module_category(cr, module, category)
 
     module_auto_install(cr, module, auto_install)
 
@@ -735,18 +742,19 @@ def _trigger_auto_discovery(cr):
     graph = {}
     for module in odoo.modules.get_modules():
         manifest = get_manifest(module)
-        graph[module] = (set(manifest["depends"]), manifest["auto_install"])
+        graph[module] = (set(manifest["depends"]), manifest["auto_install"], manifest["category"])
 
     for module in topological_sort({k: v[0] for k, v in graph.items()}):
-        deps, auto_install = graph[module]
+        deps, auto_install, category = graph[module]
         if module not in existing:
-            new_module(cr, module, deps=deps, auto_install=auto_install)
+            new_module(cr, module, deps=deps, auto_install=auto_install, category=category)
         else:
             current_deps = set(existing[module])
             plus = deps - current_deps
             minus = current_deps - deps
             if plus or minus:
                 module_deps_diff(cr, module, plus=plus, minus=minus)
+            _set_module_category(cr, module, category)
             module_auto_install(cr, module, auto_install)
 
         if module in force_installs:
