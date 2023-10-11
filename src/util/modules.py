@@ -33,13 +33,14 @@ from .const import ENVIRON, NEARLYWARN
 from .exceptions import MigrationError, SleepyDeveloperError
 from .fields import remove_field
 from .helpers import _validate_model, table_of_model
-from .misc import on_CI, version_gte
+from .misc import on_CI, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import column_exists, table_exists, target_of
-from .records import remove_menus, remove_records, remove_view, replace_record_references_batch
+from .records import ref, remove_menus, remove_records, remove_view, replace_record_references_batch
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
+NO_AUTOINSTALL = str2bool(os.getenv("UPG_NO_AUTOINSTALL", "0")) if version_gte("15.0") else False
 _logger = logging.getLogger(__name__)
 
 # python3 shims
@@ -450,6 +451,13 @@ def force_install_module(cr, module, if_installed=None):
         if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
             dep_match = "AND d.auto_install_required = TRUE AND e.auto_install_required = TRUE"
 
+        cat_match = ""
+        if NO_AUTOINSTALL:
+            # even if we skip auto installs, we still need to auto install the real link-modules.
+            # those are in the "Hidden" category
+            hidden = ref(cr, "base.module_category_hidden")
+            cat_match = cr.mogrify("AND on_me.category_id = %s", [hidden]).decode()
+
         cr.execute(
             """
             SELECT on_me.name
@@ -461,12 +469,13 @@ def force_install_module(cr, module, if_installed=None):
                AND on_me.state = 'uninstalled'
                AND on_me.auto_install = TRUE
                {}
+               {}
           GROUP BY on_me.name
             HAVING
                    -- are all dependencies (to be) installed?
                    array_agg(its_deps.state)::text[] <@ %s
         """.format(
-                dep_match
+                dep_match, cat_match
             ),
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
@@ -572,6 +581,13 @@ def trigger_auto_install(cr, module):
     if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
         dep_match = "d.auto_install_required = true"
 
+    cat_match = "true"
+    if NO_AUTOINSTALL:
+        # even if we skip auto installs, we still need to auto install the real link-modules.
+        # those are in the "Hidden" category
+        hidden = ref(cr, "base.module_category_hidden")
+        cat_match = cr.mogrify("m.category_id = %s", [hidden]).decode()
+
     query = """
         WITH to_install AS (
             SELECT m.id
@@ -582,6 +598,7 @@ def trigger_auto_install(cr, module):
                AND m.state = 'uninstalled'
                AND m.auto_install = true
                AND {}
+               AND {}
           GROUP BY m.id
             HAVING bool_and(md.state IN %s)
         )
@@ -590,7 +607,7 @@ def trigger_auto_install(cr, module):
           FROM to_install t
          WHERE t.id = m.id
     """.format(
-        dep_match
+        dep_match, cat_match
     )
 
     cr.execute(query, [module, INSTALLED_MODULE_STATES])
