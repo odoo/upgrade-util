@@ -757,6 +757,18 @@ class TestRecords(UnitTestCase):
         # web.layout should NOT have been updated
         self.assertEqual(layout.name, new_name)
 
+    def test_update_record_from_xml_bad_match(self):
+        cr = self.env.cr
+        if not util.module_installed(cr, "web"):
+            self.skip()
+
+        xmlid = "web.login"
+        util.update_record_from_xml(cr, xmlid)
+
+        arch = self.env.ref(xmlid).arch_db
+        tree = etree.fromstring(arch)
+        self.assertIsNotNone(tree.find(".//input[@id='login']"))
+
     def test_ensure_xmlid_match_record(self):
         cr = self.env.cr
         tx1 = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})

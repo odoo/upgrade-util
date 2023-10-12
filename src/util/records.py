@@ -756,7 +756,7 @@ def update_record_from_xml(
         if module == from_module
         else "@id='{module}.{name}'".format(module=module, name=name)
     )
-    xpath = "//*[{}]".format(id_match)
+    xpath = "//*[self::act_window or self::menuitem or self::record or self::report or self::template][{}]".format(id_match)  # fmt: skip
 
     # use a data tag inside openerp tag to be compatible with all supported versions
     new_root = lxml.etree.fromstring("<openerp><data/></openerp>")
