@@ -737,6 +737,26 @@ class TestRecords(UnitTestCase):
             for fname, value in field_to_value.items():
                 self.assertEqual(template_record.with_context(lang=lang)[fname], value)
 
+    def test_update_record_from_xml__from_module(self):
+        cr = self.env.cr
+        if not util.module_installed(cr, "web"):
+            self.skip()
+
+        layout = self.env.ref("web.report_layout")
+        new_name = str(uuid.uuid4())
+
+        layout.write({"name": new_name})
+        util.flush(layout)
+        util.invalidate(layout)
+
+        # the record `base.report_layout` does not exists, so we must pass the `force_create`.
+        # we only test that it won't update `web.report_layout`.
+        util.update_record_from_xml(cr, "base.report_layout", from_module="web", force_create=True)
+        util.invalidate(layout)
+
+        # web.layout should NOT have been updated
+        self.assertEqual(layout.name, new_name)
+
     def test_ensure_xmlid_match_record(self):
         cr = self.env.cr
         tx1 = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})

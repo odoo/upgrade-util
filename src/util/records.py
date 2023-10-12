@@ -749,11 +749,18 @@ def update_record_from_xml(
         cr.execute("SELECT write_uid, write_date, id FROM {} WHERE id=%s".format(table), [res_id])
         write_data = cr.fetchone()
 
-    xpath = "//*[@id='{module}.{name}' or @id='{name}']".format(module=module, name=name)
+    from_module = from_module or module
+
+    id_match = (
+        "@id='{module}.{name}' or @id='{name}'".format(module=module, name=name)
+        if module == from_module
+        else "@id='{module}.{name}'".format(module=module, name=name)
+    )
+    xpath = "//*[{}]".format(id_match)
+
     # use a data tag inside openerp tag to be compatible with all supported versions
     new_root = lxml.etree.fromstring("<openerp><data/></openerp>")
 
-    from_module = from_module or module
     manifest = get_manifest(from_module)
     template = False
     extra_references = []
