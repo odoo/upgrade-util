@@ -12,7 +12,7 @@ repos:
         files: '^src/\w+/(tests|0\.0\.0)/.*\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.292
+    rev: v0.1.0
     hooks:
     - id: ruff
       name: Check code with Ruff, apply automatic fixes
@@ -23,7 +23,7 @@ repos:
       - id: black
         name: Format code with Black automatically
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
     - id: check-xml
     - id: check-yaml
