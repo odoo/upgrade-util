@@ -3,6 +3,8 @@ import collections
 import logging
 import re
 
+import lxml
+
 try:
     from contextlib import suppress
 except ImportError:
@@ -310,42 +312,49 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     cr.execute("SELECT id, model FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
     for view_id, view_model in cr.fetchall():
         # Note: active=None is important to not reactivate views!
-        with suppress(_Skip), edit_view(cr, view_id=view_id, active=None) as view:
-            modified = False
-            for node in view.xpath(
-                "//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)
-            ):
-                attr = "domain" if "domain" in node.attrib else "filter_domain"
-                domain = _adapt_one_domain(
-                    cr, target_model, old, new, view_model, node.get(attr), adapter=adapter, force_adapt=force_adapt
-                )
-                if domain:
-                    node.set(attr, unicode(domain))
-                    modified = True
+        try:
+            with suppress(_Skip), edit_view(cr, view_id=view_id, active=None) as view:
+                modified = False
+                for node in view.xpath(
+                    "//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)
+                ):
+                    attr = "domain" if "domain" in node.attrib else "filter_domain"
+                    domain = _adapt_one_domain(
+                        cr, target_model, old, new, view_model, node.get(attr), adapter=adapter, force_adapt=force_adapt
+                    )
+                    if domain:
+                        node.set(attr, unicode(domain))
+                        modified = True
 
-            for node in view.xpath("//field[contains(@domain, '{0}')]".format(old)):
-                # as <fields> can happen in sub-views, we should deternine the actual model the field belongs to
-                path = list(reversed([p.get("name") for p in node.iterancestors("field")])) + [node.get("name")]
-                field_model = _model_of_path(cr, view_model, path)
-                if not field_model:
-                    continue
+                for node in view.xpath("//field[contains(@domain, '{0}')]".format(old)):
+                    # as <fields> can happen in sub-views, we should deternine the actual model the field belongs to
+                    path = list(reversed([p.get("name") for p in node.iterancestors("field")])) + [node.get("name")]
+                    field_model = _model_of_path(cr, view_model, path)
+                    if not field_model:
+                        continue
 
-                domain = _adapt_one_domain(
-                    cr,
-                    target_model,
-                    old,
-                    new,
-                    field_model,
-                    node.get("domain"),
-                    adapter=adapter,
-                    force_adapt=force_adapt,
-                )
-                if domain:
-                    node.set("domain", unicode(domain))
-                    modified = True
+                    domain = _adapt_one_domain(
+                        cr,
+                        target_model,
+                        old,
+                        new,
+                        field_model,
+                        node.get("domain"),
+                        adapter=adapter,
+                        force_adapt=force_adapt,
+                    )
+                    if domain:
+                        node.set("domain", unicode(domain))
+                        modified = True
 
-            if not modified:
-                raise _Skip
+                if not modified:
+                    raise _Skip
+        except lxml.etree.XMLSyntaxError as e:
+            if e.msg.startswith("Opening and ending tag mismatch"):
+                # this view is already wrong, we don't change it
+                _logger.warning("Skipping domain adpatation for invalid view (id=%s):\n%s", view_id, e.msg)
+                continue
+            raise
 
     # adapt domain in dashboards.
     # NOTE: does not filter on model at dashboard selection for handle dotted domains
