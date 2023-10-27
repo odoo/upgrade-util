@@ -220,7 +220,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
             else:
                 if isinstance(arch, unicode):
                     arch = arch.encode("utf-8")
-                arch_etree = lxml.etree.fromstring(arch)
+                arch_etree = lxml.etree.fromstring(arch.replace(b"&#13;\n", b"\n"))
                 yield arch_etree
                 arch_column_value = lxml.etree.tostring(arch_etree, encoding="unicode")
 
