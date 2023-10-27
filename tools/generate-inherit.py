@@ -102,6 +102,19 @@ class Version:
             name = name.split(".", 1)[-1]
         return cls(name)
 
+    @property
+    def python_target(self):
+        bounds = [
+            [(7, 0), black.mode.TargetVersion.PY27],
+            [(10, 17), black.mode.TargetVersion.PY36],
+            [(15, 0), black.mode.TargetVersion.PY37],
+            [(16, 3), black.mode.TargetVersion.PY310],
+        ]
+        for bound, target in reversed(bounds):
+            if bound <= self.ints:
+                return target
+        raise RuntimeError(f"Cannot determine python target for {self.name}")
+
 
 @dataclass(order=True)
 class Inherit:
@@ -116,7 +129,7 @@ class Inherit:
         return self.born <= version < self.dead
 
 
-_NEXT_MAJOR = 17
+_NEXT_MAJOR = 18
 _VERSIONS = {Version(f"{major}.0") for major in range(7, _NEXT_MAJOR)}
 _VERSIONS |= {Version(f"saas-{saas}") for saas in range(1, 19)}
 _VERSIONS |= {Version(f"saas-{major}.{minor}") for major in range(11, _NEXT_MAJOR) for minor in range(1, 6)}
@@ -396,7 +409,7 @@ def main(options: Namespace):
                 if fname in IGNORED_FILES or "test" in fname:
                     continue
                 code, _ = _read_python_source(pyfile)
-                node = black.lib2to3_parse(code)
+                node = black.lib2to3_parse(code, [version.python_target])
                 try:
                     list(visitor.visit(node))
                 except Exception:
