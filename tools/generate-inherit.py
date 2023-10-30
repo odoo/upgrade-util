@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: ERA001
 
 import io
 import itertools
@@ -210,7 +211,7 @@ def _read_python_source(filename):
     Do our best to decode a Python source file correctly.
     """
     try:
-        f = open(filename, "rb")
+        f = open(filename, "rb")  # noqa: SIM115
     except OSError:
         return None, None
     try:
@@ -286,7 +287,7 @@ class OdooVisitor(Visitor):
                     elif attr == "_inherits":
                         val = literal_eval(self.to_str(expr_stmt.children[2]))
                         inh.extend(val.items())
-                    else:
+                    else:  # noqa: PLR5501
                         # handle Many2one with delegate=True attribute
                         if (
                             len(expr_stmt.children) == 3
@@ -342,7 +343,9 @@ def init_repos(path: Path) -> None:
 def checkout(wd: Path, repo: Repo, version: Version) -> bool:
     gitdir = str(wd / repo.name)
 
-    hasref = subprocess.run(["git", "show-ref", "-q", "--verify", f"refs/remotes/origin/{version.name}"], cwd=gitdir)
+    hasref = subprocess.run(
+        ["git", "show-ref", "-q", "--verify", f"refs/remotes/origin/{version.name}"], cwd=gitdir, check=False
+    )
     if hasref.returncode != 0:
         return False  # unknow branch
     subprocess.run(
@@ -448,7 +451,7 @@ inheritance_data = frozendict({result!r})
     with open(pyproject, "rb") as fp:
         line_length = tomli.load(fp)["tool"]["black"]["line-length"]
     mode = black.FileMode(target_versions={black.TargetVersion.PY27}, line_length=line_length)
-    print(black.format_str(output, mode=mode), end="")
+    print(black.format_str(output, mode=mode), end="")  # noqa: T201
 
 
 # def debug(options: Namespace):
