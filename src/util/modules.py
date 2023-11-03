@@ -592,7 +592,6 @@ def trigger_auto_install(cr, module):
         cat_match = cr.mogrify("m.category_id = %s", [hidden]).decode()
 
     query = """
-        WITH to_install AS (
             SELECT m.id
               FROM ir_module_module_dependency d
               JOIN ir_module_module m ON m.id = d.module_id
@@ -604,17 +603,15 @@ def trigger_auto_install(cr, module):
                AND {}
           GROUP BY m.id
             HAVING bool_and(md.state IN %s)
-        )
-        UPDATE ir_module_module m
-           SET state = 'to install'
-          FROM to_install t
-         WHERE t.id = m.id
     """.format(
         dep_match, cat_match
     )
 
     cr.execute(query, [module, INSTALLED_MODULE_STATES])
-    return bool(cr.rowcount)
+    if cr.rowcount:
+        force_install_module(cr, module)
+        return True
+    return False
 
 
 def _set_module_category(cr, module, category):
