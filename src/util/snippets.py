@@ -199,9 +199,13 @@ class HTMLConverter:
         if not content:
             return (False, content)
         content = re.sub(r"^<\?xml .+\?>\s*", "", content.strip())
-        # Wrap in <wrap> node before parsing to preserve external comments and
-        # multi-root nodes
-        els = html.fromstring(f"<wrap>{content}</wrap>", parser=utf8_parser)
+        # Wrap in <wrap> node before parsing to preserve external comments and multi-root nodes,
+        # except for when this looks like a full html doc, because in this case the wrap tag breaks the logic in
+        # https://github.com/lxml/lxml/blob/2ac88908ffd6df380615c0af35f2134325e4bf30/src/lxml/html/html5parser.py#L184
+        els = html.fromstring(
+            content if content.strip()[:5].lower() == "<html" else f"<wrap>{content}</wrap>",
+            parser=utf8_parser,
+        )
         has_changed = self.has_changed(els)
         new_content = (
             re.sub(r"(^<wrap>|</wrap>$)", "", etree.tostring(els, encoding="unicode").strip())
