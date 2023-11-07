@@ -199,6 +199,11 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
         )
         [arch] = cr.fetchone() or [None]
         if arch:
+
+            def parse(arch):
+                arch = arch.encode("utf-8") if isinstance(arch, unicode) else arch
+                return lxml.etree.fromstring(arch.replace(b"&#13;\n", b"\n"))
+
             if jsonb_column:
 
                 def get_trans_terms(value):
@@ -207,7 +212,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
                     return terms
 
                 translation_terms = {lang: get_trans_terms(value) for lang, value in arch.items()}
-                arch_etree = lxml.etree.fromstring(arch["en_US"])
+                arch_etree = parse(arch["en_US"])
                 yield arch_etree
                 new_arch = lxml.etree.tostring(arch_etree, encoding="unicode")
                 terms_en = translation_terms["en_US"]
@@ -218,9 +223,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
                     }
                 )
             else:
-                if isinstance(arch, unicode):
-                    arch = arch.encode("utf-8")
-                arch_etree = lxml.etree.fromstring(arch.replace(b"&#13;\n", b"\n"))
+                arch_etree = parse(arch)
                 yield arch_etree
                 arch_column_value = lxml.etree.tostring(arch_etree, encoding="unicode")
 
