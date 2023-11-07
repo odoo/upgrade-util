@@ -575,7 +575,6 @@ def module_auto_install(cr, module, auto_install):
         )
 
     cr.execute("UPDATE ir_module_module SET auto_install = %s WHERE name = %s", [auto_install is not False, module])
-    trigger_auto_install(cr, module)
 
 
 def trigger_auto_install(cr, module):
@@ -664,6 +663,7 @@ def new_module(cr, module, deps=(), auto_install=False, category=None):
         _set_module_category(cr, module, category)
 
     module_auto_install(cr, module, auto_install)
+    trigger_auto_install(cr, module)
 
 
 def _caller_version(depth=2):
