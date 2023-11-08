@@ -10,3 +10,6 @@
 # hg stuff
 *.orig
 status
+
+# artefacts
+src/_version.py

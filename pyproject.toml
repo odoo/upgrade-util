@@ -1,3 +1,28 @@
+[project]
+name = "odoo_upgrade"
+authors = [
+    { name = "Odoo Upgrade Team", email = "upgrade@odoo.com" }
+]
+dynamic = ["version"]
+dependencies = ["markdown"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+only-include = ["src"]
+
+[tool.hatch.build.sources]
+"src" = "odoo/upgrade"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options.version_scheme = "calver-by-date"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/_version.py"
+
 [tool.black]
 line-length = 120
 
