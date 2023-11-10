@@ -469,6 +469,10 @@ class TestHelpers(UnitTestCase):
             self.assertEqual(util.model_of_table(cr, table), model)
 
 
+@unittest.skipIf(
+    util.version_gte("saas~17.1"),
+    "Starting Odoo 17, the info being stored in the database, the test can't lie about its base version",
+)
 class TestInherit(UnitTestCase):
     @classmethod
     def setUpClass(cls):

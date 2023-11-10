@@ -3,11 +3,48 @@ import logging
 import operator
 import os
 
-from ._inherit import inheritance_data
 from .const import ENVIRON
-from .misc import parse_version
+from .misc import _cached, parse_version, version_gte
 
 _logger = logging.getLogger(__name__)
+
+
+if version_gte("saas~17.1"):
+    from ._inherit import Inherit, frozendict
+
+    @_cached
+    def _get_inheritance_data(cr):
+        base_version = _get_base_version(cr)[:2] + ("*final",)
+        cr.execute(
+            """
+            SELECT p.model,
+                   array_agg(m.model ORDER BY i.id),
+                   array_agg(f.name ORDER BY i.id)
+              FROM ir_model_inherit i
+              JOIN ir_model m
+                ON m.id = i.model_id
+              JOIN ir_model p
+                ON p.id = i.parent_id
+         LEFT JOIN ir_model_fields f
+                ON f.id = i.parent_field_id
+          GROUP BY p.model
+        """
+        )
+        return frozendict(
+            {
+                parent: [
+                    Inherit(model=model, born=base_version, dead=None, via=via)
+                    for model, via in zip(children, vias, strict=True)
+                ]
+                for parent, children, vias in cr.fetchall()
+            }
+        )
+
+else:
+    from ._inherit import inheritance_data
+
+    def _get_inheritance_data(cr):
+        return inheritance_data
 
 
 def _get_base_version(cr):
@@ -49,7 +86,7 @@ def for_each_inherit(cr, model, skip=(), interval="[)"):
     if skip == "*":
         return
     cmp_ = _version_comparator(cr, interval)
-    for inh in inheritance_data.get(model, []):
+    for inh in _get_inheritance_data(cr).get(model, []):
         if inh.model in skip:
             continue
         if cmp_(inh):
@@ -61,7 +98,7 @@ def inherit_parents(cr, model, skip=(), interval="[)"):
         return
     skip = set(skip)
     cmp_ = _version_comparator(cr, interval)
-    for parent, inhs in inheritance_data.items():
+    for parent, inhs in _get_inheritance_data(cr).items():
         if parent in skip:
             continue
         for inh in inhs:
