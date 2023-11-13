@@ -129,10 +129,10 @@ class Inherit:
         return self.born <= version < self.dead
 
 
-_NEXT_MAJOR = 18
-_VERSIONS = {Version(f"{major}.0") for major in range(7, _NEXT_MAJOR)}
+_LAST_MAJOR = 17
+_VERSIONS = {Version(f"{major}.0") for major in range(7, _LAST_MAJOR + 1)}
 _VERSIONS |= {Version(f"saas-{saas}") for saas in range(1, 19)}
-_VERSIONS |= {Version(f"saas-{major}.{minor}") for major in range(11, _NEXT_MAJOR) for minor in range(1, 6)}
+_VERSIONS |= {Version(f"saas-{major}.{minor}") for major in range(11, _LAST_MAJOR) for minor in range(1, 6)}
 
 VERSIONS = sorted(_VERSIONS)
 
