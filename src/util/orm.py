@@ -196,6 +196,8 @@ def invalidate(records, *args):
 
 
 def no_selection_cache_validation(f=None):
+    if not version_gte("8.0"):
+        return f
     old_convert = ofields.Selection.convert_to_cache
 
     def _convert(self, value, record, validate=True):
