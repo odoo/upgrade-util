@@ -90,6 +90,19 @@ class UnitTestCase(TransactionCase, _create_meta(10, "upgrade_unit")):
             util.ENVIRON["__base_version"] = parse_version(bv)
 
 
+def skip_if_demo(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        assert args
+        self = args[0]
+        self.env.cr.execute("SELECT 1 FROM ir_module_module WHERE name='base' AND demo")
+        if self.env.cr.rowcount:
+            self.skipTest("This test is not guaranteed with demo data.")
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
 class UpgradeCommon(BaseCase):
     __initialized = False
 
@@ -213,6 +226,10 @@ class UpgradeCommon(BaseCase):
     def convert_check(self, value):
         return json.loads(json.dumps(value, sort_keys=True))
 
+    @skip_if_demo
+    def skip_if_demo(self):
+        pass
+
 
 def change_version(version_str):
     def version_decorator(obj):
@@ -327,8 +344,3 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
         patcher = patch.object(odoo.sql_db.Cursor, "commit", commit)
         patcher.start()
         self.addCleanup(patcher.stop)
-
-    def skip_if_demo(self):
-        self.env.cr.execute("SELECT 1 FROM ir_module_module WHERE name='base' AND demo")
-        if self.env.cr.rowcount:
-            self.skipTest("This invariant is not guaranteed with demo data.")
