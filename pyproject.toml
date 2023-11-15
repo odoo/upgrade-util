@@ -30,6 +30,7 @@ line-length = 120
 fix = true
 show-fixes = true
 ignore = [
+    "B904",  # raise-without-from-inside-except; not python2 compatible
     "B905",  # zip-without-explicit-strict; not python2 compatible
     "E501",  # line-too-long; handled by `black` formatting
     "E731",  # lambda-assignment
