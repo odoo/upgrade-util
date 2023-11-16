@@ -1,0 +1,22 @@
+# install the editorconfig plugin for your editor: http://editorconfig.org/#download
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.py]
+# 120 + 10%
+# See error B950 https://github.com/PyCQA/flake8-bugbear#opinionated-warnings
+max_line_length = 132
+
+[*.xml]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
