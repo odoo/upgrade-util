@@ -145,7 +145,11 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         [model, r"\y{}\y".format(fieldname)],
     )
     for id_, name, context_s in cr.fetchall():
-        context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
+        try:
+            context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
+        except SyntaxError:
+            _logger.warning("Invalid filter syntax %s: %s", id_, name)
+            continue
         changed = clean_context(context)
         cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
         if changed:
