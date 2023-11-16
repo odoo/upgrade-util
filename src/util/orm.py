@@ -424,6 +424,27 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
         )
         mock_x_email_fields = [r[0] for r in env.cr.fetchall()]
 
+    temp_ir_model_access_ids = []
+    if version_gte("14.0") and custom_models:
+        # 1.2 Version 14.0 and above requires new access rights for transient models,
+        # and the rights are yet to be added post standard upgrade for custom modules.
+        # To avoid access errors, create some temporary access rights for these models.
+        env.cr.execute(
+            """
+                INSERT INTO ir_model_access (name, model_id, active, perm_read)
+                     SELECT 'tmp_access', ir_model.id, true, true
+                       FROM ir_model
+                  LEFT JOIN ir_model_access
+                         ON ir_model_access.model_id = ir_model.id
+                      WHERE ir_model.model IN %s
+                        AND ir_model.transient
+                        AND ir_model_access.id IS NULL
+                  RETURNING id
+            """,
+            [custom_models],
+        )
+        temp_ir_model_access_ids = [r[0] for r in env.cr.fetchall()]
+
     # 2. Convert fields which are not in the registry to `manual` fields
     # and list the fields that were converted, to restore them back afterwards.
     # Also temporarily disable rules (ir.rule) that come from custom modules.
@@ -596,6 +617,8 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
             )
         if disabled_ir_rule_ids:
             env.cr.execute("UPDATE ir_rule SET active = 't' WHERE id IN %s", (tuple(disabled_ir_rule_ids),))
+        if temp_ir_model_access_ids:
+            env.cr.execute("DELETE FROM ir_model_access WHERE id IN %s", [tuple(temp_ir_model_access_ids)])
         for field_id, selection in updated_selection_fields:
             env.cr.execute("UPDATE ir_model_fields SET selection = %s WHERE id = %s", (selection, field_id))
         for field_id, on_delete in updated_many2one_fields:
