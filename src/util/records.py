@@ -2,7 +2,6 @@
 import logging
 import os
 import re
-from contextlib import contextmanager
 from operator import itemgetter
 
 import lxml
@@ -144,13 +143,8 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     remove_records(cr, "ir.ui.view", [view_id])
 
 
-@contextmanager
 def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=True):
     """Contextmanager that may yield etree arch of a view.
-    As it may not yield, you must use `skippable_cm`
-
-        with util.skippable_cm(), util.edit_view(cr, 'xml.id') as arch:
-            arch.attrib['string'] = 'My Form'
 
     When view_id is passed to identify a view, view's arch will always yield to be edited because
     we assume that xmlid for such view does not exist to check its noupdate flag.
@@ -183,52 +177,74 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
         data = cr.fetchone()
         if data:
             view_id, noupdate = data
+    return _EditViewContextManager(cr, xmlid, view_id, skip_if_not_noupdate, active, noupdate)
 
-    if view_id and not (skip_if_not_noupdate and not noupdate):
-        arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
-        jsonb_column = column_type(cr, "ir_ui_view", arch_col) == "jsonb"
-        cr.execute(
-            """
-                SELECT {arch}
-                  FROM ir_ui_view
-                 WHERE id=%s
-            """.format(
-                arch=arch_col,
-            ),
-            [view_id],
-        )
-        [arch] = cr.fetchone() or [None]
-        if arch:
-            if jsonb_column:
 
-                def get_trans_terms(value):
-                    terms = []
-                    xml_translate(terms.append, value)
-                    return terms
+class EditViewSkipException(Exception):
+    pass
 
-                translation_terms = {lang: get_trans_terms(value) for lang, value in arch.items()}
-                arch_etree = lxml.etree.fromstring(arch["en_US"])
-                yield arch_etree
-                new_arch = lxml.etree.tostring(arch_etree, encoding="unicode")
-                terms_en = translation_terms["en_US"]
-                arch_column_value = Json(
-                    {
-                        lang: xml_translate(dict(zip(terms_en, terms)).get, new_arch)
-                        for lang, terms in translation_terms.items()
-                    }
-                )
-            else:
+
+class _EditViewContextManager(object):
+    def __init__(self, *args):
+        self.args = args
+        cr = args[0]
+        self.arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+        self.jsonb_column = column_type(cr, "ir_ui_view", self.arch_col) == "jsonb"
+        self.skip = False  # if we should skip exceptions
+
+    def get_trans_terms(self, value):
+        terms = []
+        xml_translate(terms.append, value)
+        return terms
+
+    def __enter__(self):
+        cr, xmlid, view_id, skip_if_not_noupdate, active, noupdate = self.args
+        jsonb_column = self.jsonb_column
+
+        if view_id and not (skip_if_not_noupdate and not noupdate):
+            cr.execute(
+                "SELECT {arch} FROM ir_ui_view WHERE id=%s".format(arch=self.arch_col),
+                [view_id],
+            )
+            [arch] = cr.fetchone() or [None]
+            if arch:
+                if jsonb_column:
+                    self.translation_terms = {lang: self.get_trans_terms(value) for lang, value in arch.items()}
+                    self.arch_etree = lxml.etree.fromstring(arch["en_US"])
+                    return self.arch_etree
                 if isinstance(arch, unicode):
                     arch = arch.encode("utf-8")
-                arch_etree = lxml.etree.fromstring(arch.replace(b"&#13;\n", b"\n"))
-                yield arch_etree
-                arch_column_value = lxml.etree.tostring(arch_etree, encoding="unicode")
+                self.arch_etree = lxml.etree.fromstring(arch.replace(b"&#13;\n", b"\n"))
+                return self.arch_etree
+        _logger.info("Skip edit of view %s", xmlid if xmlid else "id={}".format(view_id))
+        self.skip = True
+        return None
 
-            set_active = ", active={}".format(bool(active)) if active is not None else ""
-            cr.execute(
-                "UPDATE ir_ui_view SET {arch}=%s{set_active} WHERE id=%s".format(arch=arch_col, set_active=set_active),
-                [arch_column_value, view_id],
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            if self.skip or exc_type is EditViewSkipException:
+                return True
+            return False  # Let the exception bubble
+
+        cr, xmlid, view_id, skip_if_not_noupdate, active, noupdate = self.args
+        if self.jsonb_column:
+            new_arch = lxml.etree.tostring(self.arch_etree, encoding="unicode")
+            terms_en = self.translation_terms["en_US"]
+            arch_column_value = Json(
+                {
+                    lang: xml_translate(dict(zip(terms_en, terms)).get, new_arch)
+                    for lang, terms in self.translation_terms.items()
+                }
             )
+        else:
+            arch_column_value = lxml.etree.tostring(self.arch_etree, encoding="unicode")
+
+        set_active = ", active={}".format(bool(active)) if active is not None else ""
+        cr.execute(
+            "UPDATE ir_ui_view SET {arch}=%s{set_active} WHERE id=%s".format(arch=self.arch_col, set_active=set_active),
+            [arch_column_value, view_id],
+        )
+        return False
 
 
 def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=16):

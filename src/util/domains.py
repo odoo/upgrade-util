@@ -6,12 +6,6 @@ import re
 import lxml
 
 try:
-    from contextlib import suppress
-except ImportError:
-    # python2 code, use the openerp vendor
-    from openerp.tools.misc import ignore as suppress
-
-try:
     from html import unescape
 except ImportError:
     # should not be needed in python2
@@ -31,7 +25,7 @@ from .helpers import _dashboard_actions, _validate_model
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext
 from .pg import column_exists, get_value_or_en_translation, table_exists
-from .records import edit_view
+from .records import EditViewSkipException, edit_view
 
 # python3 shims
 try:
@@ -41,10 +35,6 @@ except NameError:
 
 _logger = logging.getLogger(__name__)
 DomainField = collections.namedtuple("DomainField", "table domain_column model_select")
-
-
-class _Skip(Exception):
-    pass
 
 
 def _get_domain_fields(cr):
@@ -313,7 +303,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     for view_id, view_model in cr.fetchall():
         # Note: active=None is important to not reactivate views!
         try:
-            with suppress(_Skip), edit_view(cr, view_id=view_id, active=None) as view:
+            with edit_view(cr, view_id=view_id, active=None) as view:
                 modified = False
                 for node in view.xpath(
                     "//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)
@@ -348,7 +338,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                         modified = True
 
                 if not modified:
-                    raise _Skip
+                    raise EditViewSkipException("Unchanged view")
         except lxml.etree.XMLSyntaxError as e:
             if e.msg.startswith("Opening and ending tag mismatch"):
                 # this view is already wrong, we don't change it
