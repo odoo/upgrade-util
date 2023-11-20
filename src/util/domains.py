@@ -9,7 +9,12 @@ try:
     from contextlib import suppress
 except ImportError:
     # python2 code, use the openerp vendor
-    from openerp.tools.misc import ignore as suppress
+    try:
+        from openerp.tools.misc import ignore as suppress
+    except ImportError:
+        # this is to allow v7.0 DBs to import this module without errors
+        # note: some functions on this module will fail (like adapt_domains)
+        suppress = None
 
 try:
     from html import unescape
