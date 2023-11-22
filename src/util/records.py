@@ -505,7 +505,7 @@ def remove_group(cr, xml_id=None, group_id=None):
         return
 
     # Get all fks from table res_groups
-    fks = get_fk(cr, "res_groups")
+    fks = get_fk(cr, "res_groups", quote_ident=False)
 
     # Remove records referencing the group_id from the referencing tables (restrict fks)
     standard_tables = ["ir_model_access", "rule_group_rel"]
