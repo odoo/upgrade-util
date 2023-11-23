@@ -409,6 +409,17 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
             name = "%s_%s" % (name, fid)
             cr.execute("UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s", [name, fid])
         cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
+    # Updates custom field relation name to match the renamed standard field during upgrade.
+    cr.execute(
+        """
+        UPDATE ir_model_fields
+           SET relation_field = %s
+         WHERE relation = %s
+           AND relation_field = %s
+           AND state = 'manual'
+    """,
+        [new, model, old],
+    )
 
     if table_exists(cr, "ir_translation"):
         cr.execute(
