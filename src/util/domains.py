@@ -309,8 +309,8 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
         if column_exists(cr, "ir_ui_view", "arch_db")
         else "arch"
     )
-    cr.execute("SELECT id, model FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
-    for view_id, view_model in cr.fetchall():
+    cr.execute("SELECT id, model, active FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
+    for view_id, view_model, view_active in cr.fetchall():
         # Note: active=None is important to not reactivate views!
         try:
             with suppress(_Skip), edit_view(cr, view_id=view_id, active=None) as view:
@@ -350,10 +350,16 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                 if not modified:
                     raise _Skip
         except lxml.etree.XMLSyntaxError as e:
-            if e.msg.startswith("Opening and ending tag mismatch"):
+            if e.msg.startswith("Opening and ending tag mismatch") or not view_active:
                 # this view is already wrong, we don't change it
-                _logger.warning("Skipping domain adpatation for invalid view (id=%s):\n%s", view_id, e.msg)
+                _logger.warning(
+                    "Skipping domain adaptation for %sinvalid view (id=%s):\n%s",
+                    "" if view_active else "inactive, ",
+                    view_id,
+                    e.msg,
+                )
                 continue
+            _logger.error("Cannot adapt domain of invalid view (id=%s)", view_id)  # noqa: TRY400
             raise
 
     # adapt domain in dashboards.
