@@ -11,6 +11,7 @@ except ImportError:
 # migration environ, used to share data between scripts
 ENVIRON = {
     "__renamed_fields": collections.defaultdict(dict),
+    "__temp_rename_update_ref": collections.defaultdict(dict),
     "__modules_auto_discovery_force_installs": set(),
     "__modules_auto_discovery_force_upgrades": {},
     "__fix_fk_allowed_cascade": [],

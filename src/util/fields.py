@@ -93,7 +93,12 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
 def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
     _validate_model(model)
 
-    ENVIRON["__renamed_fields"][model][fieldname] = None
+    rf = ENVIRON["__renamed_fields"][model]
+    tm = ENVIRON["__temp_rename_update_ref"][model]
+    if fieldname in tm:
+        rf[tm[fieldname]] = rf.pop(fieldname, fieldname)
+    else:
+        rf[fieldname] = None
 
     def filter_value(key, value):
         if key == "orderedBy" and isinstance(value, dict):
@@ -996,6 +1001,8 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
     if only_models:
         for model in only_models:
             # skip all inherit, they will be handled by the resursive call
+            rf = ENVIRON["__temp_rename_update_ref"][model]
+            rf[old] = rf.pop(new, new)
             adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*", force_adapt=True)
             adapt_related(cr, model, old, new, skip_inherit="*")
 
