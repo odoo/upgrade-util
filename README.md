@@ -11,11 +11,14 @@ $ ./odoo-bin --upgrade-path=/path/to/upgrade-util/src,/path/to/other/upgrade/scr
 ```
 
 ### The alternative one
-On platforms where you dont manage odoo yourself, i.e. [Odoo.sh](https://www.odoo.sh/), you can install this package via pip:
+On platforms where you dont manage odoo yourself, you can install this package via pip:
 ```shell-session
 $ python3 -m pip install git+https://github.com/odoo/upgrade-util@master
 ```
-
+On [Odoo.sh](https://www.odoo.sh/) it is recommended to add it to the `requirements.txt` of your repository:
+```
+odoo_upgrade @ git+https://github.com/odoo/upgrade-util@master
+```
 ## How to use them?
 Once installed, the following packages are available
  - `odoo.upgrade.util`: the helper themself. See the wiki for info.
