@@ -12,18 +12,20 @@ try:
     from odoo import release
     from odoo.tools.convert import xml_import
     from odoo.tools.misc import file_open
+    from odoo.tools.safe_eval import safe_eval
     from odoo.tools.translate import xml_translate
 except ImportError:
     from openerp import release
     from openerp.tools.convert import xml_import
     from openerp.tools.misc import file_open
+    from openerp.tools.safe_eval import safe_eval
 
 from .const import NEARLYWARN
 from .exceptions import MigrationError
 from .helpers import _get_theme_models, _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import parse_version, version_gte
+from .misc import SelfPrintEvalContext, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
@@ -1338,3 +1340,47 @@ def remove_act_window_view_mode(cr, model, view_mode):
         """,
         [view_mode, model, view_mode, view_mode],
     )
+
+
+def adapt_search_views(cr, old, model, new=None, skip_inherit=()):
+    arch_db = (
+        get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
+        if column_exists(cr, "ir_ui_view", "arch_db")
+        else "arch"
+    )
+    match_old = r"\y{}\y".format(re.escape(old))
+    cr.execute(
+        """
+            SELECT id
+              FROM ir_ui_view
+             WHERE {} ~ %s
+               AND type = 'search'
+               AND model = %s
+        """.format(arch_db),
+        [match_old, model],
+    )
+    for view_id in cr.fetchall():
+        try:
+            with edit_view(cr, view_id=view_id, active=None) as view:
+                for elem in view.xpath("//filter[contains(@context, '{0}')]".format(old)):
+                    context = elem.attrib["context"]
+                    context = safe_eval(context or "{}", SelfPrintEvalContext(), nocopy=True)
+                    if "group_by" in context and context["group_by"] == old:
+                        if new:
+                            context["group_by"] = new
+                        else:
+                            context.pop("group_by")
+                            _logger.info(
+                                "Field %s was removed during the upgrade, context has been updated from filter %s to avoid disabling of custom view",
+                                old,
+                                elem.attrib["name"],
+                            )
+                        elem.attrib["context"] = unicode(context)
+        except lxml.etree.XMLSyntaxError as e:
+            # Error faced while editing view
+            _logger.warning("Skipping custom search view adaptaiton for invalid view (id=%s):\n%s", view_id, e.msg)
+            continue
+
+    # down on inherits
+    for inh in for_each_inherit(cr, model, skip_inherit):
+        adapt_search_views(cr, old, inh.model, new=new, skip_inherit=skip_inherit)
