@@ -7,6 +7,7 @@ import uuid
 from concurrent.futures import ProcessPoolExecutor
 
 from lxml import etree, html
+from psycopg2 import sql
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
@@ -64,19 +65,17 @@ def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
     Will search for all the snippets in the fields mentionned (should be html fields) and add
     the corresponding data-snippet on them.
     """
-
-    def quote(ident):
-        return quote_ident(ident, cr._cnx)
-
     query = cr.mogrify(
-        f"""
-        SELECT id, array((SELECT regexp_matches({quote(column)}, %(regex)s, 'g'))), {column}
-          FROM {quote(table)}
-         WHERE {quote(column)} ~ %(regex)s
-        """,
+        sql.SQL(
+            """
+            SELECT id, array((SELECT regexp_matches({column}, %(regex)s, 'g'))), {column}
+              FROM {table}
+             WHERE {column} ~ %(regex)s
+            """
+        ).format(column=sql.Identifier(column), table=sql.Identifier(table)),
         {"regex": regex},
     ).decode()
-    where = cr.mogrify(f"{quote(column)} ~ %s", [regex]).decode()
+    where = cr.mogrify(sql.SQL("{column} ~ %s").format(column=sql.Identifier(column)), [regex]).decode()
     ids_ranges = determine_chunk_limit_ids(cr, table, [column], where)
     for id0, id1 in ids_ranges:
         add_snippet_names(cr, table, column, snippets, query + f" AND id BETWEEN {id0} AND {id1}")
