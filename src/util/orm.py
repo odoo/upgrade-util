@@ -28,7 +28,7 @@ except ImportError:
 from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
-from .misc import chunks, log_progress, version_gte
+from .misc import chunks, log_progress, version_between, version_gte
 from .pg import column_exists, get_columns
 
 # python3 shims
@@ -556,39 +556,48 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     rec_names = {key: model._rec_name for key, model in env.registry.models.items()}
 
     # 3.5 patches
-    # 3.5.1 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
-    # models that have been converted to manual have a too long name, and we dont have the `_table` info.
+    patches = []  # Ideally a contextlib.ExitStack but we need to support here Python2.7
+
+    @contextmanager
+    def all_patches():
+        for p in patches:
+            p.start()
+        yield
+        for p in reversed(patches):
+            p.stop()
+
     if version_gte("9.0"):
-        with patch("odoo.models.check_pg_name", lambda name: None):
-            # 3.5.2: `display_name` is added automatically, as a base field, and depends on the field `name`
-            # Sometimes, a custom model has no `name` field or it couldn't be loaded (e.g. an invalid `related`)
-            # Mark it as manual so its skipped on loading fail.
-            from odoo.models import BaseModel
+        # 3.5.1 `_build_model` calls `check_pg_name` even if the table is not created/altered, and in some cases
+        # models that have been converted to manual have a too long name, and we dont have the `_table` info.
+        patches.append(patch("odoo.models.check_pg_name", lambda name: None))
 
-            try:
-                origin_add_magic_fields = BaseModel._add_magic_fields
+    if version_between("9.0", "saas~14.3"):
+        # 3.5.2: `display_name` is added automatically, as a base field, and depends on the field `name`
+        # Sometimes, a custom model has no `name` field or it couldn't be loaded (e.g. an invalid `related`)
+        # Mark it as manual so its skipped on loading fail.
+        from odoo.models import BaseModel
 
-                def _add_magic_fields(self):
-                    res = origin_add_magic_fields(self)
-                    if self._custom and "display_name" in self._fields:
-                        self._fields["display_name"].manual = True
-                    return res
+        # Since saas-14.4, _add_magic_fields() no longer exists.  Moreover,
+        # '_rec_name' is automatically fixed when the field it refers to is
+        # dropped from the model's class.  Therefore, 'display_name' no
+        # longer needs to become manual.
+        origin_add_magic_fields = BaseModel._add_magic_fields
 
-                def patch_display_name():
-                    return patch.object(BaseModel, "_add_magic_fields", _add_magic_fields)
+        def _add_magic_fields(self):
+            res = origin_add_magic_fields(self)
+            if self._custom and "display_name" in self._fields:
+                self._fields["display_name"].manual = True
+            return res
 
-            except AttributeError:
-                # Since saas-14.4, _add_magic_fields() no longer exists.  Moreover,
-                # '_rec_name' is automatically fixed when the field it refers to is
-                # dropped from the model's class.  Therefore, 'display_name' no
-                # longer needs to become manual.
-                @contextmanager
-                def patch_display_name():
-                    yield
+        patches.append(patch.object(BaseModel, "_add_magic_fields", _add_magic_fields))
 
-            with patch_display_name():
-                # 4. Reload the registry with the models and fields converted to manual.
-                env.registry.setup_models(env.cr)
+    if version_gte("saas~16.4"):
+        # 3.5.3 allow loading manual fields
+        patches.append(patch("odoo.addons.base.models.ir_model.IrModelFields._is_manual_name", lambda self, name: True))
+
+    with all_patches():
+        # 4. Reload the registry with the models and fields converted to manual.
+        env.registry.setup_models(env.cr)
 
     # 5. Do the operation.
     yield
