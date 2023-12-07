@@ -114,6 +114,20 @@ else:
             )
 
 
+def format_query(cr, query, *args, **kwargs):
+    """
+    Format the `query` replacing arguments as SQL indentifiers
+    Example:
+    ```
+    >>> util.format_query(cr, "SELECT {0} FROM {table}", "id", table="res_users")
+    SELECT "id" FROM "res_users"
+    ```
+    """
+    args = tuple(a if isinstance(a, sql.Composable) else sql.Identifier(a) for a in args)
+    kwargs = {k: v if isinstance(v, sql.Composable) else sql.Identifier(v) for k, v in kwargs.items()}
+    return sql.SQL(query).format(*args, **kwargs).as_string(cr._cnx)
+
+
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     """
     Explode a query to multiple queries that can be executed in parallel
