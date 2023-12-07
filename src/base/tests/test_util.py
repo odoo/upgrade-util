@@ -924,3 +924,56 @@ class TestMisc(UnitTestCase):
     def test_expand_braces_failure(self, value):
         with self.assertRaises(ValueError):
             util.expand_braces(value)
+
+
+class TestQueryFormat(UnitTestCase):
+    @parametrize(
+        [
+            (
+                "SELECT id FROM {table}",
+                [],
+                {"table": "res_users"},
+                'SELECT id FROM "res_users"',
+            ),
+            (
+                "SELECT id FROM {1} WHERE {0} > 2",
+                ["id", "res_users"],
+                {},
+                'SELECT id FROM "res_users" WHERE "id" > 2',
+            ),
+            (
+                "SELECT id FROM {} WHERE {{parallel_filter}}",
+                ["res_users"],
+                {},
+                'SELECT id FROM "res_users" WHERE {parallel_filter}',
+            ),
+            (
+                "SELECT {col} FROM {table}",
+                [],
+                {"table": "res_users", "col": "id"},
+                'SELECT "id" FROM "res_users"',
+            ),
+            ("{col} = 1", [], {"col": "X; fd"}, '"X; fd" = 1'),
+            (
+                "{col1} = {col2}",
+                [],
+                {"col2": "X; fd", "col1": "xxx"},
+                '"xxx" = "X; fd"',
+            ),
+            (
+                "WITH {cte} AS (SELECT 1) SELECT 2",
+                [],
+                {"cte": "some info"},
+                'WITH "some info" AS (SELECT 1) SELECT 2',
+            ),
+            (
+                "UPDATE res_users SET id = 2 WHERE {col} = %s",
+                [],
+                {"col": "Ab"},
+                'UPDATE res_users SET id = 2 WHERE "Ab" = %s',
+            ),
+        ]
+    )
+    def test_format(self, query, args, kwargs, expected):
+        cr = self.env.cr
+        self.assertEqual(util.format_query(cr, query, *args, **kwargs), expected)
