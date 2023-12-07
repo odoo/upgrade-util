@@ -977,3 +977,38 @@ class TestQueryFormat(UnitTestCase):
     def test_format(self, query, args, kwargs, expected):
         cr = self.env.cr
         self.assertEqual(util.format_query(cr, query, *args, **kwargs), expected)
+
+    def test_format_ColumnList(self):
+        cr = self.env.cr
+
+        ignored = ("id", "create_date", "create_uid", "write_date", "write_uid")
+
+        columns = util.get_columns(cr, "ir_config_parameter", ignore=ignored)
+        no_columns = util.get_columns(cr, "ir_config_parameter", ignore=(*ignored, "key", "value"))
+
+        self.assertEqual(
+            util.format_query(cr, "SELECT id, {c}", c=columns),
+            'SELECT id, "key", "value"',
+        )
+
+        self.assertEqual(
+            util.format_query(cr, "SELECT id {c}", c=columns.using(leading_comma=True)),
+            'SELECT id , "key", "value"',
+        )
+        self.assertEqual(
+            util.format_query(cr, "SELECT {c} id", c=columns.using(trailing_comma=True)),
+            'SELECT "key", "value", id',
+        )
+        self.assertEqual(
+            util.format_query(cr, "SELECT {c}", c=columns.using(alias="a")),
+            'SELECT "a"."key", "a"."value"',
+        )
+        # leading/trailing comma only if list is not empty
+        self.assertEqual(
+            util.format_query(cr, "SELECT id {c}", c=no_columns.using(leading_comma=True)),
+            "SELECT id ",
+        )
+        self.assertEqual(
+            util.format_query(cr, "SELECT {c} id", c=no_columns.using(trailing_comma=True)),
+            "SELECT  id",
+        )

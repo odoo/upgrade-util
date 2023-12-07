@@ -7,13 +7,18 @@ import time
 import uuid
 import warnings
 from contextlib import contextmanager
-from functools import reduce
+from functools import partial, reduce
 from multiprocessing import cpu_count
 
 try:
     from concurrent.futures import ThreadPoolExecutor
 except ImportError:
     ThreadPoolExecutor = None
+
+try:
+    from collections import UserList
+except ImportError:
+    from UserList import UserList
 
 import psycopg2
 from psycopg2 import sql
@@ -670,13 +675,70 @@ def get_depending_views(cr, table, column):
     return cr.fetchall()
 
 
+class ColumnList(UserList, sql.Composable):
+    """
+    Encapsulate a list of elements that represent column names.
+    The resulting object can be rendered as string with leading/trailing comma or an alias.
+
+    Examples:
+    ```
+    >>> columns = ColumnList(["id", "field_Yx"], ["id", '"field_Yx"'])
+
+    >>> columns.using(alias="t").as_string(cr._cnx)
+    '"t"."id", "t"."field_Yx"'
+
+    >>> columns.using(leading_comma=True).as_string(cr._cnx)
+    ', "id", "field_Yx"'
+
+    >>> util.format(cr, "SELECT {} t.name FROM table t", columns.using(alias="t", trailing_comma=True))
+    'SELECT "t"."id", "t"."field_Yx", t.name FROM table t'
+    ```
+    """
+
+    def __init__(self, list_=(), quoted=()):
+        assert len(list_) == len(quoted)
+        self._unquoted_columns = list(list_)
+        super(ColumnList, self).__init__(quoted)
+        self._leading_comma = False
+        self._trailing_comma = False
+        self._alias = None
+
+    def using(self, leading_comma=False, trailing_comma=False, alias=None):
+        if self._leading_comma is leading_comma and self._trailing_comma is trailing_comma and self._alias == alias:
+            return self
+        new = ColumnList(self._unquoted_columns, self.data)
+        new._leading_comma = leading_comma
+        new._trailing_comma = trailing_comma
+        new._alias = alias
+        return new
+
+    def as_string(self, context):
+        head = sql.SQL(", " if self._leading_comma and self else "")
+        tail = sql.SQL("," if self._trailing_comma and self else "")
+
+        if not self._alias:
+            builder = sql.Identifier
+        elif hasattr(sql.Identifier, "strings"):
+            builder = partial(sql.Identifier, self._alias)
+        else:
+            # older psycopg2 versions, doesn't support passing multiple strings to the constructor
+            builder = lambda elem: sql.SQL(".").join(sql.Identifier(self._alias) + sql.Identifier(elem))
+
+        body = sql.SQL(", ").join(builder(elem) for elem in self._unquoted_columns)
+        return sql.Composed([head, body, tail]).as_string(context)
+
+    def iter_unquoted(self):
+        return iter(self._unquoted_columns)
+
+
 def get_columns(cr, table, ignore=("id",)):
     """return the list of columns in table (minus ignored ones)"""
     _validate_table(table)
 
     cr.execute(
         """
-            SELECT quote_ident(column_name)
+            SELECT coalesce(array_agg(column_name::varchar ORDER BY column_name), ARRAY[]::varchar[]),
+                   coalesce(array_agg(quote_ident(column_name) ORDER BY column_name), ARRAY[]::varchar[])
               FROM information_schema.columns
              WHERE table_schema = 'public'
                AND table_name = %s
@@ -684,7 +746,7 @@ def get_columns(cr, table, ignore=("id",)):
         """,
         [table, list(ignore)],
     )
-    return [c for c, in cr.fetchall()]
+    return ColumnList(*cr.fetchone())
 
 
 def rename_table(cr, old_table, new_table, remove_constraints=True):
