@@ -55,7 +55,7 @@ def env(cr):
             from openerp.api import Environment
         except ImportError:
             v = release.major_version
-            raise MigrationError("Hold on! There is not yet `Environment` in %s" % v)  # noqa: B904
+            raise MigrationError("Hold on! There is not yet `Environment` in %s" % v)
     return Environment(cr, SUPERUSER_ID, {})
 
 
