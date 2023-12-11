@@ -22,7 +22,7 @@ from .const import NEARLYWARN
 from .exceptions import MigrationError
 from .helpers import _get_theme_models, _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
-from .inherit import for_each_inherit
+from .inherit import direct_inherit_parents, for_each_inherit
 from .misc import parse_version, version_gte
 from .orm import env
 from .pg import (
@@ -597,6 +597,17 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
                 # iif the key has been updated for this view, also update it for all other cowed views.
                 # Don't change the view keys inconditionally to avoid changing unrelated views.
                 cr.execute("UPDATE ir_ui_view SET key = %s WHERE key = %s", [new, old])
+
+        for parent_model, inh in direct_inherit_parents(cr, model):
+            if inh.via:
+                parent = parent_model.replace(".", "_")
+                rename_xmlid(
+                    cr,
+                    "{}_{}".format(old, parent),
+                    "{}_{}".format(new, parent),
+                    noupdate=noupdate,
+                    on_collision=on_collision,
+                )
         return new_id
     return None
 
