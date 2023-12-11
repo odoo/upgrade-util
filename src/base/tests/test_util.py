@@ -513,6 +513,15 @@ class TestInherit(UnitTestCase):
         result = sorted(util.inherit_parents(cr, model))
         self.assertEqual(result, sorted(expected))
 
+    def test_direct_inherit_parents(self):
+        cr = self.env.cr
+        result = sorted(util.direct_inherit_parents(cr, "product.product"))
+        self.assertEqual(len(result), 3)
+        parents, inhs = zip(*result)
+        self.assertEqual(parents, ("mail.activity.mixin", "mail.thread", "product.template"))
+        self.assertTrue(all(inh.model == "product.product" for inh in inhs))
+        self.assertEqual([inh.via for inh in inhs], [None, None, "product_tmpl_id"])
+
 
 class TestNamedCursors(UnitTestCase):
     @staticmethod

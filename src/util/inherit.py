@@ -93,7 +93,10 @@ def for_each_inherit(cr, model, skip=(), interval="[)"):
             yield inh
 
 
-def inherit_parents(cr, model, skip=(), interval="[)"):
+def direct_inherit_parents(cr, model, skip=(), interval="[)"):
+    """
+    Yield the *direct* inherits parents.
+    """
     if skip == "*":
         return
     skip = set(skip)
@@ -103,7 +106,21 @@ def inherit_parents(cr, model, skip=(), interval="[)"):
             continue
         for inh in inhs:
             if inh.model == model and cmp_(inh):
-                yield parent
+                yield parent, inh
                 skip.add(parent)
-                for grand_parent in inherit_parents(cr, parent, skip=skip, interval=interval):
-                    yield grand_parent
+
+
+def inherit_parents(cr, model, skip=(), interval="[)"):
+    """
+    Recursively yield all inherit parents model names
+    """
+    if skip == "*":
+        return
+    skip = set(skip)
+    for parent, _inh in direct_inherit_parents(cr, model, skip=skip, interval=interval):
+        if parent in skip:
+            continue
+        yield parent
+        skip.add(parent)
+        for grand_parent in inherit_parents(cr, parent, skip=skip, interval=interval):
+            yield grand_parent
