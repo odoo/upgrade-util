@@ -1011,6 +1011,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             # skip all inherit, they will be handled by the resursive call
             adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*", force_adapt=True)
             adapt_related(cr, model, old, new, skip_inherit="*")
+            adapt_depends(cr, model, old, new, skip_inherit="*")
 
         inherited_models = tuple(
             inh.model for model in only_models for inh in for_each_inherit(cr, model, skip_inherit)
@@ -1019,6 +1020,41 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             _update_field_usage_multi(
                 cr, inherited_models, old, new, domain_adapter=domain_adapter, skip_inherit=skip_inherit
             )
+
+
+def adapt_depends(cr, model, old, new, skip_inherit=()):
+    # adapt depends for custom compute fields only. Standard fields will be updated by the ORM.
+    _validate_model(model)
+
+    if not column_exists(cr, "ir_model_fields", "depends"):
+        # this field only appears in 9.0
+        return
+
+    target_model = model
+
+    match_old = r"\y{}\y".format(re.escape(old))
+    cr.execute(
+        """
+        SELECT id, model, depends
+          FROM ir_model_fields
+         WHERE state = 'manual'
+           AND depends ~ %s
+        """,
+        [match_old],
+    )
+    for id_, model, depends in cr.fetchall():
+        temp_depends = depends.split(",")
+        for i in range(len(temp_depends)):
+            domain = _adapt_one_domain(cr, target_model, old, new, model, [(temp_depends[i], "=", "depends")])
+            if domain:
+                temp_depends[i] = domain[0][0]
+        new_depends = ",".join(temp_depends)
+        if new_depends != depends:
+            cr.execute("UPDATE ir_model_fields SET depends = %s WHERE id = %s", [new_depends, id_])
+
+    # down on inherits
+    for inh in for_each_inherit(cr, target_model, skip_inherit):
+        adapt_depends(cr, inh.model, old, new, skip_inherit=skip_inherit)
 
 
 def adapt_related(cr, model, old, new, skip_inherit=()):
