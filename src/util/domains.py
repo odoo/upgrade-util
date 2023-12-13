@@ -314,7 +314,8 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
         if column_exists(cr, "ir_ui_view", "arch_db")
         else "arch"
     )
-    cr.execute("SELECT id, model, active FROM ir_ui_view WHERE {} ~ %s".format(arch_db), [match_old])
+    active_col = "active" if column_exists(cr, "ir_ui_view", "active") else "true"
+    cr.execute("SELECT id, model, {} FROM ir_ui_view WHERE {} ~ %s".format(active_col, arch_db), [match_old])
     for view_id, view_model, view_active in cr.fetchall():
         # Note: active=None is important to not reactivate views!
         try:
