@@ -11,8 +11,11 @@
         }"/>
         <t t-set="view_action_link" t-value="'web?debug=1#view_type=form&amp;model=ir.ui.view&amp;action=%s&amp;id=%%s' % action_view_id"/>
         <t t-set="message_type" t-value="view_message_types[category]"/>
-        <div t-if="messages[category]">
-          <t t-esc="message_type[0]"/>
+        <li><details t-if="messages[category]">
+          <summary>
+            <t t-esc="message_type[0]"/>
+          </summary>
+          <ul>
           <t t-foreach="messages[category]" t-as="message">
             <t t-set="view" t-value="message[0]"/>
             <li>
@@ -28,13 +31,18 @@
               </t>
             </li>
           </t>
-        </div>
+          </ul>
+        </details></li>
       </t>
       <t t-elif="category == 'Filters/Dashboards'">
-        <p>During the upgrade some fields have been removed. The records below have been automatically corrected.</p>
-        <t t-foreach="messages[category]" t-as="message">
-          <a t-att-href="'web?debug=1#view_type=form&amp;model=%s&amp;id=%s' % (message[0][0], message[0][1])" t-esc="message[0][2]" target="_blank"/><br/>
-        </t>
+        <li><details>
+          <summary>During the upgrade some fields have been removed. The records below have been automatically corrected.</summary>
+          <ul>
+            <t t-foreach="messages[category]" t-as="message">
+              <li><a t-att-href="'web?debug=1#view_type=form&amp;model=%s&amp;id=%s' % (message[0][0], message[0][1])" t-esc="message[0][2]" target="_blank"/></li>
+            </t>
+          </ul>
+        </details></li>
       </t>
       <t t-else="">
         <t t-foreach="messages[category]" t-as="message">
