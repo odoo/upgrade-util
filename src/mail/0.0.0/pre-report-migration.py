@@ -9,8 +9,9 @@ except ImportError:
         return f
 
 
-from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.mail.models.mail_message import Message  # noqa
+
+from odoo.addons.base.maintenance.migrations import util
 
 
 def migrate(cr, version):

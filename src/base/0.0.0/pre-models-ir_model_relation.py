@@ -4,7 +4,7 @@ from odoo import api, models
 from odoo.addons.base.maintenance.migrations import util
 
 try:
-    from odoo.addons.base.models import ir_model as _ignore  # noqa
+    from odoo.addons.base.models import ir_model as _ignore
 except ImportError:
     # version 10
     from odoo.addons.base.ir import ir_model as _ignore  # noqa
