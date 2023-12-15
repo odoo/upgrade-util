@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+# ruff: noqa: T201
 import subprocess
 import sys
 from pathlib import PurePath
 
-py2_only_patterns = [
-]
+py2_only_patterns = []
 py2_files = []
 
 py3_only_patterns = [
