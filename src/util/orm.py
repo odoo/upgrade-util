@@ -419,9 +419,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
                     AND is_mail_blacklist
             ON CONFLICT DO NOTHING
               RETURNING id
-            """.format(
-                "" if version_gte("16.0") else "->>'en_US'"
-            ),
+            """.format("" if version_gte("16.0") else "->>'en_US'"),
             [tuple(updated_model_ids)],
         )
         mock_x_email_fields = [r[0] for r in env.cr.fetchall()]

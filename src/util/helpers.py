@@ -67,9 +67,7 @@ def table_of_model(cr, model):
         {gte_saas13_lte_saas14_3} mail.notification mail_message_res_partner_needaction_rel
 
         project.task.stage.personal project_task_user_rel
-    """.format(
-                gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#"
-            )
+    """.format(gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#")
         )
     )
     return exceptions.get(model, model.replace(".", "_"))
@@ -122,7 +120,7 @@ def model_of_table(cr, table):
             """,
             [table],
         )
-        candidates = [m for m, in cr.fetchall()]
+        candidates = [m for (m,) in cr.fetchall()]
         if candidates:
             if len(candidates) > 1:
                 _logger.critical("cannot determine model of table %r. Multiple candidates: %r", table, candidates)

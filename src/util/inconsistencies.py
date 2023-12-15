@@ -59,9 +59,7 @@ def verify_companies(
                AND b.{comodel_company_field} IS NOT NULL
                AND a.{model_company_field} != b.{comodel_company_field}
              LIMIT {limit}
-        """.format(
-            **locals()
-        )
+        """.format(**locals())
     else:  # many2many
         m2m_relation = field_values["relation_table"]
         f1, f2 = field_values["column1"], field_values["column2"]
@@ -74,9 +72,7 @@ def verify_companies(
                AND b.{comodel_company_field} IS NOT NULL
                AND a.{model_company_field} != b.{comodel_company_field}
              LIMIT {limit}
-        """.format(
-            **locals()
-        )
+        """.format(**locals())
 
     cr.execute(query)
     if cr.rowcount:
@@ -105,9 +101,7 @@ def verify_companies(
                 {lis}
               </ul>
             </details>
-        """.format(
-                **locals()
-            ),
+        """.format(**locals()),
             category="Multi-company inconsistencies",
             format="html",
         )
@@ -339,9 +333,7 @@ def verify_products(
     is different from that defined on the {title}. To allow the upgrade to continue, the product
     on the {foreign_title} and on the {title} must be the same.
     These {foreign_title} have inconsistencies:
-    """.format(
-        **locals()
-    )
+    """.format(**locals())
     msg += "\n".join(
         "     * {}(id={}) has Product `{}`(id={}), {}(id={}) has Product `{}`(id={})".format(
             foreign_title, fline_id, fline_product, fline_product_id, title, line_id, line_product, line_product_id

@@ -462,7 +462,7 @@ inheritance_data = frozendict({result!r})
 """
 
     with open(pyproject, "rb") as fp:
-        line_length = tomli.load(fp)["tool"]["black"]["line-length"]
+        line_length = tomli.load(fp)["tool"]["ruff"]["line-length"]
     mode = black.FileMode(target_versions={black.TargetVersion.PY27}, line_length=line_length)
     print(black.format_str(output, mode=mode), end="")  # noqa: T201
 

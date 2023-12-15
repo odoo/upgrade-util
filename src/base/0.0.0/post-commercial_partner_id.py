@@ -7,4 +7,4 @@ def migrate(cr, version):
     # Fight the Murphy's Law, and recompute the value on partners with a NULL value.
     cr.execute("SELECT id FROM res_partner WHERE commercial_partner_id IS NULL")
     if cr.rowcount:
-        util.recompute_fields(cr, "res.partner", ["commercial_partner_id"], ids=[id_ for id_, in cr.fetchall()])
+        util.recompute_fields(cr, "res.partner", ["commercial_partner_id"], ids=[id_ for (id_,) in cr.fetchall()])

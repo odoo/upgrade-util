@@ -82,9 +82,7 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
             SELECT count(1)
               FROM "{src_table}"
              WHERE "{column}" NOT IN (SELECT id FROM "{dst_table}")
-        """.format(
-            src_table=src_table, column=column, dst_table=dst_table
-        )
+        """.format(src_table=src_table, column=column, dst_table=dst_table)
     )
     if cr.fetchone()[0]:
         remove_column(cr, src_table, column, cascade=True)
@@ -503,9 +501,7 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
                SET "{1}" = h.value
               FROM html_values AS h
              WHERE "{0}".id = h.id
-        """.format(
-            table, field, pg_text2html("t.value")
-        )
+        """.format(table, field, pg_text2html("t.value"))
     else:
         query = 'UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field))
     parallel_execute(cr, explode_query_range(cr, query, table=table))
@@ -520,9 +516,7 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
                SET src = {}, value = {}, type = %s
              WHERE type = 'model'
                AND name = %s
-            """.format(
-                pg_text2html("src", wrap=wrap), pg_text2html("value", wrap=wrap)
-            ),
+            """.format(pg_text2html("src", wrap=wrap), pg_text2html("value", wrap=wrap)),
             [ttype, "%s,%s" % (model, field)],
         )
     cr.execute(
@@ -614,9 +608,7 @@ def convert_field_to_property(
                AND name='{field}'
                AND type='{type}'
                AND fields_id={fields_id}
-            """.format(
-                **locals()
-            ),
+            """.format(**locals()),
         )
 
     cr.execute(
@@ -635,9 +627,7 @@ def convert_field_to_property(
                                WHERE fields_id=%(fields_id)s
                                  AND company_id IS NOT DISTINCT FROM cte.company
                                  AND res_id=cte.res_id)
-    """.format(
-            **locals()
-        ),
+    """.format(**locals()),
         locals(),
     )
     # default property
@@ -647,9 +637,7 @@ def convert_field_to_property(
                 INSERT INTO ir_property(name, type, fields_id, {value_field})
                      VALUES (%s, %s, %s, %s)
                   RETURNING id
-            """.format(
-                value_field=value_field
-            ),
+            """.format(value_field=value_field),
             (field, type, fields_id, default_value),
         )
         [prop_id] = cr.fetchone()
@@ -885,9 +873,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
   </summary>
   <ul>{li}</ul>
 </details>
-            """.format(
-                **locals()
-            ),
+            """.format(**locals()),
             category="Fields renamed",
             format="html",
         )

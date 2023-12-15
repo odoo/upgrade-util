@@ -334,7 +334,7 @@ def remove_records(cr, model, ids):
             for (view_id,) in cr.fetchall():
                 remove_view(cr, view_id=view_id)
         else:
-            remove_records(cr, theme_copy_model, [rid for rid, in cr.fetchall()])
+            remove_records(cr, theme_copy_model, [rid for (rid,) in cr.fetchall()])
 
     for inh in for_each_inherit(cr, model, skip=()):
         if inh.via:
@@ -344,12 +344,12 @@ def remove_records(cr, model, ids):
                 continue
             cr.execute('SELECT id FROM "{}" WHERE "{}" IN %s'.format(table, inh.via), [ids])
             if inh.model == "ir.ui.menu":
-                remove_menus(cr, [menu_id for menu_id, in cr.fetchall()])
+                remove_menus(cr, [menu_id for (menu_id,) in cr.fetchall()])
             elif inh.model == "ir.ui.view":
                 for (view_id,) in cr.fetchall():
                     remove_view(cr, view_id=view_id)
             else:
-                remove_records(cr, inh.model, [rid for rid, in cr.fetchall()])
+                remove_records(cr, inh.model, [rid for (rid,) in cr.fetchall()])
 
     table = table_of_model(cr, model)
     cr.execute('DELETE FROM "{}" WHERE id IN %s'.format(table), [ids])
@@ -449,9 +449,7 @@ def is_changed(cr, xmlid, interval="1 minute"):
            -- Note: use a negative search to handle the case of NULL values in write/create_date
            AND COALESCE(r.write_date < p.value::timestamp, True)
            AND r.write_date - r.create_date > interval %s
-        """.format(
-            table
-        ),
+        """.format(table),
         [res_id, interval],
     )
     return bool(cr.rowcount)
@@ -583,9 +581,7 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
                    {}
                 WHERE module=%s AND name=%s
             RETURNING model, res_id
-            """.format(
-                nu
-            ),
+            """.format(nu),
             (new_module, new_name, old_module, old_name),
         )
         model, new_id = cr.fetchone() or (None, None)
@@ -685,7 +681,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
     query = ("SELECT id FROM %s WHERE " % table) + " AND ".join(where)
     cr.execute(query, data)
-    records = [id for id, in cr.fetchall()]
+    records = [id for (id,) in cr.fetchall()]
     if res_id and res_id in records:
         return res_id
     if not records:
@@ -938,9 +934,7 @@ def delete_unused(cr, *xmlids, **kwargs):
        SELECT model, array_agg(res_id ORDER BY id), array_agg(xmlid ORDER BY id)
          FROM _upd
      GROUP BY model
-    """.format(
-            select_xids
-        )
+    """.format(select_xids)
     )
 
     deleted = []
@@ -965,9 +959,7 @@ def delete_unused(cr, *xmlids, **kwargs):
                   FROM "{}" t
                  WHERE id = ANY(%s)
                    AND NOT EXISTS({})
-            """.format(
-                    table, sub
-                ),
+            """.format(table, sub),
                 [list(ids)],
             )
             ids = map(itemgetter(0), cr.fetchall())  # noqa: PLW2901
@@ -1090,9 +1082,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                      WHERE v.key = 'default'
                        AND {column_read} = format(E'I%%s\n.', r.old)
                        AND (v.model, v.name) IN %s
-                """.format(
-                    column_read=column_read, cast_write=cast_write % r"format(E'I%%s\n.', r.new)"
-                )
+                """.format(column_read=column_read, cast_write=cast_write % r"format(E'I%%s\n.', r.new)")
             else:
                 query = """
                     UPDATE ir_default d
@@ -1180,9 +1170,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                        SET "{column}" = r.new
                       FROM _ref r
                      WHERE t."{column}" = r.old
-            """.format(
-                    table=table, column=column
-                ),
+            """.format(table=table, column=column),
                 [model_src, model_dst],
             )
 
@@ -1226,9 +1214,7 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
            SET "{column}" = upd.value
           FROM upd
          WHERE upd.id = t.id
-        """.format(
-            **locals()
-        ),
+        """.format(**locals()),
         [re_old, new],
     ).decode()
 
