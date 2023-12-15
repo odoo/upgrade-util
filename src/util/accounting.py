@@ -21,7 +21,7 @@ def no_deprecated_accounts(cr):
      RETURNING id
         """
     )
-    ids = tuple(r for r, in cr.fetchall())
+    ids = tuple(r for (r,) in cr.fetchall())
     yield
     if ids:
         cr.execute(
@@ -48,9 +48,7 @@ def no_fiscal_lock(cr):
               FROM res_company old
              WHERE old.id = c.id
          RETURNING {}, old.id
-        """.format(
-            set_val, returns
-        )
+        """.format(set_val, returns)
     )
     data = cr.fetchall()
     yield
@@ -60,9 +58,7 @@ def no_fiscal_lock(cr):
             UPDATE res_company
                SET {}
              WHERE id = %s
-        """.format(
-            set_val
-        ),
+        """.format(set_val),
         data,
     )
 

@@ -416,9 +416,7 @@ def alter_column_type(cr, table, column, type, using=None, logger=_logger):
         """
         ALTER TABLE "{table}" RENAME COLUMN "{column}" TO "_{column}_upg";
         ALTER TABLE "{table}" ADD COLUMN "{column}" {type};
-        """.format(
-            **locals()
-        )
+        """.format(**locals())
     )
     using = using.format('"_{}_upg"'.format(column))
     parallel_execute(
@@ -429,9 +427,7 @@ def alter_column_type(cr, table, column, type, using=None, logger=_logger):
             UPDATE "{table}"
                SET "{column}" = {using}
              WHERE "_{column}_upg" IS NOT NULL
-            """.format(
-                **locals()
-            ),
+            """.format(**locals()),
             table=table,
         ),
         logger=logger,
@@ -474,7 +470,7 @@ def remove_constraint(cr, table, name, cascade=False):
     # from the `ir_model_constraint` table
     cr.execute("DELETE FROM ir_model_constraint WHERE name = %s RETURNING id", [name])
     if cr.rowcount:
-        ids = tuple(c for c, in cr.fetchall())
+        ids = tuple(c for (c,) in cr.fetchall())
         cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
 
 
@@ -505,9 +501,7 @@ def get_fk(cr, table, quote_ident=True):
               AND con.confkey[1] = att2.attnum
               AND att2.attrelid = cl2.oid
               AND con.contype = 'f'
-    """.format(
-        funk=funk
-    )
+    """.format(funk=funk)
     cr.execute(q, (table,))
     return cr.fetchall()
 
@@ -589,9 +583,7 @@ def get_index_on(cr, table, *columns):
          WHERE attrs = %s
       ORDER BY indisprimary DESC
          FETCH FIRST ROW ONLY
-    """.format(
-            position
-        ),
+    """.format(position),
         [table, list(columns)],
     )
     return IndexInfo(*cr.fetchone()) if cr.rowcount else None
@@ -898,9 +890,7 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
             PRIMARY KEY ({col1}, {col2})
         );
         CREATE INDEX ON {m2m}({col2}, {col1});
-    """.format(
-            **locals()
-        )
+    """.format(**locals())
     )
 
 
@@ -924,9 +914,7 @@ def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         DELETE FROM "{m2m}" t
               WHERE NOT EXISTS (SELECT id FROM "{fk1}" WHERE id=t."{col1}")
                  OR NOT EXISTS (SELECT id FROM "{fk2}" WHERE id=t."{col2}")
-    """.format(
-            **locals()
-        )
+    """.format(**locals())
     )
     deleted = cr.rowcount
     if deleted:
@@ -967,9 +955,7 @@ def fixup_m2m_cleanup(cr, m2m, col1, col2):
         DELETE FROM "{m2m}" t
               WHERE "{col1}" IS NULL
                  OR "{col2}" IS NULL
-    """.format(
-            **locals()
-        )
+    """.format(**locals())
     )
     deleted = cr.rowcount
     if deleted:
@@ -985,9 +971,7 @@ def fixup_m2m_cleanup(cr, m2m, col1, col2):
                                                                    ORDER BY ctid) as rnum
                                        FROM "{m2m}") t
                               WHERE t.rnum > 1)
-    """.format(
-            **locals()
-        )
+    """.format(**locals())
     )
     deleted = cr.rowcount
     if deleted:
@@ -1048,9 +1032,7 @@ def fix_wrong_m2o(cr, table, column, target, value=None):
            SET {column}=%s
           FROM wrongs_m2o w
          WHERE s.id = w.id
-    """.format(
-            table=table, column=column, target=target
-        ),
+    """.format(table=table, column=column, target=target),
         [value],
     )
 

@@ -44,9 +44,7 @@ def _unknown_model_id(cr):
             INSERT INTO ir_model(name, model{})
                  SELECT {}, '_unknown'{}
                   WHERE NOT EXISTS (SELECT 1 FROM ir_model WHERE model = '_unknown')
-        """.format(
-            extra_columns, name_value, extra_values
-        )
+        """.format(extra_columns, name_value, extra_values)
     )
     cr.execute("SELECT id FROM ir_model WHERE model = '_unknown'")
     return cr.fetchone()[0]
@@ -72,9 +70,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                   JOIN "{}" r ON d.model = %s AND d.res_id = r.id
                  WHERE d.module != '__export__'
                    AND {}
-            """.format(
-                ir.table, ir.model_filter(prefix="r.")
-            ),
+            """.format(ir.table, ir.model_filter(prefix="r.")),
             [ref_model, model],
         ).decode()
         if not ir.set_unknown:
@@ -90,7 +86,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
         else:
             # remove in batch
             size = (cr.rowcount + chunk_size - 1) / chunk_size
-            it = chunks([id for id, in cr.fetchall()], chunk_size, fmt=tuple)
+            it = chunks([id for (id,) in cr.fetchall()], chunk_size, fmt=tuple)
             for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
                 remove_records(cr, ref_model, sub_ids)
                 _rm_refs(cr, ref_model, sub_ids)
@@ -101,7 +97,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                 'SELECT id FROM "{}" r WHERE {}'.format(ir.table, ir.model_filter(prefix="r.")), [model]
             ).decode()
             cr.execute(query)
-            ids = [id for id, in cr.fetchall()]
+            ids = [id for (id,) in cr.fetchall()]
             if ids:
                 # link to `_unknown` model
                 sets, args = zip(
@@ -144,7 +140,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 
         cr.execute("DELETE FROM ir_model_constraint WHERE model=%s RETURNING id", (mod_id,))
         if cr.rowcount:
-            ids = tuple(c for c, in cr.fetchall())
+            ids = tuple(c for (c,) in cr.fetchall())
             cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
 
         # Drop XML IDs of ir.rule and ir.model.access records that will be cascade-dropped,
@@ -242,9 +238,7 @@ def rename_model(cr, old, new, rename_table=True):
                     UPDATE "{table}"
                        SET "{column}"='{new}' || substring("{column}" FROM '%#",%#"' FOR '#')
                      WHERE "{column}" LIKE '{old},%'
-            """.format(
-                    table=table, column=column, new=new, old=old
-                )
+            """.format(table=table, column=column, new=new, old=old)
             ).decode()
             explode_execute(cr, query, table=table)
 
@@ -255,9 +249,7 @@ def rename_model(cr, old, new, rename_table=True):
             UPDATE ir_values
                SET value = {cast[0]}'{new}' || substring({column} FROM '%#",%#"' FOR '#'){cast[2]}
              WHERE {column} LIKE '{old},%'
-        """.format(
-            column=column_read, new=new, old=old, cast=cast_write.partition("%s")
-        )
+        """.format(column=column_read, new=new, old=old, cast=cast_write.partition("%s"))
         cr.execute(query)
 
     # translations
@@ -283,9 +275,7 @@ def rename_model(cr, old, new, rename_table=True):
          )
              WHERE t.id = r.id
                AND e.id IS NULL
-        """.format(
-                new=new, old=old
-            )
+        """.format(new=new, old=old)
         )
         cr.execute("DELETE FROM ir_translation WHERE name LIKE '{},%'".format(old))
 
@@ -326,9 +316,7 @@ def rename_model(cr, old, new, rename_table=True):
         UPDATE ir_act_server
            SET {col_prefix} condition=regexp_replace(condition, '([''"]){old}\1', '\1{new}\1', 'g'),
                code=regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g')
-    """.format(
-            col_prefix=col_prefix, old=old.replace(".", r"\."), new=new
-        )
+    """.format(col_prefix=col_prefix, old=old.replace(".", r"\."), new=new)
     )
 
 

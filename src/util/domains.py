@@ -293,9 +293,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
             SELECT id, {df.model_select}, {df.domain_column}
               FROM {df.table} t
              WHERE {df.domain_column} ~ %s
-        """.format(
-                df=df
-            ),
+        """.format(df=df),
             [match_old],
         )
         for id_, model, domain in cr.fetchall():

@@ -106,9 +106,7 @@ class UpgradeCommon(BaseCase):
         query = """
             INSERT INTO {} (key, value) VALUES (%s, %s)
             ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
-        """.format(
-            DATA_TABLE
-        )
+        """.format(DATA_TABLE)
         self._data_table_cr.execute(query, (key, value))
         self._data_table_cr._cnx.commit()
 
@@ -135,9 +133,7 @@ class UpgradeCommon(BaseCase):
                 query = """ CREATE TABLE {} (
                     key VARCHAR(255) PRIMARY KEY,
                     value JSONB NOT NULL
-                )""".format(
-                    DATA_TABLE
-                )
+                )""".format(DATA_TABLE)
                 self._data_table_cr.execute(query)
                 self._data_table_cr._cnx.commit()
             UpgradeCommon.__initialized = True

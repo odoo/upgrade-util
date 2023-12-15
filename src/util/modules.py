@@ -256,9 +256,7 @@ def _update_view_key(cr, old, new):
         UPDATE ir_ui_view
            SET key = concat('{new}', right(key, -length('{old}')))
          WHERE key LIKE '{like_old}.%'
-    """.format(
-            old=old, new=new, like_old=like_old
-        )
+    """.format(old=old, new=new, like_old=like_old)
     )
 
 
@@ -306,9 +304,7 @@ def merge_module(cr, old, into, update_dependers=True):
                                     FROM ir_model_{0} y
                                    WHERE y.name = x.name
                                      AND y.module = %s)
-        """.format(
-                table
-            ),
+        """.format(table),
             [new, old, new],
         )
 
@@ -438,9 +434,7 @@ def force_install_module(cr, module, if_installed=None):
          WHERE m.id = d.mod_id
            {0}
      RETURNING m.name, m.state
-    """.format(
-            subquery
-        ),
+    """.format(subquery),
         (module,) + subparams,
     )
 
@@ -476,9 +470,7 @@ def force_install_module(cr, module, if_installed=None):
             HAVING
                    -- are all dependencies (to be) installed?
                    array_agg(its_deps.state)::text[] <@ %s
-        """.format(
-                dep_match, cat_match
-            ),
+        """.format(dep_match, cat_match),
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
         for (mod,) in cr.fetchall():
@@ -568,9 +560,7 @@ def module_auto_install(cr, module, auto_install):
              WHERE module_id = (SELECT id
                                   FROM ir_module_module
                                  WHERE name = %s)
-        """.format(
-                value
-            ),
+        """.format(value),
             params + [module],
         )
 
@@ -602,9 +592,7 @@ def trigger_auto_install(cr, module):
                AND {}
           GROUP BY m.id
             HAVING bool_and(md.state IN %s)
-    """.format(
-        dep_match, cat_match
-    )
+    """.format(dep_match, cat_match)
 
     cr.execute(query, [module, INSTALLED_MODULE_STATES])
     if cr.rowcount:

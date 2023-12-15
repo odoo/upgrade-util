@@ -340,7 +340,7 @@ class TestIterBrowse(UnitTestCase):
     def test_iter_browse_iter(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
-        ids = [c for c, in cr.fetchall()]
+        ids = [c for (c,) in cr.fetchall()]
         chunk_size = 10
 
         Country = type(self.env["res.country"])
@@ -354,7 +354,7 @@ class TestIterBrowse(UnitTestCase):
     def test_iter_browse_call(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
-        ids = [c for c, in cr.fetchall()]
+        ids = [c for (c,) in cr.fetchall()]
         chunk_size = 10
 
         Country = type(self.env["res.country"])
@@ -383,7 +383,7 @@ class TestIterBrowse(UnitTestCase):
     def test_iter_browse_iter_twice(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
-        ids = [c for c, in cr.fetchall()]
+        ids = [c for (c,) in cr.fetchall()]
         chunk_size = 10
 
         ib = util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size)
@@ -397,7 +397,7 @@ class TestIterBrowse(UnitTestCase):
     def test_iter_browse_call_twice(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
-        ids = [c for c, in cr.fetchall()]
+        ids = [c for (c,) in cr.fetchall()]
         chunk_size = 10
 
         ib = util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size)

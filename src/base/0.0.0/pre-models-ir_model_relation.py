@@ -43,6 +43,6 @@ class ModelRelation(models.Model):
                  WHERE table_name IN %s
             """
             self.env.cr.execute(query, [tuple(gone_m2m)])
-            back_m2m = "\n".join(" - %s via %s" % (tn, gone_m2m[tn]) for tn, in self.env.cr.fetchall())
+            back_m2m = "\n".join(" - %s via %s" % (tn, gone_m2m[tn]) for (tn,) in self.env.cr.fetchall())
             if back_m2m:
                 raise util.MigrationError("The following m2m relations have respawn:\n%s" % back_m2m)

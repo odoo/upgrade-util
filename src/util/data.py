@@ -46,9 +46,9 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
                     [f_model, fc],
                 )
                 [is_many2one] = cr.fetchone()
-        assert (
-            is_many2many or is_many2one
-        ), "Can't determine if column `%s` of table `%s` is a many2one or many2many" % (fc, ft)
+        assert is_many2many or is_many2one, (
+            "Can't determine if column `%s` of table `%s` is a many2one or many2many" % (fc, ft)
+        )
         if is_many2many:
             upds.append(
                 """
@@ -60,9 +60,7 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
                      SELECT r.{c1}, r.{c2}
                        FROM {rel} r
                        JOIN dups d ON (r.{c2} = d.id)
-            """.format(
-                    rel=ft, c1=cols[0], c2=fc
-                )
+            """.format(rel=ft, c1=cols[0], c2=fc)
             )
         else:
             upds.append(
@@ -71,9 +69,7 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
                        SET {c} = d.id
                       FROM dups d
                      WHERE r.{c} = ANY(d.others)
-                """.format(
-                    rel=ft, c=fc
-                )
+                """.format(rel=ft, c=fc)
             )
 
     assert upds  # if not m2m found, there is something wrong...
@@ -96,9 +92,7 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
         ),
         {updates}
         DELETE FROM {table} WHERE id IN (SELECT unnest(others) FROM dups)
-    """.format(
-        **locals()
-    )
+    """.format(**locals())
 
     cr.execute(query, [model])
 
