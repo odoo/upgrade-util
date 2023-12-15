@@ -218,7 +218,7 @@ def change_version(version_str):
     def version_decorator(obj):
         match = VERSION_RE.match(version_str)
         if not match:
-            raise Exception("change_version decorator must be in format [saas(-|~)<int:version>.<int:subversion:int>]")
+            raise ValueError("change_version decorator must be in format [saas(-|~)<int:version>.<int:subversion:int>]")
         (_, version, sub_version) = match.groups()
         obj.change_version = (int(version), int(sub_version))
         return obj
@@ -322,7 +322,7 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
             if self.dbname == config["log_db"].split("/")[-1]:
                 self._cnx.commit()
             else:
-                raise Exception("Commit are forbidden in integrity cases")
+                raise RuntimeError("Commit is forbidden in integrity cases")
 
         patcher = patch.object(odoo.sql_db.Cursor, "commit", commit)
         patcher.start()
