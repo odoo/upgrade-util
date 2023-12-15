@@ -41,6 +41,7 @@ ignore = [
     "PLR2004",  # magic-value-comparison; not all comparisons to int or str are magic
     "TRY003",  # raise-vanilla-args; we can live without it
     "TRY200",  # reraise-no-cause; not python2 compatible
+    "RET505",  # only true for simple if/elif branches (like in the ruff doc example). if/elif blocks are easier to read in most cases
     # not (yet) supported rules
     # "E301",
     # "E302",
