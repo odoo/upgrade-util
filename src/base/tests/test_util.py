@@ -446,6 +446,30 @@ class TestPG(UnitTestCase):
             rowcount = util.explode_execute(cr, query, table="res_lang", bucket_size=10)
         self.assertEqual(rowcount, expected)
 
+    def test_create_column_with_fk(self):
+        cr = self.env.cr
+        self.assertFalse(util.column_exists(cr, "res_partner", "_test_lang_id"))
+
+        with self.assertRaises(ValueError):
+            util.create_column(cr, "res_partner", "_test_lang_id", "int4", on_delete_action="SET NULL")
+
+        with self.assertRaises(ValueError):
+            util.create_column(
+                cr, "res_partner", "_test_lang_id", "int4", fk_table="res_lang", on_delete_action="INVALID"
+            )
+
+        # this one should works
+        util.create_column(cr, "res_partner", "_test_lang_id", "int4", fk_table="res_lang", on_delete_action="SET NULL")
+
+        target = util.target_of(cr, "res_partner", "_test_lang_id")
+        self.assertEqual(target, ("res_lang", "id", "res_partner__test_lang_id_fkey"))
+
+        # code should be reentrant
+        util.create_column(cr, "res_partner", "_test_lang_id", "int4", fk_table="res_lang", on_delete_action="SET NULL")
+
+        target = util.target_of(cr, "res_partner", "_test_lang_id")
+        self.assertEqual(target, ("res_lang", "id", "res_partner__test_lang_id_fkey"))
+
 
 class TestORM(UnitTestCase):
     def test_create_cron(self):

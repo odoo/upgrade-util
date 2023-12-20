@@ -29,6 +29,8 @@ from .misc import log_progress
 
 _logger = logging.getLogger(__name__)
 
+ON_DELETE_ACTIONS = frozenset(("SET NULL", "CASCADE", "RESTRICT", "NO ACTION", "SET DEFAULT"))
+
 
 class PGRegexp(str):
     """
@@ -290,8 +292,25 @@ def create_column(cr, table, column, definition, **kwargs):
     # Manual PEP 3102
     no_def = object()
     default = kwargs.pop("default", no_def)
+    fk_table = kwargs.pop("fk_table", no_def)
+    on_delete_action = kwargs.pop("on_delete_action", no_def)
     if kwargs:
         raise TypeError("create_column() got an unexpected keyword argument %r" % kwargs.popitem()[0])
+
+    fk = ""
+    if fk_table is not no_def:
+        if on_delete_action is no_def:
+            on_delete_action = "NO ACTION"
+        elif on_delete_action not in ON_DELETE_ACTIONS:
+            raise ValueError("unexpected value for the `on_delete_action` argument: %r" % (on_delete_action,))
+        fk = (
+            sql.SQL("REFERENCES {}(id) ON DELETE {}")
+            .format(sql.Identifier(fk_table), sql.SQL(on_delete_action))
+            .as_string(cr._cnx)
+        )
+    elif on_delete_action is not no_def:
+        raise ValueError("`on_delete_action` argument can only be used if `fk_table` argument is set.")
+
     aliases = {
         "boolean": "bool",
         "smallint": "int2",
@@ -312,13 +331,15 @@ def create_column(cr, table, column, definition, **kwargs):
     if curtype:
         if curtype != definition:
             _logger.error("%s.%s already exists but is %r instead of %r", table, column, curtype, definition)
+        if fk_table is not no_def:
+            create_fk(cr, table, column, fk_table, on_delete_action)
         if default is not no_def:
             query = 'UPDATE "{0}" SET "{1}" = %s WHERE "{1}" IS NULL'.format(table, column)
             query = cr.mogrify(query, [default]).decode()
             parallel_execute(cr, explode_query_range(cr, query, table=table))
         return False
 
-    create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s""" % (table, column, definition)
+    create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s %s""" % (table, column, definition, fk)
     if default is no_def:
         cr.execute(create_query)
     else:
@@ -328,7 +349,7 @@ def create_column(cr, table, column, definition, **kwargs):
 
 
 def create_fk(cr, table, column, fk_table, on_delete_action=""):
-    assert on_delete_action in {"SET NULL", "CASCADE", "RESTRICT", "NO ACTION", "SET DEFAULT", ""}
+    assert on_delete_action in ON_DELETE_ACTIONS | {""}
     on_delete = "" if not on_delete_action else "ON DELETE {}".format(on_delete_action)
     cr.execute(
         """
