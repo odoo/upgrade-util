@@ -420,9 +420,19 @@ def alter_column_type(cr, table, column, type, using=None, logger=_logger):
             [model_of_table(cr, table), column],
         )
     if not using:
-        # Simple case. Use general SQL syntax
-        cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE %s' % (table, column, type))
-        return
+        # if there is a high number of NULL entries, it will be faster to just ignore those
+        cr.execute(format_query(cr, "ANALYZE {}({})", table, column))
+        cr.execute(
+            "SELECT null_frac FROM pg_stats WHERE schemaname = current_schema() AND tablename = %s AND attname = %s",
+            [table, column],
+        )
+        [null_frac] = cr.fetchone() or (0.0,)
+        if null_frac <= 0.70:
+            # Simple case. Use general SQL syntax
+            cr.execute(format_query(cr, "ALTER TABLE {} ALTER COLUMN {} TYPE {}", table, column, sql.SQL(type)))
+            return
+
+        using = "{{0}}::{}".format(type)
 
     # else, create a new column and parallel update queries.
     cr.execute(
