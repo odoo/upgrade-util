@@ -832,6 +832,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
 
     p = {
         "old": r"\y%s\y" % (re.escape(old),),
+        "old_pattern": r"""[.'"]{0}\y""".format(re.escape(old)),
         "new": new,
         "def_old": r"\ydefault_%s\y" % (re.escape(old),),
         "def_new": "default_%s" % (new,),
@@ -851,7 +852,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         SELECT id, {name}
           FROM ir_act_server
          WHERE state = 'code'
-           AND (code ~ %(old)s
+           AND (code ~ %(old_pattern)s
                 {col_prefix} OR condition ~ %(old)s
                )
     """
