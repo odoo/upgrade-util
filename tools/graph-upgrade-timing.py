@@ -31,7 +31,7 @@ def process(options):
 
     title = f"{dt}"
     if options.min_time:
-        title = f"{title} • Modules lodaded in more than {options.min_time} seconds"
+        title = f"{title} • Modules loaded in more than {options.min_time} seconds"
     pie.title = title
 
     if options.format == "png":
