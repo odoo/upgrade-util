@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: RET503 RET505
 import argparse
 import os
 import re
