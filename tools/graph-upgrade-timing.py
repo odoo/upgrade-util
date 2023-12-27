@@ -18,7 +18,7 @@ def process(options):
             if match:
                 dt = match.group(1)
 
-        match = re.search(r"Module ([a-z_]+) loaded in (\d+\.\d\d)s, \d+ queries", line)
+        match = re.search(r"Module ([a-zA-Z0-9_]+) loaded in (\d+\.\d\d)s, \d+ queries", line)
         if match:
             time = float(match.group(2))
             if time > options.min_time:
