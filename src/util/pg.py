@@ -348,17 +348,23 @@ def create_column(cr, table, column, definition, **kwargs):
     return True
 
 
-def create_fk(cr, table, column, fk_table, on_delete_action=""):
-    assert on_delete_action in ON_DELETE_ACTIONS | {""}
-    on_delete = "" if not on_delete_action else "ON DELETE {}".format(on_delete_action)
-    cr.execute(
-        """
-            ALTER TABLE "{table}"
-        ADD FOREIGN KEY ("{column}") REFERENCES "{fk_table}"(id) {on_delete}
-        """.format(
-            **locals()
+def create_fk(cr, table, column, fk_table, on_delete_action="NO ACTION"):
+    assert on_delete_action in ON_DELETE_ACTIONS
+    current_target = target_of(cr, table, column)
+    if current_target:
+        if current_target[:2] == (fk_table, "id"):
+            # assume the `on_delete_action` is correct
+            return
+        cr.execute(
+            sql.SQL("ALTER TABLE {} DROP CONSTRAINT {}").format(
+                sql.Identifier(table), sql.Identifier(current_target[2])
+            )
         )
+
+    query = sql.SQL("ALTER TABLE {} ADD FOREIGN KEY ({}) REFERENCES {}(id) ON DELETE {}").format(
+        sql.Identifier(table), sql.Identifier(column), sql.Identifier(fk_table), sql.SQL(on_delete_action)
     )
+    cr.execute(query)
 
 
 def remove_column(cr, table, column, cascade=False):
