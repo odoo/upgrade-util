@@ -220,6 +220,9 @@ def rename_model(cr, old, new, rename_table=True):
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]
 
     for table, column in updates:
+        cr.execute("SELECT 1 FROM {t} WHERE {c}=%s LIMIT 1".format(t=table, c=column), [old])
+        if not cr.fetchone():
+            continue
         query = cr.mogrify("UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column), [new, old]).decode()
         explode_execute(cr, query, table=table)
 
