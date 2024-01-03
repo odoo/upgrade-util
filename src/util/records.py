@@ -34,6 +34,7 @@ from .pg import (
     column_updatable,
     explode_execute,
     explode_query_range,
+    format_query,
     get_columns,
     get_fk,
     get_value_or_en_translation,
@@ -1024,7 +1025,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         fk_def = []
 
         model_src_table = table_of_model(cr, model_src)
-        for table, fk, _, _ in get_fk(cr, model_src_table):
+        for table, fk, _, _ in get_fk(cr, model_src_table, quote_ident=False):
             if table in ignores:
                 continue
             query = """
@@ -1036,9 +1037,33 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
 
             if not column_exists(cr, table, "id"):
                 # seems to be a m2m table. Avoid duplicated entries
-                cols = get_columns(cr, table, ignore=(fk,))
-                assert len(cols) == 1  # it's a m2, should have only 2 columns
-                col2 = cols[0]
+                (col2,) = get_columns(cr, table, ignore=(fk,)).iter_unquoted()
+
+                # handle possible duplicates after update of m2m table
+                cr.execute(
+                    format_query(
+                        cr,
+                        """
+                        WITH rr2 AS (
+                            SELECT array_agg(t.{fk} ORDER BY t.{fk}) AS olds,
+                                   r.new AS new,
+                                   t.{col2} AS col2
+                              FROM {table} t
+                              JOIN _upgrade_rrr r
+                                ON r.old = t.{fk}
+                             GROUP BY r.new, t.{col2}
+                        )
+                        DELETE
+                          FROM {table} t
+                         USING rr2 r
+                         WHERE t.{col2} = r.col2
+                           AND t.{fk} = ANY(r.olds[2:])
+                        """,
+                        table=table,
+                        fk=fk,
+                        col2=col2,
+                    )
+                )
                 query += """
                     AND NOT EXISTS(SELECT 1 FROM {table} e WHERE e.{col2} = t.{col2} AND e.{fk} = r.new);
 
@@ -1062,10 +1087,10 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                            AND t.{fk} = t.{col2};
                     """
 
-                cr.execute(query.format(table=table, fk=fk, col2=col2))
+                cr.execute(format_query(cr, query, table=table, fk=fk, col2=col2))
 
             else:  # it's a model
-                fmt_query = cr.mogrify(query.format(table=table, fk=fk)).decode()
+                fmt_query = cr.mogrify(format_query(cr, query, table=table, fk=fk)).decode()
                 parallel_execute(cr, explode_query_range(cr, fmt_query, table=table, alias="t"))
 
                 # track default values to update
