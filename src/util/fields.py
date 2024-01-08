@@ -488,23 +488,24 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
 def convert_field_to_html(cr, model, field, skip_inherit=()):
     _validate_model(model)
     table = table_of_model(cr, model)
-    jsonb_column = column_type(cr, table, field) == "jsonb"
-    if jsonb_column:
-        query = """
-            WITH html_values AS (
-                SELECT id, jsonb_object_agg(t.key, {2}) AS value
-                  FROM "{0}", jsonb_each_text("{1}") AS t
-                 WHERE {{parallel_filter}}
-              GROUP BY id
-            )
-            UPDATE "{0}"
-               SET "{1}" = h.value
-              FROM html_values AS h
-             WHERE "{0}".id = h.id
-        """.format(table, field, pg_text2html("t.value"))
-    else:
-        query = 'UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field))
-    parallel_execute(cr, explode_query_range(cr, query, table=table))
+    if column_exists(cr, table, field):  # only exists for list-based inherits (not for dict-based)
+        jsonb_column = column_type(cr, table, field) == "jsonb"
+        if jsonb_column:
+            query = """
+                WITH html_values AS (
+                    SELECT id, jsonb_object_agg(t.key, {2}) AS value
+                      FROM "{0}", jsonb_each_text("{1}") AS t
+                     WHERE {{parallel_filter}}
+                  GROUP BY id
+                )
+                UPDATE "{0}"
+                   SET "{1}" = h.value
+                  FROM html_values AS h
+                 WHERE "{0}".id = h.id
+            """.format(table, field, pg_text2html("t.value"))
+        else:
+            query = 'UPDATE "{0}" SET "{1}" = {2} WHERE "{1}" IS NOT NULL'.format(table, field, pg_text2html(field))
+        parallel_execute(cr, explode_query_range(cr, query, table=table))
 
     # Update translations
     if table_exists(cr, "ir_translation"):
@@ -532,8 +533,7 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
         [field, model],
     )
     for inh in for_each_inherit(cr, model, skip_inherit):
-        if not inh.via:
-            convert_field_to_html(inh.model, field, skip_inherit=skip_inherit)
+        convert_field_to_html(cr, inh.model, field, skip_inherit=skip_inherit)
 
 
 def convert_field_to_property(
