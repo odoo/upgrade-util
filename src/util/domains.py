@@ -35,7 +35,7 @@ except ImportError:
 from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model
 from .inherit import for_each_inherit
-from .misc import SelfPrintEvalContext
+from .misc import SelfPrintEvalContext, version_gte
 from .pg import column_exists, get_value_or_en_translation, table_exists
 from .records import edit_view
 
@@ -207,7 +207,11 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
     # pre-check domain
     if isinstance(domain, basestring):
         try:
-            eval_dom = expression.normalize_domain(safe_eval(domain, evaluation_context, nocopy=True))
+            if version_gte("saas~17.2"):
+                eval_dom = expression.normalize_domain(safe_eval(domain, locals_dict=evaluation_context))
+            else:
+                eval_dom = expression.normalize_domain(safe_eval(domain, evaluation_context, nocopy=True))
+
         except Exception as e:
             oops = ustr(e)
             _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)

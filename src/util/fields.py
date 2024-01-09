@@ -160,7 +160,10 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
 
     # clean dashboard's contexts
     for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
-        context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext(), nocopy=True)
+        if version_gte("saas~17.2"):
+            context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext())
+        else:
+            context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext(), nocopy=True)
         changed = clean_context(context)
         action.set("context", unicode(context))
         if changed:
@@ -174,7 +177,10 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         [model, r"\y{}\y".format(fieldname)],
     )
     for id_, name, context_s in cr.fetchall():
-        context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
+        if version_gte("saas~17.2"):
+            context = safe_eval(context_s or "{}", SelfPrintEvalContext())
+        else:
+            context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
         changed = clean_context(context)
         cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
         if changed:
