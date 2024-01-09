@@ -95,6 +95,7 @@ class UpgradeCommon(BaseCase):
 
     change_version = (None, None)
     _abstract = True
+    allow_inherited_tests_method = True
 
     @property
     def key(self):
