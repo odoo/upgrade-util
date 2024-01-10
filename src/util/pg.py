@@ -3,6 +3,7 @@ import collections
 import logging
 import os
 import re
+import threading
 import time
 import uuid
 import warnings
@@ -61,18 +62,17 @@ def savepoint(cr):
         yield
 
 
-if ThreadPoolExecutor is None:
+def _parallel_execute_serial(cr, queries, logger=_logger):
+    cnt = 0
+    for query in log_progress(queries, logger, qualifier="queries", size=len(queries)):
+        cr.execute(query)
+        cnt += cr.rowcount
+    return cnt
 
-    def parallel_execute(cr, queries, logger=_logger):
-        cnt = 0
-        for query in log_progress(queries, logger, qualifier="queries", size=len(queries)):
-            cr.execute(query)
-            cnt += cr.rowcount
-        return cnt
 
-else:
+if ThreadPoolExecutor is not None:
 
-    def parallel_execute(cr, queries, logger=_logger):
+    def _parallel_execute_threaded(cr, queries, logger=_logger):
         """
         Execute queries in parallel
         Use a maximum of 8 workers (but not more than the number of CPUs)
@@ -117,6 +117,18 @@ else:
                     log_hundred_percent=True,
                 )
             )
+
+else:
+    _parallel_execute_threaded = _parallel_execute_serial
+
+
+def parallel_execute(cr, queries, logger=_logger):
+    parallel_execute_impl = (
+        _parallel_execute_serial
+        if getattr(threading.current_thread(), "testing", False)
+        else _parallel_execute_threaded
+    )
+    return parallel_execute_impl(cr, queries, logger=_logger)
 
 
 def format_query(cr, query, *args, **kwargs):
