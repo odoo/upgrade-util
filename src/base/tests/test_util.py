@@ -1,5 +1,6 @@
 import operator
 import re
+import threading
 import unittest
 import uuid
 from ast import literal_eval
@@ -445,6 +446,11 @@ class TestPG(UnitTestCase):
             query = "UPDATE res_lang SET name = name"
             rowcount = util.explode_execute(cr, query, table="res_lang", bucket_size=10)
         self.assertEqual(rowcount, expected)
+
+    def test_parallel_rowcount_threaded(self):
+        threading.current_thread().testing = False
+        self.test_parallel_rowcount()
+        threading.current_thread().testing = True
 
     def test_create_column_with_fk(self):
         cr = self.env.cr
