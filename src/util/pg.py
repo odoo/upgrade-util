@@ -435,27 +435,19 @@ def alter_column_type(cr, table, column, type, using=None, logger=_logger):
         using = "{{0}}::{}".format(type)
 
     # else, create a new column and parallel update queries.
-    cr.execute(
-        """
-        ALTER TABLE "{table}" RENAME COLUMN "{column}" TO "_{column}_upg";
-        ALTER TABLE "{table}" ADD COLUMN "{column}" {type};
-        """.format(**locals())
-    )
-    using = using.format('"_{}_upg"'.format(column))
-    parallel_execute(
+    tmp_column = "_{}_upg".format(column)
+    cr.execute(format_query(cr, "ALTER TABLE {} RENAME COLUMN {} TO {}", table, column, tmp_column))
+    cr.execute(format_query(cr, "ALTER TABLE {} ADD COLUMN {} {}", table, column, sql.SQL(type)))
+
+    using = sql.SQL(format_query(cr, using, tmp_column))
+    explode_execute(
         cr,
-        explode_query_range(
-            cr,
-            """
-            UPDATE "{table}"
-               SET "{column}" = {using}
-             WHERE "_{column}_upg" IS NOT NULL
-            """.format(**locals()),
-            table=table,
-        ),
+        format_query(cr, "UPDATE {} SET {} = {} WHERE {} IS NOT NULL", table, column, using, tmp_column),
+        table=table,
         logger=logger,
     )
-    cr.execute('ALTER TABLE "{table}" DROP COLUMN "_{column}_upg" CASCADE'.format(**locals()))
+
+    cr.execute(format_query(cr, "ALTER TABLE {} DROP COLUMN {} CASCADE", table, tmp_column))
 
 
 def table_exists(cr, table):
