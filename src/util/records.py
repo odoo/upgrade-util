@@ -771,6 +771,7 @@ def __update_record_from_xml(
     if cr.rowcount:
         model, res_id, noupdate = cr.fetchone()
     elif not force_create:
+        _logger.warning("Record %r not found in database. Skip update.", xmlid)
         return
     else:
         # The xmlid doesn't already exists, nothing to reset
@@ -796,6 +797,7 @@ def __update_record_from_xml(
 
     manifest = get_manifest(from_module)
     template = False
+    found = False
     extra_references = []
 
     def add_ref(ref):
@@ -810,6 +812,7 @@ def __update_record_from_xml(
         with file_open(os.path.join(from_module, f)) as fp:
             doc = lxml.etree.parse(fp)
             for node in doc.xpath(xpath):
+                found = True
                 parent = node.getparent()
                 new_root[0].append(node)
 
@@ -830,6 +833,10 @@ def __update_record_from_xml(
                     for eval_node in node.xpath("//field[@eval]"):
                         for ref_match in re.finditer(r"\bref\((['\"])(.*?)\1\)", eval_node.get("eval")):
                             add_ref(ref_match.group(2))
+
+    if not found:
+        suffix = " in %r module" % from_module if from_module != module else ""
+        raise ValueError("Cannot find %r%s" % (xmlid, suffix))
 
     done_refs.add(xmlid)
     for ref in extra_references:
