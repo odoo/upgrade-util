@@ -770,6 +770,8 @@ def __update_record_from_xml(
     )
     if cr.rowcount:
         model, res_id, noupdate = cr.fetchone()
+        if model == "ir.model":
+            return
     elif not force_create:
         _logger.warning("Record %r not found in database. Skip update.", xmlid)
         return
