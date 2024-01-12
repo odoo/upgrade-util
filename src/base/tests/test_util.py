@@ -811,28 +811,29 @@ class TestRecords(UnitTestCase):
 
     def test_update_record_from_xml__from_module(self):
         cr = self.env.cr
-        if not util.module_installed(cr, "web"):
-            self.skip()
+        if not util.module_installed(cr, "mail"):
+            self.skipTest("module `mail` not installed")
 
-        layout = self.env.ref("web.report_layout")
-        new_name = str(uuid.uuid4())
+        xmlid = "base.action_attachment"
+        action = self.env.ref(xmlid)
+        new_help = "<p>test_update_record_from_xml__from_module</p>"
 
-        layout.write({"name": new_name})
-        util.flush(layout)
-        util.invalidate(layout)
+        action.write({"help": new_help})
+        util.flush(action)
+        util.invalidate(action)
 
-        # the record `base.report_layout` does not exists, so we must pass the `force_create`.
-        # we only test that it won't update `web.report_layout`.
-        util.update_record_from_xml(cr, "base.report_layout", from_module="web", force_create=True)
-        util.invalidate(layout)
+        util.update_record_from_xml(cr, xmlid, from_module="mail")
+        util.invalidate(action)
 
-        # web.layout should NOT have been updated
-        self.assertEqual(layout.name, new_name)
+        self.assertNotEqual(action.help, new_help)
+        # the `mail` module overwrite the record to remove the second paragraphe of the help message.
+        # ensure it actually update the record from the `mail` module.
+        self.assertEqual(action.help.count("</p>"), 1)
 
     def test_update_record_from_xml_bad_match(self):
         cr = self.env.cr
         if not util.module_installed(cr, "web"):
-            self.skip()
+            self.skipTest("module `web` not installed")
 
         xmlid = "web.login"
         util.update_record_from_xml(cr, xmlid)
