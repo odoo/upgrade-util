@@ -435,6 +435,35 @@ class TestPG(UnitTestCase):
         result = cr.fetchone()[0]
         self.assertEqual(result, expected)
 
+    def test_explode_mult_filters(self):
+        cr = self.env.cr
+        queries = util.explode_query_range(
+            cr,
+            """
+            WITH cte1 AS (
+                SELECT id,
+                       login
+                  FROM res_users
+                 WHERE {parallel_filter}
+            ), cte2 AS (
+                SELECT id,
+                       login
+                  FROM res_users
+                 WHERE {parallel_filter}
+            ) SELECT u.login = cte1.login AND u.login = cte2.login
+                FROM cte1
+           LEFT JOIN cte2
+                  ON cte2.id = cte1.id
+                JOIN res_users u
+                  ON u.id = cte1.id
+            """,
+            table="res_users",
+            bucket_size=4,
+        )
+        for q in queries:
+            cr.execute(q)
+            self.assertTrue(all(x for (x,) in cr.fetchall()))
+
     def test_parallel_rowcount(self):
         cr = self.env.cr
         cr.execute("SELECT count(*) FROM res_lang")
