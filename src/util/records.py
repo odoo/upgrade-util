@@ -721,7 +721,7 @@ def update_record_from_xml(
     cr,
     xmlid,
     reset_write_metadata=True,
-    force_create=False,
+    force_create=True,
     from_module=None,
     reset_translations=(),
     ensure_references=False,
