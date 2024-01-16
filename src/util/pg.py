@@ -212,10 +212,11 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
         parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
         return [query.format(parallel_filter=parallel_filter)]
 
-    parallel_filter = "{alias}.id BETWEEN %s AND %s".format(alias=alias)
+    parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
     query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
     return [
-        cr.mogrify(query, [index, index + bucket_size - 1]).decode() for index in range(min_id, max_id, bucket_size)
+        cr.mogrify(query, {"lower-bound": index, "upper-bound": index + bucket_size - 1}).decode()
+        for index in range(min_id, max_id, bucket_size)
     ]
 
 
