@@ -24,7 +24,7 @@ from .helpers import _get_theme_models, _ir_values_value, _validate_model, model
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
 from .misc import parse_version, version_gte
-from .orm import env
+from .orm import env, flush
 from .pg import (
     PGRegexp,
     _get_unique_indexes_with,
@@ -860,6 +860,8 @@ def __update_record_from_xml(
     importer = xml_import(cr_or_env, from_module, idref={}, mode="update")
     kw = {"mode": "update"} if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
     importer.parse(new_root, **kw)
+    if version_gte("13.0"):
+        flush(env(cr)["base"])
 
     if noupdate:
         force_noupdate(cr, xmlid, noupdate=True)
