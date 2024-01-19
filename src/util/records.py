@@ -837,6 +837,8 @@ def __update_record_from_xml(
                             add_ref(ref_match.group(2))
 
     if not found:
+        if noupdate:
+            force_noupdate(cr, xmlid, noupdate=True)
         suffix = " in %r module" % from_module if from_module != module else ""
         raise ValueError("Cannot find %r%s" % (xmlid, suffix))
 
