@@ -1178,7 +1178,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                     """
                         NOT EXISTS(SELECT 1 FROM {ir.table} WHERE {res_model_whr} AND {jmap_expr} AND %(ands)s)
                     """
-                    % {"ands": "AND".join('"%s"=t."%s"' % (col, col) for col in uniq_cols)}
+                    % {"ands": "AND".join('"%s"=t."%s"' % (col, col) for col in uniq_cols) if uniq_cols else "True"}
                 )
             query = """
                     %s
