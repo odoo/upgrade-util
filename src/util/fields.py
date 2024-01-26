@@ -879,8 +879,8 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             format="html",
         )
 
-    # if we don't replace the field by a dotted-path alternative (only works for domains and related)
-    if "." not in new:
+    # if we stay on the same model. (no usage of dotted-path) (only works for domains and related)
+    if "." not in old and "." not in new:
         # ir.filters
         col_prefix = ""
         if not column_exists(cr, "ir_filters", "sort"):
