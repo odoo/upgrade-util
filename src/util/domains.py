@@ -196,11 +196,15 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
             _logger.log(NEARLYWARN, "Invalid %r domain: %r: %s", model, domain, oops)
             return None
 
+    dot_old = old.split(".")
+    dot_new = new.split(".")
+
     def clean_path(left):
         path = left.split(".")
-        for idx in range(1, len(path) + 1):
-            if path[-idx] == old and _valid_path_to(cr, path[:-idx], model, target_model):
-                path[-idx] = new
+        for idx in range(len(path) - len(dot_old), -1, -1):
+            r = slice(idx, idx + len(dot_old))
+            if path[r] == dot_old and _valid_path_to(cr, path[:idx], model, target_model):
+                path[r] = dot_new
         return ".".join(path)
 
     def clean_term(term):
@@ -247,9 +251,13 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
         leaf = expression.normalize_leaf(element)
         path = leaf[0].split(".")
         # force_adapt=True -> always adapt if found anywhere on left path
-        # otherwise adapt only when {old} field is the last part of left path
-        search_range = range(len(path)) if force_adapt else [-1]
-        if any(path[i] == old and _valid_path_to(cr, path[:i], model, target_model) for i in search_range):
+        # otherwise adapt only when {old} field is the last parts of left path
+        search_limit = len(path) - len(dot_old)
+        search_range = range(search_limit + 1) if force_adapt else [search_limit]
+        if any(
+            path[i : i + len(dot_old)] == dot_old and _valid_path_to(cr, path[:i], model, target_model)
+            for i in search_range
+        ):
             dom = [clean_term(term) for term in adapter(leaf, is_or, neg)]
         else:
             dom = [clean_term(leaf)]

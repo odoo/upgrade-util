@@ -236,6 +236,27 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.assert_called_once()
         self.assertEqual(res, self.mock_adapter.return_value)
 
+    @parametrize(
+        [
+            ("partner_id.old", "new"),
+            ("partner_id.user_id.partner_id.old", "partner_id.user_id.new"),
+            ("partner_id.old.foo", "new.foo"),
+            # from another model
+            ("user_id.partner_id.old", "user_id.new", "res.partner"),
+            # no change expected
+            ("old", None),
+            ("partner_id", None),
+            ("partner_id.name", None),
+        ]
+    )
+    def test_dotted_old(self, left, expected, model="res.users"):
+        domain = [(left, "=", "test")]
+        new_domain = _adapt_one_domain(self.cr, "res.users", "partner_id.old", "new", model, domain)
+        if expected is not None:
+            self.assertEqual(new_domain, [(expected, "=", "test")])
+        else:
+            self.assertIsNone(new_domain)
+
 
 class TestAdaptDomainView(UnitTestCase):
     def test_adapt_domain_view(self):
