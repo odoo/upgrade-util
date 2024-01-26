@@ -1025,7 +1025,7 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
         [match_old],
     )
     for id_, model, related in cr.fetchall():
-        domain = _adapt_one_domain(cr, target_model, old, new, model, [(related, "=", "related")])
+        domain = _adapt_one_domain(cr, target_model, old, new, model, [(related, "=", "related")], force_adapt=True)
         if domain:
             cr.execute("UPDATE ir_model_fields SET related = %s WHERE id = %s", [domain[0][0], id_])
 
