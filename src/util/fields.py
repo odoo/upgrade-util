@@ -6,6 +6,7 @@ import re
 import warnings
 
 import psycopg2
+from psycopg2 import sql
 
 try:
     from odoo import release
@@ -38,6 +39,7 @@ from .pg import (
     column_exists,
     column_type,
     explode_query_range,
+    format_query,
     get_value_or_en_translation,
     parallel_execute,
     pg_text2html,
@@ -672,7 +674,15 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
     A = env(cr)["ir.attachment"]
     iter_cur = cr._cnx.cursor("fetch_binary")
     iter_cur.itersize = 1
-    iter_cur.execute('SELECT id, "{field}", {name_query} FROM {table} WHERE "{field}" IS NOT NULL'.format(**locals()))
+    iter_cur.execute(
+        format_query(
+            cr,
+            "SELECT id, {field}, {name_query} FROM {table} WHERE {field} IS NOT NULL",
+            field=field,
+            name_query=sql.SQL(name_query),
+            table=table,
+        )
+    )
     for rid, data, name in iter_cur:
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
