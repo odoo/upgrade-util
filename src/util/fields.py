@@ -32,7 +32,7 @@ from .domains import _adapt_one_domain, _valid_path_to, adapt_domains
 from .exceptions import SleepyDeveloperError
 from .helpers import _dashboard_actions, _validate_model, table_of_model
 from .inherit import for_each_inherit
-from .misc import SelfPrintEvalContext, version_gte
+from .misc import SelfPrintEvalContext, log_progress, version_gte
 from .orm import env
 from .pg import (
     alter_column_type,
@@ -671,6 +671,9 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
         field,
     )
 
+    cr.execute(format_query(cr, "SELECT count(*) FROM {} WHERE {} IS NOT NULL", table, field))
+    [count] = cr.fetchone()
+
     A = env(cr)["ir.attachment"]
     iter_cur = cr._cnx.cursor("fetch_binary")
     iter_cur.itersize = 1
@@ -683,7 +686,8 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
             table=table,
         )
     )
-    for rid, data, name in iter_cur:
+    logger = _logger.getChild("convert_binary_field_to_attachment")
+    for rid, data, name in log_progress(iter_cur, logger=logger, qualifier="rows", size=count):
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
         data = bytes(data)  # noqa: PLW2901
