@@ -33,7 +33,7 @@ from .exceptions import SleepyDeveloperError
 from .helpers import _dashboard_actions, _validate_model, table_of_model
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext, log_progress, version_gte
-from .orm import env
+from .orm import env, invalidate
 from .pg import (
     alter_column_type,
     column_exists,
@@ -707,6 +707,7 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
             """,
             [model, rid, field, att.id],
         )
+        invalidate(att)
 
     iter_cur.close()
     # free PG space
