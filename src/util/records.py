@@ -921,6 +921,7 @@ def __update_record_from_xml(
 
 def delete_unused(cr, *xmlids, **kwargs):
     deactivate = kwargs.pop("deactivate", False)
+    keep_xmlids = kwargs.pop("keep_xmlids", True)
     if kwargs:
         raise TypeError("delete_unused() got an unexpected keyword argument %r" % kwargs.popitem()[0])
 
@@ -997,6 +998,19 @@ def delete_unused(cr, *xmlids, **kwargs):
             deactivate_ids = tuple(set(res_id_to_xmlid.keys()) - set(ids))
             if deactivate_ids:
                 cr.execute('UPDATE "{}" SET active = false WHERE id IN %s'.format(table), [deactivate_ids])
+
+    if not keep_xmlids:
+        query = """
+            WITH xids AS (
+                {}
+            )
+            DELETE
+              FROM ir_model_data d
+             USING xids x
+             WHERE d.module = x.module
+               AND d.name = x.name
+        """
+        cr.execute(query.format(select_xids))
 
     return deleted
 
