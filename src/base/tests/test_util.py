@@ -937,6 +937,19 @@ class TestRecords(UnitTestCase):
         # also ensure the replace works for multiple embedded quotes
         self.assertEqual(test_partner_title.name, "object.name GONE object.numbercombined")
 
+    def test_replace_record_references_batch__uniqueness(self):
+        c1 = self.env["res.country"].create(
+            {"name": "TEST1", "code": "T1", "state_ids": [(0, 0, {"name": "STATE1", "code": "STATE"})]}
+        )
+        c2 = self.env["res.country"].create(
+            {"name": "TEST2", "code": "T2", "state_ids": [(0, 0, {"name": "STATE2", "code": "STATE"})]}
+        )
+
+        util.replace_record_references_batch(self.env.cr, {c2.id: c1.id}, "res.country")
+        self.env.cr.execute("SELECT count(1) FROM res_country_state WHERE country_id=%s", [c1.id])
+        [count] = self.env.cr.fetchone()
+        self.assertEqual(count, 1)
+
 
 class TestMisc(UnitTestCase):
     @parametrize(
