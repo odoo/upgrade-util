@@ -26,6 +26,10 @@ version-file = "src/_version.py"
 [tool.ruff]
 fix = true
 show-fixes = true
+output-format = "full"
+line-length = 120
+
+[tool.ruff.lint]
 ignore = [
     "B904",  # raise-without-from-inside-except; not python2 compatible
     "B905",  # zip-without-explicit-strict; not python2 compatible
@@ -37,7 +41,6 @@ ignore = [
 
     "PLR2004",  # magic-value-comparison; not all comparisons to int or str are magic
     "TRY003",  # raise-vanilla-args; we can live without it
-    "TRY200",  # reraise-no-cause; not python2 compatible
     "RET505",  # only true for simple if/elif branches (like in the ruff doc example). if/elif blocks are easier to read in most cases
 
     "ISC001",  # avoid incompatibility with the ruff formatter
@@ -50,7 +53,6 @@ ignore = [
     # "E203",
     # "B907",
 ]
-line-length = 120
 select = [
     # full rule-sets
     "A",   # flake8-builtins
@@ -59,7 +61,6 @@ select = [
     "E",   # pycodestyle
     "ERA", # eradicate
     "F",   # Pyflakes
-    "FURB", # refurb
     "G",   # flake8-logging-format
     "I",   # isort
     "ISC", # flake8-implicit-str-concat
@@ -80,19 +81,19 @@ select = [
 
 ]
 
-[tool.ruff.flake8-builtins]
+[tool.ruff.lint.flake8-builtins]
 builtins-ignorelist = ["format", "id", "type"]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 section-order = ["future", "standard-library", "third-party", "first-party", "odoo-addons", "local-folder"]
 known-first-party = ["odoo", "openerp"]
 known-local-folder = ["odoo.upgrade", "odoo.addons.base.maintenance.migrations", "openerp.addons.base.maintenance.migrations"]
 
-[tool.ruff.isort.sections]
+[tool.ruff.lint.isort.sections]
 odoo-addons = ["odoo.addons", "openerp.addons"]
 
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "*/__init__.py" = [
     "F401",
     "F403",
