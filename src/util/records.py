@@ -1061,6 +1061,19 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                   FROM _upgrade_rrr r
                  WHERE r.old = t.{fk}
             """
+            unique_indexes = _get_unique_indexes_with(cr, table, fk)
+            if unique_indexes:
+                conditions = [""]
+                for _, uniq_cols in unique_indexes:
+                    uniq_cols = set(uniq_cols) - {fk}  # noqa: PLW2901
+                    ands = (
+                        " AND ".join(format_query(cr, "u.{col} = t.{col}", col=col) for col in uniq_cols)
+                        if uniq_cols
+                        else "true"
+                    )
+                    conditions.append("NOT EXISTS(SELECT 1 FROM {table} u WHERE u.{fk} = r.new AND %s)" % ands)
+
+                query += " AND ".join(conditions)
 
             if not column_exists(cr, table, "id"):
                 # seems to be a m2m table. Avoid duplicated entries
@@ -1091,14 +1104,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                         col2=col2,
                     )
                 )
-                query += """
-                    AND NOT EXISTS(SELECT 1 FROM {table} e WHERE e.{col2} = t.{col2} AND e.{fk} = r.new);
-
-                    DELETE
-                      FROM {table} t
-                     USING _upgrade_rrr r
-                     WHERE t.{fk} = r.old;
-                """
+                query += " AND NOT EXISTS(SELECT 1 FROM {table} e WHERE e.{col2} = t.{col2} AND e.{fk} = r.new)"
 
                 col2_info = target_of(cr, table, col2)  # col2 may not be a FK
                 if col2_info and col2_info[:2] == (model_src_table, "id"):
@@ -1106,7 +1112,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                     # It only handle 1-level recursions. For multi-level recursions, it should be handled manually.
                     # We can't decide which link to break.
                     # XXX: add a warning?
-                    query += """
+                    query += """;
                         DELETE
                           FROM {table} t
                          USING _upgrade_rrr r
@@ -1117,12 +1123,20 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 cr.execute(format_query(cr, query, table=table, fk=fk, col2=col2))
 
             else:  # it's a model
-                fmt_query = cr.mogrify(format_query(cr, query, table=table, fk=fk)).decode()
+                fmt_query = format_query(cr, query, table=table, fk=fk)
                 parallel_execute(cr, explode_query_range(cr, fmt_query, table=table, alias="t"))
 
                 # track default values to update
                 model = model_of_table(cr, table)
                 fk_def.append((model, fk))
+
+            delete_query = """
+                DELETE
+                  FROM {table} t
+                 USING _upgrade_rrr r
+                 WHERE t.{fk} = r.old
+            """
+            cr.execute(format_query(cr, delete_query, table=table, fk=fk))
 
         if fk_def:
             if table_exists(cr, "ir_values"):
