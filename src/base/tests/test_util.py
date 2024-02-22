@@ -605,7 +605,7 @@ class TestInherit(UnitTestCase):
 
 class TestNamedCursors(UnitTestCase):
     @staticmethod
-    def exec(cr, which="", args=()):  # noqa: A003
+    def exec(cr, which="", args=()):
         cr.execute("SELECT * FROM ir_ui_view")
         if which:
             return getattr(cr, which)(*args)
