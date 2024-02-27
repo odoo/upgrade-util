@@ -8,11 +8,7 @@ from typing import Iterable
 
 from lxml import etree
 
-try:
-    from packaging.version import Version
-except ImportError:
-    from distutils.version import StrictVersion as Version  # N.B. deprecated, will be removed in py3.12
-
+from .misc import parse_version as Version
 
 _logger = logging.getLogger(__name__)
 
