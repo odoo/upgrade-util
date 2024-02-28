@@ -14,7 +14,8 @@ from functools import partial, reduce
 from multiprocessing import cpu_count
 
 try:
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor  # noqa: I001
+    import concurrent
 except ImportError:
     ThreadPoolExecutor = None
 
@@ -29,7 +30,7 @@ except NameError:
     pass
 
 import psycopg2
-from psycopg2 import sql
+from psycopg2 import errorcodes, sql
 
 try:
     from odoo.sql_db import db_connect
@@ -117,17 +118,34 @@ if ThreadPoolExecutor is not None:
 
         cr.commit()
 
+        CONCURRENCY_ERRORCODES = {errorcodes.DEADLOCK_DETECTED}
+        failed_queries = []
+        tot_cnt = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            return sum(
-                log_progress(
-                    executor.map(execute, queries),
-                    logger,
-                    qualifier="queries",
-                    size=len(queries),
-                    estimate=False,
-                    log_hundred_percent=True,
-                )
-            )
+            future_queries = {executor.submit(execute, q): q for q in queries}
+            for future in log_progress(
+                concurrent.futures.as_completed(future_queries),
+                logger,
+                qualifier="queries",
+                size=len(queries),
+                estimate=False,
+                log_hundred_percent=True,
+            ):
+                try:
+                    tot_cnt += future.result()
+                except psycopg2.OperationalError as exc:
+                    if exc.pgcode not in CONCURRENCY_ERRORCODES:
+                        raise
+
+                    # to be retried without concurrency
+                    failed_queries.append(future_queries[future])
+
+        if failed_queries:
+            logger.warning("Serialize queries that failed due to concurrency issues")
+            tot_cnt += _parallel_execute_serial(cr, failed_queries, logger=logger)
+            cr.commit()
+
+        return tot_cnt
 
 else:
     _parallel_execute_threaded = _parallel_execute_serial
