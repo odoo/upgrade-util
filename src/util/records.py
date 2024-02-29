@@ -203,7 +203,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
 
             def parse(arch):
                 arch = arch.encode("utf-8") if isinstance(arch, unicode) else arch
-                return lxml.etree.fromstring(arch.replace(b"&#13;\n", b"\n"))
+                return lxml.etree.fromstring(arch.replace(b"&#13;\n", b"\n").strip())
 
             if jsonb_column:
 
