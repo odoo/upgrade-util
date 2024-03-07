@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import collections
+import functools
 import logging
 import re
 
@@ -174,6 +175,21 @@ def _valid_path_to(cr, path, from_, to):
     return model is not None and model == to
 
 
+def _replace_path(cr, old, new, src_model, dst_model, path_str):
+    """
+    Replace `old` by `new` in the fields path `path_str` assuming the path starts from `src_model`.
+    The replace only takes place if `old` points at `dst_model`.
+    """
+    dot_old = old.split(".")
+    dot_new = new.split(".")
+    path = path_str.split(".")
+    for idx in range(len(path) - len(dot_old), -1, -1):
+        r = slice(idx, idx + len(dot_old))
+        if path[r] == dot_old and _valid_path_to(cr, path[:idx], src_model, dst_model):
+            path[r] = dot_new
+    return ".".join(path)
+
+
 def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
     if not adapter:
         adapter = lambda leaf, _, __: [leaf]
@@ -197,15 +213,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
             return None
 
     dot_old = old.split(".")
-    dot_new = new.split(".")
-
-    def clean_path(left):
-        path = left.split(".")
-        for idx in range(len(path) - len(dot_old), -1, -1):
-            r = slice(idx, idx + len(dot_old))
-            if path[r] == dot_old and _valid_path_to(cr, path[:idx], model, target_model):
-                path[r] = dot_new
-        return ".".join(path)
+    clean_path = functools.partial(_replace_path, cr, old, new, model, target_model)
 
     def clean_term(term):
         if isinstance(term, basestring) or not isinstance(term[0], basestring):
