@@ -154,6 +154,28 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         if changed:
             add_to_migration_reports(("ir.filters", id_, name), "Filters/Dashboards")
 
+    if column_exists(cr, "ir_filters", "sort"):
+        cr.execute(
+            """
+               WITH to_update AS (
+                   SELECT f.id,
+                          COALESCE(ARRAY_TO_JSON(ARRAY_AGG(s.sort_item ORDER BY rn) filter (WHERE s.sort_item not in %s)), '[]') AS sort
+                     FROM ir_filters f
+                 JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(f.sort::jsonb)
+                       WITH ORDINALITY AS s(sort_item, rn)
+                          ON true
+                       WHERE f.model_id = %s
+                         AND f.sort ~ %s
+                  GROUP BY id
+               )
+               UPDATE ir_filters f
+                  SET sort = t.sort
+                 FROM to_update t
+                WHERE f.id = t.id
+            """,
+            [(fieldname, fieldname + " desc"), model, r"\y{}\y".format(fieldname)],
+        )
+
     def adapter(leaf, is_or, negated):
         # replace by TRUE_LEAF, unless negated or in a OR operation but not negated
         if is_or ^ negated:
