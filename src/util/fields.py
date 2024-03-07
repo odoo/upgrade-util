@@ -7,6 +7,7 @@ import warnings
 
 import psycopg2
 from psycopg2 import sql
+from psycopg2.extras import Json
 
 try:
     from odoo import release
@@ -28,7 +29,7 @@ except ImportError:
 
 
 from .const import ENVIRON
-from .domains import _adapt_one_domain, _valid_path_to, adapt_domains
+from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
 from .exceptions import SleepyDeveloperError
 from .helpers import _dashboard_actions, _validate_model, table_of_model
 from .inherit import for_each_inherit
@@ -855,6 +856,32 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
     }
 
     # ir.action.server
+    if column_exists(cr, "ir_act_server", "update_path") and only_models:
+        cr.execute(
+            """
+            SELECT a.id,
+                   a.update_path,
+                   m.model
+              FROM ir_act_server a
+              JOIN ir_model m
+                ON a.model_id = m.id
+             WHERE a.state = 'object_write'
+               AND a.update_path ~ %(old)s
+            """,
+            p,
+        )
+        to_update = {}
+        for act_id, update_path, src_model in cr.fetchall():
+            for dst_model in only_models:
+                new_path = _replace_path(cr, old, new, src_model, dst_model, update_path)
+                if new_path != update_path:
+                    to_update[act_id] = new_path
+        if to_update:
+            cr.execute(
+                "UPDATE ir_act_server SET update_path = %s::jsonb->>id::text WHERE id IN %s",
+                [Json(to_update), tuple(to_update)],
+            )
+
     # Modifying server action is dangerous.
     # The search pattern can be anywhere in the code, leading to invalid codes.
     # Moreover, limiting to some models will ignore some SA that should be modified.
