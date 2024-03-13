@@ -16,6 +16,7 @@ from .pg import (
     column_updatable,
     explode_execute,
     explode_query_range,
+    format_query,
     get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
@@ -233,14 +234,21 @@ def rename_model(cr, old, new, rename_table=True):
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_updatable(cr, table, column):
-            query = cr.mogrify(
-                """
-                    UPDATE "{table}"
-                       SET "{column}"='{new}' || substring("{column}" FROM '%#",%#"' FOR '#')
-                     WHERE "{column}" LIKE '{old},%'
-            """.format(table=table, column=column, new=new, old=old)
-            ).decode()
-            explode_execute(cr, query, table=table)
+            cr.execute(format_query(cr, "SELECT 1 FROM {} WHERE {} LIKE '{},%' LIMIT 1", table, column, old))
+            if cr.rowcount:
+                query = format_query(
+                    cr,
+                    """
+                        UPDATE "{table}"
+                            SET "{column}"='{new}' || substring("{column}" FROM '%#",%#"' FOR '#')
+                            WHERE "{column}" LIKE '{old},%'
+                    """,
+                    table=table,
+                    column=column,
+                    new=new,
+                    old=old,
+                )
+                explode_execute(cr, query, table=table)
 
     # defaults
     if table_exists(cr, "ir_values"):
