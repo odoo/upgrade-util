@@ -21,6 +21,11 @@ try:
 except ImportError:
     from UserList import UserList
 
+try:  # noqa: SIM105
+    range = xrange  # noqa: A001
+except NameError:
+    pass
+
 import psycopg2
 from psycopg2 import sql
 
@@ -36,6 +41,7 @@ from .misc import log_progress
 _logger = logging.getLogger(__name__)
 
 ON_DELETE_ACTIONS = frozenset(("SET NULL", "CASCADE", "RESTRICT", "NO ACTION", "SET DEFAULT"))
+MAX_BUCKETS = int(os.getenv("MAX_BUCKETS", "150000"))
 
 
 class PGRegexp(str):
@@ -196,27 +202,57 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
 
     alias = alias or table
 
-    cr.execute("SELECT min(id), max(id) FROM {}".format(table))
-    min_id, max_id = cr.fetchone()
-    if min_id is None:
-        return []  # empty table
-
     if "{parallel_filter}" not in query:
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
 
-    if ((max_id - min_id + 1) * 0.9) <= bucket_size:
-        # If there is less than `bucket_size` records (with a 10% tolerance), no need to explode the query.
-        # Force usage of `prefix` in the query to validate it correctness.
-        # If we don't the query may only be valid if there is no split. It avoid scripts to pass the CI but fail in production.
+    cr.execute(format_query(cr, "SELECT min(id), max(id) FROM {}", table))
+    min_id, max_id = cr.fetchone()
+    if min_id is None:
+        return []  # empty table
+    count = (max_id + 1 - min_id) // bucket_size
+    if count > MAX_BUCKETS:
+        _logger.getChild("explode_query_range").warning(
+            "High number of queries generated (%s); switching to a precise bucketing strategy", count
+        )
+        cr.execute(
+            format_query(
+                cr,
+                """
+                WITH t AS (
+                    SELECT id,
+                           mod(row_number() OVER(ORDER BY id) - 1, %s) AS g
+                      FROM {table}
+                     ORDER BY id
+                ) SELECT array_agg(id ORDER BY id) FILTER (WHERE g=0),
+                         min(id),
+                         max(id)
+                    FROM t
+                """,
+                table=table,
+            ),
+            [bucket_size],
+        )
+        ids, min_id, max_id = cr.fetchone()
+    else:
+        ids = list(range(min_id, max_id + 1, bucket_size))
+
+    assert min_id == ids[0] and max_id + 1 != ids[-1]  # sanity checks
+    ids.append(max_id + 1)  # ensure last bucket covers whole range
+    # `ids` holds a list of values marking the interval boundaries for all buckets
+
+    if (max_id - min_id + 1) <= 1.1 * bucket_size or (len(ids) == 3 and ids[2] - ids[1] <= 0.1 * bucket_size):
+        # If we return one query `parallel_execute` skip spawning new threads. Thus we return only one query if we have
+        # only two buckets and the second would have at most 10% of bucket_size records.
+        # Still, since the query may only be valid if there is no split, we force the usage of `prefix` in the query to
+        # validate its correctness and avoid scripts that pass the CI but fail in production.
         parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
         return [query.format(parallel_filter=parallel_filter)]
 
     parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
     query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
     return [
-        cr.mogrify(query, {"lower-bound": index, "upper-bound": index + bucket_size - 1}).decode()
-        for index in range(min_id, max_id, bucket_size)
+        cr.mogrify(query, {"lower-bound": ids[i], "upper-bound": ids[i + 1] - 1}).decode() for i in range(len(ids) - 1)
     ]
 
 
