@@ -80,19 +80,6 @@ def _parallel_execute_serial(cr, queries, logger=_logger):
 if ThreadPoolExecutor is not None:
 
     def _parallel_execute_threaded(cr, queries, logger=_logger):
-        """
-        Execute queries in parallel
-        Use a maximum of 8 workers (but not more than the number of CPUs)
-        Side effect: the given cursor is commited.
-        As example, on `**REDACTED**` (using 8 workers), the following gains are:
-            +---------------------------------------------+-------------+-------------+
-            | File                                        | Sequential  | Parallel    |
-            +---------------------------------------------+-------------+-------------+
-            | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
-            | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
-            | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
-            +---------------------------------------------+-------------+-------------+
-        """
         if not queries:
             return None
 
@@ -147,6 +134,20 @@ else:
 
 
 def parallel_execute(cr, queries, logger=_logger):
+    """
+    Try to execute queries concurrently using `min([8, len(queries), n_cpus])` workers.
+    If concurrency issues are detected, some of the queries will be executed sequentially.
+    Side effect: the given cursor is committed.
+
+    Potential gains example (using 8 workers):
+        +---------------------------------------------+-------------+-------------+
+        | File                                        | Sequential  | Parallel    |
+        +---------------------------------------------+-------------+-------------+
+        | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
+        | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
+        | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
+        +---------------------------------------------+-------------+-------------+
+    """
     parallel_execute_impl = (
         _parallel_execute_serial
         if getattr(threading.current_thread(), "testing", False)
@@ -275,6 +276,10 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
 
 
 def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_logger):
+    """
+    Explode the provided query and execute it in parallel.
+    See `explode_query_range()` and `parallel_execute()` for more details
+    """
     return parallel_execute(
         cr,
         explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size),
