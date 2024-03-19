@@ -118,7 +118,7 @@ if ThreadPoolExecutor is not None:
                 log_hundred_percent=True,
             ):
                 try:
-                    tot_cnt += future.result()
+                    tot_cnt += future.result() or 0
                 except psycopg2.OperationalError as exc:
                     if exc.pgcode not in CONCURRENCY_ERRORCODES:
                         raise
