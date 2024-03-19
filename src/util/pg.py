@@ -84,20 +84,6 @@ def _parallel_execute_serial(cr, queries, logger=_logger):
 if ThreadPoolExecutor is not None:
 
     def _parallel_execute_threaded(cr, queries, logger=_logger):
-        """
-        Execute queries in parallel.
-
-        Use a maximum of 8 workers (but not more than the number of CPUs)
-        Side effect: the given cursor is commited.
-        As example, on `**REDACTED**` (using 8 workers), the following gains are:
-            +---------------------------------------------+-------------+-------------+
-            | File                                        | Sequential  | Parallel    |
-            +---------------------------------------------+-------------+-------------+
-            | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
-            | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
-            | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
-            +---------------------------------------------+-------------+-------------+
-        """
         if not queries:
             return None
 
@@ -152,6 +138,32 @@ else:
 
 
 def parallel_execute(cr, queries, logger=_logger):
+    """
+    Execute queries in parallel.
+
+    .. example::
+       .. code-block:: python
+
+          util.parallel_execute(cr, [util.format_query(cr, "REINDEX TABLE {}", t) for t in tables])
+
+    .. tip::
+       If looking to speedup a single query, see :func:`~odoo.upgrade.util.pg.explode_execute`.
+
+    :param list(str) queries: list of queries to execute concurrently
+    :param `~logging.Logger` logger: logger used to report the progress
+    :return: the sum of `cr.rowcount` for each query run
+    :rtype: int
+
+    .. warning::
+       - Due to the nature of `cr.rowcount`, the return value of this function may represent an
+         underestimate of the real number of affected records. For instance, when some records
+         are deleted/updated as a result of an `ondelete` clause, they won't be taken into account.
+
+       - As a side effect, the cursor will be committed.
+
+    .. note::
+       If a concurrency issue occurs, the *failing* queries will be retried sequentially.
+    """
     parallel_execute_impl = (
         _parallel_execute_serial
         if getattr(threading.current_thread(), "testing", False)
@@ -330,6 +342,7 @@ def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_log
        It's up to the caller to ensure the queries do not update the same records in
        different buckets. It is advised to never use this function for `DELETE` queries on
        tables with self references due to the potential `ON DELETE` effects.
+       For more details see :func:`~odoo.upgrade.util.pg.parallel_execute`.
     """
     return parallel_execute(
         cr,
