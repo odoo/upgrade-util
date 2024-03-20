@@ -186,6 +186,12 @@ class HTMLConverter:
     def __init__(self, callback, selector=None):
         self.selector = selector
         self.callback = make_pickleable_callback(callback)
+        self.format = "xml"
+
+    def set_format(self, format):
+        # Using a format string instead of html and etree because self
+        # needs to be pickleable.
+        self.format = format
 
     def has_changed(self, els):
         if self.selector:
@@ -206,8 +212,9 @@ class HTMLConverter:
             parser=utf8_parser,
         )
         has_changed = self.has_changed(els)
+        formatter = etree if self.format == "xml" else html
         new_content = (
-            re.sub(r"(^<wrap>|</wrap>$)", "", etree.tostring(els, encoding="unicode").strip())
+            re.sub(r"(^<wrap>|</wrap>$)", "", formatter.tostring(els, encoding="unicode").strip())
             if has_changed
             else content
         )
@@ -322,6 +329,8 @@ def convert_html_content(
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
 
+    if "set_format" in dir(converter_callback):
+        converter_callback.set_format('xml')
     convert_html_columns(
         cr,
         "ir_ui_view",
@@ -332,4 +341,8 @@ def convert_html_content(
     )
 
     for table, columns in html_fields(cr):
+        if "set_format" in dir(converter_callback):
+            # mass_mailing requires HTML
+            converter = "html" if table == "mailing_mailing" else "xml"
+            converter_callback.set_format(converter)
         convert_html_columns(cr, table, columns, converter_callback, where_column=where_column, **kwargs)
