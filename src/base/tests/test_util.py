@@ -525,6 +525,50 @@ class TestPG(UnitTestCase):
         self.test_parallel_rowcount()
         threading.current_thread().testing = True
 
+    def test_parallel_execute_retry_on_serialization_failure(self):
+        TEST_TABLE_NAME = "_upgrade_serialization_failure_test_table"
+        N_ROWS = 10
+
+        cr = self.env.cr
+
+        cr.execute(
+            util.format_query(
+                cr,
+                """
+                DROP TABLE IF EXISTS {table};
+
+                CREATE TABLE {table} (
+                    id SERIAL PRIMARY KEY,
+                    other_id INTEGER,
+                    FOREIGN KEY (other_id) REFERENCES {table} ON DELETE CASCADE
+                );
+
+                INSERT INTO {table} SELECT GENERATE_SERIES(1, %s);
+
+                -- map odd numbers `n` to `n + 1` and viceversa (`n + 1` to `n`)
+                UPDATE {table} SET other_id = id + (MOD(id, 2) - 0.5)*2;
+                """
+                % N_ROWS,
+                table=TEST_TABLE_NAME,
+            )
+        )
+
+        threading.current_thread().testing = False
+        # exploded queries will generate a SerializationFailed error, causing some of the queries to be retried
+        util.explode_execute(
+            cr, util.format_query(cr, "DELETE FROM {}", TEST_TABLE_NAME), TEST_TABLE_NAME, bucket_size=1
+        )
+        threading.current_thread().testing = True
+
+        if hasattr(self, "_savepoint_id"):
+            # `explode_execute` causes the cursor to be committed, losing the automatic checkpoint
+            # Force a new one to avoid issues when cleaning up
+            self.addCleanup(cr.execute, f"SAVEPOINT test_{self._savepoint_id}")
+            self.addCleanup(cr.execute, util.format_query(cr, "DROP TABLE IF EXISTS {}", TEST_TABLE_NAME))
+
+        cr.execute(util.format_query(cr, "SELECT 1 FROM {}", TEST_TABLE_NAME))
+        self.assertFalse(cr.rowcount)
+
     def test_create_column_with_fk(self):
         cr = self.env.cr
         self.assertFalse(util.column_exists(cr, "res_partner", "_test_lang_id"))

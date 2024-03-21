@@ -104,7 +104,10 @@ if ThreadPoolExecutor is not None:
 
         cr.commit()
 
-        CONCURRENCY_ERRORCODES = {errorcodes.DEADLOCK_DETECTED}
+        CONCURRENCY_ERRORCODES = {
+            errorcodes.DEADLOCK_DETECTED,
+            errorcodes.SERIALIZATION_FAILURE,
+        }
         failed_queries = []
         tot_cnt = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
