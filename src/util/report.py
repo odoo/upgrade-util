@@ -94,6 +94,7 @@ def announce_migration_report(cr):
         "action_view_id": e.ref("base.action_ui_view").id,
         "major_version": release.major_version,
         "messages": migration_reports,
+        "get_anchor_link_to_record": get_anchor_link_to_record,
     }
     _logger.info(migration_reports)
     render = e["ir.qweb"].render if hasattr(e["ir.qweb"], "render") else e["ir.qweb"]._render
@@ -230,7 +231,7 @@ def announce(
 
 def get_anchor_link_to_record(model, id, name, action_id=None):
     _validate_model(model)
-    return '<a target="_blank" href="web?debug=1#view_type=form&amp;model=%s&amp;action=%s&amp;id=%s">%s</a>' % (
+    return '<a target="_blank" href="/web?debug=1#view_type=form&amp;model=%s&amp;action=%s&amp;id=%s">%s</a>' % (
         model,
         action_id or "",
         id,
