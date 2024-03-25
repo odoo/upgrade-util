@@ -967,7 +967,11 @@ class TestRecords(UnitTestCase):
             {"name": "TEST2", "code": "T2", "state_ids": [(0, 0, {"name": "STATE2", "code": "STATE"})]}
         )
 
-        util.replace_record_references_batch(self.env.cr, {c2.id: c1.id}, "res.country")
+        # `sale_subscription` as foreign key on `res_country`
+        # ignore it to avoid the logging of an error in `model_of_table` when upgrading to v16 where the model
+        # `sale.subscription` as been removed but the table kept.
+        ignores = ["sale_subscription"]
+        util.replace_record_references_batch(self.env.cr, {c2.id: c1.id}, "res.country", ignores=ignores)
         self.env.cr.execute("SELECT count(1) FROM res_country_state WHERE country_id=%s", [c1.id])
         [count] = self.env.cr.fetchone()
         self.assertEqual(count, 1)
