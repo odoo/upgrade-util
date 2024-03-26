@@ -38,7 +38,7 @@
           <summary>During the upgrade some fields have been removed. The records below have been automatically corrected.</summary>
           <ul>
             <t t-foreach="messages[category]" t-as="message">
-              <t t-raw="get_anchor_link_to_record(*message[0])"/>
+              <t t-raw="get_anchor_link_to_record(message[0][0], message[0][1], message[0][2])"/>
             </t>
           </ul>
         </details></li>
