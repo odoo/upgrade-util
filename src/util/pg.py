@@ -12,7 +12,8 @@ from functools import partial, reduce
 from multiprocessing import cpu_count
 
 try:
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor  # noqa: I001
+    import concurrent
 except ImportError:
     ThreadPoolExecutor = None
 
@@ -27,7 +28,7 @@ except NameError:
     pass
 
 import psycopg2
-from psycopg2 import sql
+from psycopg2 import errorcodes, sql
 
 try:
     from odoo.sql_db import db_connect
@@ -79,19 +80,6 @@ def _parallel_execute_serial(cr, queries, logger=_logger):
 if ThreadPoolExecutor is not None:
 
     def _parallel_execute_threaded(cr, queries, logger=_logger):
-        """
-        Execute queries in parallel
-        Use a maximum of 8 workers (but not more than the number of CPUs)
-        Side effect: the given cursor is commited.
-        As example, on `**REDACTED**` (using 8 workers), the following gains are:
-            +---------------------------------------------+-------------+-------------+
-            | File                                        | Sequential  | Parallel    |
-            +---------------------------------------------+-------------+-------------+
-            | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
-            | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
-            | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
-            +---------------------------------------------+-------------+-------------+
-        """
         if not queries:
             return None
 
@@ -112,23 +100,57 @@ if ThreadPoolExecutor is not None:
 
         cr.commit()
 
+        CONCURRENCY_ERRORCODES = {
+            errorcodes.DEADLOCK_DETECTED,
+            errorcodes.SERIALIZATION_FAILURE,
+        }
+        failed_queries = []
+        tot_cnt = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            return sum(
-                log_progress(
-                    executor.map(execute, queries),
-                    logger,
-                    qualifier="queries",
-                    size=len(queries),
-                    estimate=False,
-                    log_hundred_percent=True,
-                )
-            )
+            future_queries = {executor.submit(execute, q): q for q in queries}
+            for future in log_progress(
+                concurrent.futures.as_completed(future_queries),
+                logger,
+                qualifier="queries",
+                size=len(queries),
+                estimate=False,
+                log_hundred_percent=True,
+            ):
+                try:
+                    tot_cnt += future.result() or 0
+                except psycopg2.OperationalError as exc:
+                    if exc.pgcode not in CONCURRENCY_ERRORCODES:
+                        raise
+
+                    # to be retried without concurrency
+                    failed_queries.append(future_queries[future])
+
+        if failed_queries:
+            logger.info("Serialize queries that failed due to concurrency issues")
+            tot_cnt += _parallel_execute_serial(cr, failed_queries, logger=logger)
+            cr.commit()
+
+        return tot_cnt
 
 else:
     _parallel_execute_threaded = _parallel_execute_serial
 
 
 def parallel_execute(cr, queries, logger=_logger):
+    """
+    Try to execute queries concurrently using `min([8, len(queries), n_cpus])` workers.
+    If concurrency issues are detected, some of the queries will be executed sequentially.
+    Side effect: the given cursor is committed.
+
+    Potential gains example (using 8 workers):
+        +---------------------------------------------+-------------+-------------+
+        | File                                        | Sequential  | Parallel    |
+        +---------------------------------------------+-------------+-------------+
+        | base/saas~12.5.1.3/pre-20-models.py         | ~8 minutes  | ~2 minutes  |
+        | mail/saas~12.5.1.0/pre-migrate.py           | ~10 minutes | ~4 minutes  |
+        | mass_mailing/saas~12.5.2.0/pre-10-models.py | ~40 minutes | ~18 minutes |
+        +---------------------------------------------+-------------+-------------+
+    """
     parallel_execute_impl = (
         _parallel_execute_serial
         if getattr(threading.current_thread(), "testing", False)
@@ -257,6 +279,10 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
 
 
 def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_logger):
+    """
+    Explode the provided query and execute it in parallel.
+    See `explode_query_range()` and `parallel_execute()` for more details
+    """
     return parallel_execute(
         cr,
         explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size),
