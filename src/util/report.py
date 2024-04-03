@@ -231,9 +231,12 @@ def announce(
 
 def get_anchor_link_to_record(model, id, name, action_id=None):
     _validate_model(model)
-    return '<a target="_blank" href="/web?debug=1#view_type=form&amp;model=%s&amp;action=%s&amp;id=%s">%s</a>' % (
+    anchor_tag = '<a target="_blank" href="/web?debug=1#view_type=form&amp;model=%s&amp;action=%s&amp;id=%s">%s</a>' % (
         model,
         action_id or "",
         id,
         html_escape(name),
     )
+    if Markup:
+        anchor_tag = Markup(anchor_tag)
+    return anchor_tag
