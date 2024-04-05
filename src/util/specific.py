@@ -3,6 +3,7 @@ import logging
 
 from .helpers import _validate_table
 from .misc import _cached
+from .models import rename_model
 from .modules import rename_module
 from .pg import column_exists, rename_table
 from .report import add_to_migration_reports
@@ -41,6 +42,17 @@ def dispatch_by_dbuuid(cr, version, callbacks):
         func = callbacks[uuid]
         _logger.info("calling dbuuid-specific function `%s`", func.__name__)
         func(cr, version)
+
+
+def rename_custom_model(cr, model_name, new_model_name, custom_module=None, report_details=""):
+    rename_model(cr, model_name, new_model_name, rename_table=True)
+    module_details = " from module '{}'".format(custom_module) if custom_module else ""
+    add_to_migration_reports(
+        category="Custom models",
+        message="The custom model '{model_name}'{module_details} was renamed to '{new_model_name}'. {report_details}".format(
+            **locals()
+        ),
+    )
 
 
 def rename_custom_module(cr, old_module_name, new_module_name, report_details=""):
