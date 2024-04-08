@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+"""
+Utility functions for module-level operations.
+
+In most cases module operations (rename, merge, remove, ...) should be performed in a
+`base` script. The reason is that once the `base` module is upgraded, all the information
+regarding modules should be already set in the DB for the upgrade process to function
+correctly.
+"""
+
 try:
     from collections.abc import Sequence, Set
 except ImportError:
@@ -53,7 +62,17 @@ except NameError:
 
 
 def modules_installed(cr, *modules):
-    """return True if all `modules` are (about to be) installed"""
+    """
+    Return whether *all* given modules are installed.
+
+    :param list(str) modules: names of the modules to check
+    :rtype: bool
+
+    .. note::
+
+        In the context of upgrades a module is considered as installed if it is marked for
+        upgrade, or for installation; even if they are not yet fully installed.
+    """
     assert modules
     cr.execute(
         """
@@ -68,10 +87,23 @@ def modules_installed(cr, *modules):
 
 
 def module_installed(cr, module):
+    """
+    Return whether a module is installed.
+
+    :param str module: name of the module to check
+    :rtype: bool
+
+    See :func:`modules_installed`.
+    """
     return modules_installed(cr, module)
 
 
 def uninstall_module(cr, module):
+    """
+    Uninstall and remove all records owned by a module.
+
+    :param str module: name of the module to uninstall
+    """
     cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (module,))
     (mod_id,) = cr.fetchone() or [None]
     if not mod_id:
@@ -190,9 +222,18 @@ def uninstall_module(cr, module):
 
 
 def uninstall_theme(cr, theme, base_theme=None):
-    """Uninstalls a theme module (see uninstall_module) and removes it from the
-    related websites.
-    Beware that this utility function can only be called in post-* scripts.
+    """
+    Uninstall a theme module and remove it from websites.
+
+    :param str theme: name of the theme module to uninstall
+    :param str or None base_theme: if not `None`, unload first this base theme
+
+    .. warning::
+
+        This function can only be used in `post-` scripts of `website` module as it relies
+        on the ORM.
+
+    See :func:`remove_theme` and :func:`uninstall_module`.
     """
     cr.execute("SELECT id FROM ir_module_module WHERE name=%s AND state in %s", [theme, INSTALLED_MODULE_STATES])
     (theme_id,) = cr.fetchone() or [None]
@@ -216,8 +257,17 @@ def uninstall_theme(cr, theme, base_theme=None):
 
 
 def remove_module(cr, module):
-    """Uninstall the module and delete references to it
-    Ensure to reassign records before calling this method
+    """
+    Completely remove a module.
+
+    This operation is equivalent to uninstall and removal of *all* references to
+    the module - no trace of it is left in the database.
+
+    :param str module: name of the module to remove
+
+    .. warning::
+       Since this function removes *all* data associated to the module. Ensure to
+       reassign records before calling this function.
     """
     # NOTE: we cannot use the uninstall of module because the given
     # module need to be currently installed and running as deletions
@@ -232,8 +282,13 @@ def remove_module(cr, module):
 
 
 def remove_theme(cr, theme, base_theme=None):
-    """See remove_module. Beware that removing a theme must be done in post-*
-    scripts.
+    """
+    Uninstall a theme module.
+
+    .. warning::
+       This function can only be used in `post-` scripts.
+
+    See :func:`remove_module` and :func:`uninstall_theme`.
     """
     uninstall_theme(cr, theme, base_theme=base_theme)
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (theme,))
@@ -261,6 +316,12 @@ def _update_view_key(cr, old, new):
 
 
 def rename_module(cr, old, new):
+    """
+    Rename a module and all references to it.
+
+    :param str old: current name of the module to rename
+    :param str new: new name of the module to rename
+    """
     cr.execute("UPDATE ir_module_module SET name=%s WHERE name=%s", (new, old))
     cr.execute("UPDATE ir_module_module_dependency SET name=%s WHERE name=%s", (new, old))
     _update_view_key(cr, old, new)
@@ -283,7 +344,21 @@ def rename_module(cr, old, new):
 
 
 def merge_module(cr, old, into, update_dependers=True):
-    """Move all references of module `old` into module `into`"""
+    """
+    Merge a module into another.
+
+    This function moves all references and records from the source module to the
+    destination module.
+
+    .. warning::
+       This functions does not remove any record, but it removes xml_ids from the source
+       module with a conflicting name in the destination module.
+
+    :param str old: name of the module to be merged
+    :param str into: name of the module to merge into
+    :param bool update_dependers: whether the dependencies of modules that depend on `old`
+                                  are updated
+    """
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
 
@@ -405,6 +480,14 @@ def merge_module(cr, old, into, update_dependers=True):
 
 
 def force_install_module(cr, module, if_installed=None):
+    """
+    Force the ORM to install a module.
+
+    :param str module: name of the module to install
+    :param list(str) or None if_installed: only force the install when these modules are
+                                           already installed
+    :return str: the *original* state of the module
+    """
     subquery = ""
     subparams = ()
     if if_installed:
@@ -666,12 +749,21 @@ def _caller_version(depth=2):
 
 
 def force_upgrade_of_fresh_module(cr, module, init=True):
-    """It may appear that new (or forced installed) modules need an upgrade script to grab data
-    from another module. (we cannot add a pre-init hook on the fly)
+    """
+    Force the execution of upgrade scripts for a module that is being installed.
 
-    Being in init mode may make sens in some situations (when?) but has the nasty side effect
-    of not respecting noupdate flags (in xml file nor in ir_model_data) which can be quite
-    problematic
+    Standard Odoo doesn't run upgrade scripts when a module is being installed. This makes
+    sense because, technically speaking, the module is not being upgraded. Still, it
+    happens that a (new) module needs to perform some operations for it to be correctly
+    installed, like grabbing data from another module. This is common when a module is
+    functionally *split* into several ones.
+
+    :param str module: name of the module for which to force the execution of upgrade
+                       scripts
+    :param bool init: whether to set the module to be in *init* mode
+
+    Being in init mode has the side effect of not respecting noupdate flags, in XML file
+    nor in `ir_model_data`.
     """
     version = _caller_version()
     if version_gte("saas~14.5"):
@@ -705,6 +797,9 @@ def _force_upgrade_of_fresh_module(cr, module, init, version):
 
 # for compatibility
 force_migration_of_fresh_module = force_upgrade_of_fresh_module
+"""
+:meta private: exclude from online docs
+"""
 
 
 def _trigger_auto_discovery(cr):
@@ -764,10 +859,17 @@ def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
 
 def move_model(cr, model, from_module, to_module, move_data=False, keep=()):
     """
-    Move model `model` from `from_module` to `to_module`.
-    This method can also be called for moving overrides of a model to another module.
-    As we cannot distinct the two cases (source model or inherited model), if the destination
-    module isn't installed, an exception is raised.
+    Move a model from one module to another.
+
+    :param str model: name of the model to move
+    :param str from_module: name of the module where the model is originally defined
+    :param str to_module: name of the destination module where the model is to be moved
+    :param bool move_data: whether to also update `ir_model_data` for records of the model
+    :param list(str) keep: list of XML ids to keep - not move
+
+    This function can be called for moving overrides of a model to another module. As it
+    cannot distinguish between source model or inherited model, it raises an exception if
+    the destination module isn't installed.
     """
     _validate_model(model)
     if not module_installed(cr, to_module):

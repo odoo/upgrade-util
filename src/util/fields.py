@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+"""
+Utility functions for modifying model fields.
+
+Field operations are best done in `pre-` script of the involved modules. In some cases a
+preliminary operation could be done in pre and finished in post. A common example is to
+remove a field in pre- keeping its column, later used in post when the column is finally
+dropped.
+"""
+
 import base64
 import json
 import logging
@@ -73,10 +82,13 @@ _CONTEXT_KEYS_TO_CLEAN = (
 def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     """
     Fix broken m2o relations.
+
     If any `column` not present in `dst_table`, remove column from `src_table` in
     order to force recomputation of the function field
 
     WARN: only call this method on m2o function/related fields!!
+
+    :meta private: exclude from online docs
     """
     if not column_exists(cr, src_table, column):
         return
@@ -92,6 +104,20 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
 
 
 def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
+    """
+    Remove a field and its references from the database.
+
+    This function also removes the field from inheriting models, unless exceptions are
+    specified in `skip_inherit`. When the field is stored we can choose to not drop the
+    column.
+
+    :param str model: model name of the field to remove
+    :param str fieldname: name of the field to remove
+    :param bool cascade: whether the field column(s) are removed in `CASCADE` mode
+    :param bool drop_column: whether the field's column is dropped
+    :param list(str) or str skip_inherit: list of inheriting models to skip the removal
+                                          of the field, use `"*"` to skip all
+    """
     _validate_model(model)
 
     ENVIRON["__renamed_fields"][model][fieldname] = None
@@ -339,11 +365,15 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
 
 def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
     """
+    Remove metadata of a field.
+
     Due to a bug of the ORM [1], mixins doesn't create/register xmlids for fields created in children models
     Thus, when a field is no more defined in a child model, their xmlids should be removed explicitly to
     avoid the fields to be considered as missing and being removed at the end of the upgrade.
 
     [1] https://github.com/odoo/odoo/issues/49354
+
+    :meta private: exclude from online docs
     """
     _validate_model(model)
 
@@ -360,6 +390,20 @@ def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
 
 
 def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inherit=()):
+    """
+    Move a field from one module to another.
+
+    This functions updates all references to a specific field, switching from the source
+    module to the destination module. It avoid data removal after the registry is fully
+    loaded. The field in inheriting models are also moved unless skipped.
+
+    :param str model: name of the owner model of the field to move
+    :param str fieldname: name of the field to move
+    :param str old_module: source module name from which the field is moved
+    :param str new_module: target module name into which the field is moved
+    :param list(str) or str skip_inherit: list of inheriting models for which the field is
+                                          not to be moved, use `"*"` to skip all
+    """
     _validate_model(model)
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
     try:
@@ -385,6 +429,25 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
 
 
 def rename_field(cr, model, old, new, update_references=True, domain_adapter=None, skip_inherit=()):
+    """
+    Rename a field and its references from `old` to `new` on the given `model` and all inheriting models, unless exceptions are specified in `skip_inherit`.
+
+    This functions also updates references, indirect or direct ones, including filters,
+    server actions, related fields, emails, dashboards, domains, and many more. See
+    :func:`update_field_usage`
+
+    For the update of domains a special adapter function can be used. The default adapter
+    just replaces `old` by `new` in each domain leaf. Refer to :func:`adapt_domains` for
+    information about domain adapters.
+
+    :param str model: model name of the field to rename
+    :param str old: current name of the field to rename
+    :param str new: new name of the field to rename
+    :param bool update_references: whether to update all references
+    :param function domain_adapter: adapter to use for domains, see :func:`adapt_domains`
+    :param list(str) or str skip_inherit: models to skip when renaming the field in
+                                          inheriting models, use `"*"` to skip all
+    """
     _validate_model(model)
 
     rf = ENVIRON["__renamed_fields"][model]
@@ -565,10 +628,16 @@ def convert_field_to_property(
     cr, model, field, type, target_model=None, default_value=None, default_value_ref=None, company_field="company_id"
 ):
     """
-    Notes:
+    Convert a field to a property field.
+
+    Notes
+    -----
         `target_model` is only use when `type` is "many2one".
         The `company_field` can be an sql expression.
             You may use `t` to refer the model's table.
+
+    :meta private: exclude from online docs
+
     """
     _validate_model(model)
     if target_model:
@@ -763,6 +832,19 @@ else:
 
 
 def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
+    """
+    Replace references of values of a selection field.
+
+    This function replaces all references to selection values according to a mapping.
+    Domains are also updated.
+
+    :param str model: model name of the selection field to update
+    :param str field: name of the selection field to update
+    :param dict mapping: selection values to update, key values are replaced by
+                                            their corresponding values in the mapping
+    :param list(str) or str skip_inherit: list of inheriting models to skip in the update
+                                          of the selection values, use `"*"` to skip all
+    """
     _validate_model(model)
     if not mapping:
         return
@@ -837,7 +919,9 @@ def register_unanonymization_query(cr, model, field, query, query_type="sql", se
 
 def update_field_usage(cr, model, old, new, domain_adapter=None, skip_inherit=()):
     """
-    Replace all references to field `old` to `new` in:
+    Replace all references to the field `old` by `new` in different places.
+
+    Search in:
         - ir_filters
         - ir_exports_line
         - ir_act_server
@@ -846,6 +930,17 @@ def update_field_usage(cr, model, old, new, domain_adapter=None, skip_inherit=()
         - domains (using `domain_adapter`)
         - related fields
 
+    This function can be used to replace the usage of a field by another. Domains are
+    updated using the `domain_adapter`. By default the domain adapter just replaces `old`
+    by `new` in domain leaves. See :func:`adapt_domains` for more information about domain
+    adapters.
+
+    :param str model: model name of the field
+    :param str old: source name of the field to replace
+    :param str new: target name of the field to set
+    :param function domain_adapter: adapter to use for domains, see :func:`adapt_domains`
+    :param list(str) or str skip_inherit: models to skip when renaming the field in
+                                          inheriting models, use `"*"` to skip all
     """
     return _update_field_usage_multi(cr, [model], old, new, domain_adapter=domain_adapter, skip_inherit=skip_inherit)
 
@@ -1140,6 +1235,8 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
 
 def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=None):
     """
+    Update server action fields.
+
     When some fields of `src_model` have ben copied to `dst_model` and/or have
     been copied to fields with another name, some references have to be moved.
 
@@ -1149,6 +1246,8 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
     is given, the `src_model` is used as `dst_model`.
     Then, if `dst_model` is set, `ir_act_server` referred by modified `ir_server_object_lines`
     are also updated. A chatter message informs the customer about this modification.
+
+    :meta private: exclude from online docs
     """
     if dst_model is None and fields_mapping is None:
         raise SleepyDeveloperError(

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+"""Utility functions for interacting with PostgreSQL."""
+
 import collections
 import logging
 import os
@@ -46,7 +48,9 @@ MAX_BUCKETS = int(os.getenv("MAX_BUCKETS", "150000"))
 
 class PGRegexp(str):
     """
-    Wrapper for semantic meaning of parameters
+    Wrapper for semantic meaning of parameters: this string is a Postgres regular expression.
+
+    See :func:`~odoo.upgrade.util.records.replace_in_all_jsonb_values`
     """
 
 
@@ -80,7 +84,8 @@ if ThreadPoolExecutor is not None:
 
     def _parallel_execute_threaded(cr, queries, logger=_logger):
         """
-        Execute queries in parallel
+        Execute queries in parallel.
+
         Use a maximum of 8 workers (but not more than the number of CPUs)
         Side effect: the given cursor is commited.
         As example, on `**REDACTED**` (using 8 workers), the following gains are:
@@ -139,12 +144,21 @@ def parallel_execute(cr, queries, logger=_logger):
 
 def format_query(cr, query, *args, **kwargs):
     """
-    Format the `query` replacing arguments as SQL indentifiers
-    Example:
-    ```
-    >>> util.format_query(cr, "SELECT {0} FROM {table}", "id", table="res_users")
-    SELECT "id" FROM "res_users"
-    ```
+    Safely format a query.
+
+    The `str` arguments to this function are assumed to be SQL identifiers. They are
+    wrapped in double quotes before being expanded using :meth:`str.format`. Any other
+    `psycopg2.sql.Composable <https://www.psycopg.org/docs/sql.html#psycopg2.sql.Composable>`_
+    are also allowed. This includes :class:`~odoo.upgrade.util.pg.ColumnList`, see also
+    :func:`~odoo.upgrade.util.pg.get_columns`
+
+    .. example::
+       .. code-block:: python
+
+          >>> util.format_query(cr, "SELECT {0} FROM {table}", "id", table="res_users")
+          SELECT "id" FROM "res_users"
+
+    :param str query: query to format, can use brackets `{}` as in :func:`str.format`
     """
     args = tuple(a if isinstance(a, sql.Composable) else sql.Identifier(a) for a in args)
     kwargs = {k: v if isinstance(v, sql.Composable) else sql.Identifier(v) for k, v in kwargs.items()}
@@ -153,9 +167,11 @@ def format_query(cr, query, *args, **kwargs):
 
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     """
-    Explode a query to multiple queries that can be executed in parallel
+    Explode a query to multiple queries that can be executed in parallel.
 
-    Use modulo stategy to separate queries in buckets
+    Use modulo strategy to separate queries in buckets
+
+    :meta private: exclude from online docs
     """
     warnings.warn(
         "`explode_query` has been deprecated in favor of `explode_query_range`. Consider also `explode_execute`.",
@@ -187,11 +203,12 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
 
 def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=None):
     """
-    Explode a query to multiple queries that can be executed in parallel
+    Explode a query to multiple queries that can be executed in parallel.
 
-    Use between stategy to separate queries in buckets
+    Use between strategy to separate queries in buckets
+
+    :meta private: exclude from online docs
     """
-
     if prefix is not None:
         if alias is not None:
             raise ValueError("Cannot use both `alias` and deprecated `prefix` arguments.")
@@ -257,6 +274,45 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
 
 
 def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_logger):
+    """
+    Execute a query in parallel.
+
+    The query is split by buckets of ids, then processed in parallel by workers. If the
+    query does not include the special `{parallel_filter}` value, it is added to the last
+    `WHERE` clause, possibly also adding it if none found. When the query already has the
+    filter nothing is done. The filter always expands to the splitting strategy. The split
+    is done into buckets where no more than `bucket_size` IDs are updated on each
+    individual query.
+
+    .. example::
+       .. code-block:: python
+
+          util.explode_execute(
+              cr,
+              '''
+              UPDATE res_users u
+                 SET active = False
+               WHERE (u.login LIKE 'dummy' OR u.login = 'bob')
+                 AND {parallel_filter}
+              ''',
+              table="res_users"
+              alias="u",
+          )
+
+    :param str query: the query to execute.
+    :param str table: name of the *main* table of the query, used to split the processing
+    :param str alias: alias used for the main table in the query
+    :param int bucket_size: size of the buckets of ids to split the processing
+    :param logger: logger used to report the progress
+    :type logger: :class:`logging.Logger`
+    :return: the sum of `cr.rowcount` for each query run
+    :rtype: int
+
+    .. warning:
+       It's up to the caller to ensure the queries do not update the same records in
+       different buckets. It is advised to never use this function for `DELETE` queries on
+       tables with self references due to the potential `ON DELETE` effects.
+    """
     return parallel_execute(
         cr,
         explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size),
@@ -275,7 +331,13 @@ def pg_replace(s, replacements):
 
 
 def pg_html_escape(s, quote=True):
-    """sql version of html.escape"""
+    """
+    Generate the SQL expression to HTML escape a string.
+
+    SQL version of `html.escape`.
+
+    :meta private: exclude from online docs
+    """
     replacements = [
         ("&", "&amp;"),  # Must be done first!
         ("<", "&lt;"),
@@ -338,10 +400,24 @@ def _column_info(cr, table, column):
 
 
 def column_exists(cr, table, column):
+    """
+    Return whether a column exists.
+
+    :param str table: table to check
+    :param str column: column to check
+    :rtype: bool
+    """
     return _column_info(cr, table, column) is not None
 
 
 def column_type(cr, table, column):
+    """
+    Return the type of a column, if it exists.
+
+    :param str table: table to check
+    :param str column: column to check
+    :rtype: SQL type of the column
+    """
     nfo = _column_info(cr, table, column)
     return nfo[0] if nfo else None
 
@@ -357,6 +433,24 @@ def column_updatable(cr, table, column):
 
 
 def create_column(cr, table, column, definition, **kwargs):
+    """
+    Create a column.
+
+    This function will create the column only if it *doesn't* exist. It will log an error
+    if the existing column has different type.  If `fk_table` is set, it will ensure the
+    foreign key is setup, updating if necessary, with the right `on_delete_action` if any
+    is set.
+
+    :param str table: table of the new column
+    :param str column: name of the new column
+    :param str definition: column type of the new column
+    :param bool default: default value to set on the new column
+    :param bool fk_table: if the new column if a foreign key, name of the foreign table
+    :param str on_delete_action: `ON DELETE` clause, default `NO ACTION`, only valid if
+                                  the column is a foreign key.
+    :return: whether the column was created
+    :rtype: bool
+    """
     # Manual PEP 3102
     no_def = object()
     default = kwargs.pop("default", no_def)
@@ -526,12 +620,15 @@ def remove_constraint(cr, table, name, cascade=False):
 
 
 def get_fk(cr, table, quote_ident=True):
-    """return the list of foreign keys pointing to `table`
+    """
+    Return the list of foreign keys pointing to `table`.
 
     returns a 4 tuple: (foreign_table, foreign_column, constraint_name, on_delete_action)
 
     Foreign key deletion action code:
         a = no action, r = restrict, c = cascade, n = set null, d = set default
+
+    :meta private: exclude from online docs
     """
     _validate_table(table)
     funk = "quote_ident" if quote_ident else "concat"
@@ -560,8 +657,11 @@ def get_fk(cr, table, quote_ident=True):
 def target_of(cr, table, column):
     """
     Return the target of a foreign key.
+
     Returns None if there is not foreign key on given column.
     returns a 3-tuple (foreign_table, foreign_column, constraint_name)
+
+    :meta private: exclude from online docs
     """
     cr.execute(
         """
@@ -587,6 +687,8 @@ def target_of(cr, table, column):
 
 
 class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstraint ispk")):
+    """:meta private: exclude from online docs."""
+
     def drop(self, cr):
         if self.isconstraint:
             remove_constraint(cr, self.on, self.name)
@@ -596,12 +698,14 @@ class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstrai
 
 def get_index_on(cr, table, *columns):
     """
-    return an optional IndexInfo recors
+    Return an optional IndexInfo recors.
+
     NOTE: column order is respected
 
     Prefer primary keys over other indexes as the caller may want to verify PK existence before create one
-    """
 
+    :meta private: exclude from online docs
+    """
     _validate_table(table)
 
     if cr._cnx.server_version >= 90500:
@@ -643,7 +747,8 @@ def get_index_on(cr, table, *columns):
 def _get_unique_indexes_with(cr, table, *columns):
     # (Cursor, str, *str) -> List[Tuple[str, List[str]]
     """
-    Returns all unique indexes on at least `columms`
+    Return all unique indexes on at least `columms`.
+
     return a list of tuple [index_name, list_of_column]
     """
     _validate_table(table)
@@ -721,21 +826,30 @@ def get_depending_views(cr, table, column):
 class ColumnList(UserList, sql.Composable):
     """
     Encapsulate a list of elements that represent column names.
+
     The resulting object can be rendered as string with leading/trailing comma or an alias.
 
-    Examples:
-    ```
-    >>> columns = ColumnList(["id", "field_Yx"], ["id", '"field_Yx"'])
+    :param list(str) list_: list of column names
+    :param list(str) quoted: list of quoted column names, it must correspond with the
+                            `list_` parameter
 
-    >>> columns.using(alias="t").as_string(cr._cnx)
-    '"t"."id", "t"."field_Yx"'
+    .. example::
+        >>> columns = ColumnList(["id", "field_Yx"], ["id", '"field_Yx"'])
 
-    >>> columns.using(leading_comma=True).as_string(cr._cnx)
-    ', "id", "field_Yx"'
+        >>> list(columns)
+        ['id', '"field_Yx"']
 
-    >>> util.format(cr, "SELECT {} t.name FROM table t", columns.using(alias="t", trailing_comma=True))
-    'SELECT "t"."id", "t"."field_Yx", t.name FROM table t'
-    ```
+        >>> columns.using(alias="t").as_string(cr._cnx)
+        '"t"."id", "t"."field_Yx"'
+
+        >>> columns.using(leading_comma=True).as_string(cr._cnx)
+        ', "id", "field_Yx"'
+
+        >>> util.format_query(cr, "SELECT {} t.name FROM table t", columns.using(alias="t", trailing_comma=True))
+        'SELECT "t"."id", "t"."field_Yx", t.name FROM table t'
+
+    .. note::
+       This class is better used via :func:`~odoo.upgrade.util.pg.get_columns`
     """
 
     def __init__(self, list_=(), quoted=()):
@@ -747,6 +861,16 @@ class ColumnList(UserList, sql.Composable):
         self._alias = None
 
     def using(self, leading_comma=False, trailing_comma=False, alias=None):
+        """
+        Set up parameters to render this list as a string.
+
+        :param bool leading_comma: whether to render a leading comma in front of this list
+        :param bool trailing_comma: whether to render a trailing comma
+        :param str or None alias: alias of the table of the columns, no alias is added if
+                                  set to `None`
+        :return: a copy of the list with the parameters set
+        :rtype: :class:`~odoo.upgrade.util.pg.ColumnList`
+        """
         if self._leading_comma is leading_comma and self._trailing_comma is trailing_comma and self._alias == alias:
             return self
         new = ColumnList(self._unquoted_columns, self.data)
@@ -756,6 +880,7 @@ class ColumnList(UserList, sql.Composable):
         return new
 
     def as_string(self, context):
+        """:meta private: exclude from online docs."""
         head = sql.SQL(", " if self._leading_comma and self else "")
         tail = sql.SQL("," if self._trailing_comma and self else "")
 
@@ -771,11 +896,26 @@ class ColumnList(UserList, sql.Composable):
         return sql.Composed([head, body, tail]).as_string(context)
 
     def iter_unquoted(self):
+        """
+        Iterate over the raw column names, non quoted.
+
+        This is useful if the quoting is done outside this object. Also to get access to
+        raw column names as in Postgres catalog.
+
+        :return: an iterator for the raw column names
+        """
         return iter(self._unquoted_columns)
 
 
 def get_columns(cr, table, ignore=("id",)):
-    """return the list of columns in table (minus ignored ones)"""
+    """
+    Return a list of columns in a table.
+
+    :param str table: table name whose columns are retrieved
+    :param list(str) ignore: list of column names to ignore in the returning list
+    :return: a list of column names present in the table
+    :rtype: :class:`~odoo.upgrade.util.pg.ColumnList`
+    """
     _validate_table(table)
 
     cr.execute(
@@ -794,11 +934,14 @@ def get_columns(cr, table, ignore=("id",)):
 
 def rename_table(cr, old_table, new_table, remove_constraints=True):
     """
-    Rename table `old_table` to `new_table`, as well as `old_table`'s:
-        * Primary key sequence
-        * Primary key
-        * Indexes
-        * Foreign keys
+    Rename a table.
+
+    This function renames the table `old_table` into `new_table`, as well as its primary
+    key (and sequence), indexes, and foreign keys.
+
+    :param str old_table: name of the table to rename
+    :param str new_table: new name of the table
+    :para bool remove_constraints: whether to remove the table constraints
     """
     if not table_exists(cr, old_table):
         return
@@ -918,7 +1061,11 @@ def find_new_table_column_name(cr, table, name):
 
 
 def drop_depending_views(cr, table, column):
-    """drop views depending on a field to allow the ORM to resize it in-place"""
+    """
+    Drop views depending on a field to allow the ORM to resize it in-place.
+
+    :meta private: exclude from online docs
+    """
     for v, k in get_depending_views(cr, table, column):
         cr.execute("DROP {0} VIEW IF EXISTS {1} CASCADE".format("MATERIALIZED" if k == "m" else "", v))
 
@@ -1090,10 +1237,12 @@ def fix_wrong_m2o(cr, table, column, target, value=None):
 
 def get_m2m_tables(cr, table):
     """
-    Returns a list of m2m tables associated with `table`.
+    Return a list of m2m tables associated with `table`.
 
     We identify as m2m table all tables that have only two columns, both of which are FKs.
     This function will return m2m tables for which one Fk points to `table`
+
+    :meta private: exclude from online docs
     """
     _validate_table(table)
     query = """

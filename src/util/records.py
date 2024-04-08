@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+"""Utility functions for record-level operations."""
+
 import logging
 import os
 import re
@@ -55,11 +57,21 @@ except NameError:
 
 def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     """
-    Recursively delete the given view and its inherited views, as long as they
-    are part of a module. Will crash as soon as a custom view exists anywhere
-    in the hierarchy.
+    Remove a view and all its descendants.
 
-    Also handle multi-website COWed views.
+    This function recursively deletes the given view and its inherited views, as long as
+    they are part of a module. It will fail as soon as a custom view exists anywhere in
+    the hierarchy. It also removes multi-website COWed views.
+
+    :param str xml_id: optional, the xml_id of the view to remove
+    :param int view_id: optional, the ID of the view to remove
+    :param bool silent: whether to show in the logs disabled custom views
+    :param str or None key: key used to detect multi-website COWed views, if `None` then
+                                set to `xml_id` if provided, otherwise set to the xml_id
+                                referencing the view with ID `view_id` if any
+
+    .. warning::
+       Either `xml_id` or `view_id` must be set. Specifying both will raise an error.
     """
     assert bool(xml_id) ^ bool(view_id)
     if xml_id:
@@ -147,23 +159,43 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
 
 @contextmanager
 def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=True):
-    """Contextmanager that may yield etree arch of a view.
-    As it may not yield, you must use `skippable_cm`
+    """
+    Context manager to edit a view's arch.
 
-        with util.skippable_cm(), util.edit_view(cr, 'xml.id') as arch:
-            arch.attrib['string'] = 'My Form'
+    This function returns a context manager that may yield a parsed arch of a view as an
+    `etree Element <https://lxml.de/tutorial.html#the-element-class>`_. Any changes done
+    in the returned object will be written back to the database upon exit of the context
+    manager, updating also the translated versions of the arch. Since the function may not
+    yield, use :func:`~odoo.upgrade.util.misc.skippable_cm` to avoid errors.
 
-    When view_id is passed to identify a view, view's arch will always yield to be edited because
-    we assume that xmlid for such view does not exist to check its noupdate flag.
+    .. code-block:: python
 
-    If view's noupdate=false then the arch will not be yielded for edit unless skip_if_not_noupdate=False,
-    because when noupdate=False we assume it is a standard view that will be updated by the ORM later on anyways.
+        with util.skippable_cm(), util.edit_view(cr, "xml.id") as arch:
+            arch.attrib["string"] = "My Form"
 
-    If view's noupdate=True, the view will be yielded for edit.
+    To select the target view to edit use either `xmlid` or `view_id`, not both.
 
-    If the `active` argument is not None, the view will be (de)activated accordingly.
+    When the view is identified by `view_id`, the arch is always yielded if the view
+    exists, with disregard to any `noupdate` flag it may have associated. When `xmlid` is
+    set, if the view `noupdate` flag is `True` then the arch will not be yielded *unless*
+    `skip_if_not_noupdate` is set to `False`. If `noupdate` is `False`, the view will be
+    yielded for edit.
 
-    For more details, see discussion in: https://github.com/odoo/upgrade-specific/pull/4216
+    If the `active` argument is not `None`, the `active` flag of the view will be set
+    accordingly.
+
+    .. warning::
+       The default value of `active` is `True`, therefore views are always *activated* by
+       default. To avoid inadvertently activating views, pass `None` as `active` parameter.
+
+    :param str xmlid: optional, xml_id of the view edit
+    :param int view_id: optional, ID of the view to edit
+    :param bool skip_if_not_noupdate: whether to force the edit of views requested via
+                                     `xmlid` parameter even if they are flagged as
+                                     `noupdate=True`, ignored if `view_id` is set
+    :param bool or None active: active flag value to set, nothing is set when `None`
+    :return: a context manager that yields the parsed arch, upon exit the context manager
+             writes back the changes.
     """
     assert bool(xmlid) ^ bool(view_id), "You Must specify either xmlid or view_id"
     noupdate = True
@@ -279,6 +311,11 @@ else:
 
 
 def remove_record(cr, name):
+    """
+    Remove a record and its references corresponding to the given :term:`xml_id <external identifier>`.
+
+    :param str name: record xml_id, under the format `module`.`name`
+    """
     if isinstance(name, basestring):
         if "." not in name:
             raise ValueError("Please use fully qualified name <module>.<name>")
@@ -428,9 +465,21 @@ def _rm_refs(cr, model, ids=None):
 
 def is_changed(cr, xmlid, interval="1 minute"):
     """
-    This utility will return a false positive on xmlids of records that match the following conditions:
-        * Have been updated in an upgrade preceding the current one
-        * Have not been updated in the current upgrade
+    Return whether a record was changed.
+
+    This function checks if a record was changed before the current upgrade start time.
+    See :file:`upgrade-util/src/base/0.0.0/pre-00-upgrade-start.py`
+
+    This utility will return a false positive on xmlids of records that match the
+    following conditions:
+
+     * Have been updated in an upgrade preceding the current one
+     * Have not been updated in the current upgrade
+
+    :param str xmlid: `xmlid` of the record to check
+    :param str interval: SQL interval, a record is considered as changed if
+                         `write_date > create_date + interval`
+    :rtype: bool
     """
     assert "." in xmlid
     module, _, name = xmlid.partition(".")
@@ -457,6 +506,28 @@ def is_changed(cr, xmlid, interval="1 minute"):
 
 
 def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
+    """
+    Run `callback` if a record is unchanged.
+
+    This function will run a `callback` when the referred record is unchanged. The `xmlid`
+    and any extra parameter, but not `interval`, will be passed to the `callback`. In case
+    the record was changed it will be marked as `noupdate=True`. See also
+    :func:`~odoo.upgrade.util.records.is_changed` and
+    :func:`~odoo.upgrade.util.records.force_noupdate`.
+
+    This function is useful to take an action *only* when a record hasn't been updated, a
+    common example is to force an update from XML even if the record was `noupdate=True`
+
+    .. code-block:: python
+
+       util.if_unchanged(cr, "mymodule.myrecord", util.update_record_from_xml)
+
+    :param str xmlid: xml_id of the record to check
+    :param function callback: callback to execute in case the record was *not* changed, all
+                             extra parameters to this function are passed to the callback
+    :param str interval: interval after `create_date` on which a record is considered as
+                        _changed_, see :func:`~odoo.upgrade.util.misc.is_changed`
+    """
     if not is_changed(cr, xmlid, interval=interval):
         callback(cr, xmlid, **kwargs)
     else:
@@ -546,6 +617,29 @@ def remove_group(cr, xml_id=None, group_id=None):
 
 
 def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
+    """
+    Rename an :term:`external identifier` (`xml_id`) of a record.
+
+    A rename cannot happen when the target name already exists on the database. In such
+    cases there are two options to control how this function behaves:
+
+    - `fail`: raise an exception and prevent renaming
+    - `merge`: rename the external identifier, remove the old one, and *replace*
+      references. See :func:`~odoo.upgrade.util.records.replace_record_references_batch`
+
+    .. note::
+       This function does not remove records, it only updates xml_ids.
+
+    :param str old: current xml_id of the record, under the format `module`.`name`
+    :param str new: new xml_id of the record, under the format `module`.`name`
+    :param bool or None noupdate: value to set on the `noupdate` flag of the xml_id,
+                                  ignored if `None`
+    :param str on_collision: how to proceed if the xml_id already exists, the options are
+                             `merge` or `fail` (default)
+    :return: the ID of the record referenced by the *new* xml_id, `None` when the record
+             doesn't exist
+    :rtype: int or `None`
+    """
     if "." not in old or "." not in new:
         raise ValueError("Please use fully qualified name <module>.<name>")
     if on_collision not in {"fail", "merge"}:
@@ -610,6 +704,13 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
 
 
 def ref(cr, xmlid):
+    """
+    Return the id corresponding to the given :term:`xml_id <external identifier>`.
+
+    :param str xml_id: record xml_id, under the format `module`.`name`
+    :return: ID of the referenced record, `None` if not found.
+    :rtype: int or `None`
+    """
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
 
@@ -630,6 +731,14 @@ def ref(cr, xmlid):
 
 
 def force_noupdate(cr, xmlid, noupdate=True, warn=False):
+    """
+    Update the `noupdate` flag of a record.
+
+    :param str xmlid: record xml_id, under the format `module`.`name`
+    :param bool noupdate: value to set on the `noupdate` flag
+    :param warn: whether to output a warning in the logs when the flag was switched from
+                 `True` to `False`
+    """
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
 
@@ -650,6 +759,33 @@ def force_noupdate(cr, xmlid, noupdate=True, warn=False):
 
 
 def ensure_xmlid_match_record(cr, xmlid, model, values):
+    """
+    Ensure an xml_id references a record with specific values.
+
+    This function ensures the record pointed by an xml_id matches the values for the
+    fields specified in the `values` parameter. When the xmlid exist but it points to a
+    record that doesn't match the values, the xmlid is updated to point to a record that
+    matches the values if one is found. If the xmlid doesn't exist, it is created with the
+    found record. When no matching record is found, nothing is done. In all cases the
+    referenced record, after a possible update, of the xml_id is returned.
+
+    :param str xmlid: record xml_id, under the format `module`.`name`
+    :param str model: model name of the record
+    :param dict values: mapping of field names to values the record must fulfill
+                        .. example:
+
+                           .. code-block:: python
+
+                              values = {"id": 123}
+                              values = {"name": "INV/2024/0001", "company_id": 1}
+
+    :return: the ID of the matched record, `None` if no record found
+    :rtype: int or None
+
+    .. tip:
+       This function is useful when migrating in-database records into a custom module, to
+       create the xml_ids before the module is updated and avoid duplication.
+    """
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
 
@@ -726,6 +862,35 @@ def update_record_from_xml(
     reset_translations=(),
     ensure_references=False,
 ):
+    """
+    Update a record based on its definition in the :doc:`/developer/reference/backend/data`.
+
+    This function ignores the `noupdate` flag on the record. It searches in all XML files
+    from the manifest of the module in the xmlid, or the `from_module` parameter if set,
+    for a matching definition. When found, it forces the ORM to update the record as in the
+    specs in the data file.
+
+    Optionally this function can reset the translations of some fields.
+
+    :param str xmlid: record xml_id, under the format `module`.`name`
+    :param bool reset_write_metadata: whether to update the `write_date` of the record
+    :param bool force_create: whether the record is created if it does not exist
+    :param str from_module: name of the module from which to update the record, necessary
+                            only when the specs are in a different module than the one in
+                            the xml_id
+    :param set(str) reset_translations: field names whose translations get reset
+    :param bool ensure_references: whether referred records via `ref` XML attributes
+                                   should also be updated.
+
+    .. warning:
+       This functions uses the ORM, therefore it can only be used after **all** models
+       referenced in the data specs of the record are already **loaded**. In practice this
+       means that this function should be used in `post-` or `end-` scripts.
+
+    .. note:
+       The standard behavior of ORM is to create the record if it doesn't exist, including
+       its xml_id. That will happen on this function as well.
+    """
     __update_record_from_xml(
         cr,
         xmlid,
@@ -920,6 +1085,20 @@ def __update_record_from_xml(
 
 
 def delete_unused(cr, *xmlids, **kwargs):
+    """
+    Remove unused records.
+
+    This function will remove records pointed by `xmlids` only if they are not referenced
+    from any table.
+
+    :param list(str) xmlids: list of xml_ids to check for removal
+    :param bool deactivate: whether to deactivate records that cannot be removed because
+                            they are referenced, `False` by default
+    :param bool keep_xmlids: whether to keep the xml_ids of records that cannot be
+                             removed, `True` by default
+    :return: list of ids of removed records, if any
+    :rtype: list(int)
+    """
     deactivate = kwargs.pop("deactivate", False)
     keep_xmlids = kwargs.pop("keep_xmlids", True)
     if kwargs:
@@ -1016,7 +1195,11 @@ def delete_unused(cr, *xmlids, **kwargs):
 
 
 def replace_record_references(cr, old, new, replace_xmlid=True):
-    """replace all (in)direct references of a record by another"""
+    """
+    Replace all (in)direct references of a record by another.
+
+    :meta private: exclude from online docs
+    """
     # TODO update workflow instances?
     assert isinstance(old, tuple) and len(old) == 2
     assert isinstance(new, tuple) and len(new) == 2
@@ -1028,6 +1211,23 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
 
 
 def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, replace_xmlid=True, ignores=()):
+    """
+    Replace all references to records.
+
+    This functions replaces *all* references, direct or indirect to records of `model_src`
+    by the corresponding records in the mapping. If the target model of the mapping is not
+    the same as the source one, then `model_dst` parameter must be set.
+
+    :param dict(int, int) id_mapping: mapping of IDs to replace, key value is replaced by
+                                      the mapped value
+    :param str model_src: name of the source model of the records to replace
+    :param str model_dst: name of the target model of the records to replace, if `None`
+                          the target is assumed the same as the source
+    :param bool replace_xmlid: whether to replace the references in xml_ids pointing to
+                               the source records
+    :param list(str) ignores: list of **table** names to skip when updating the referenced
+                              values
+    """
     assert id_mapping
     assert all(isinstance(v, int) and isinstance(k, int) for k, v in id_mapping.items())
 
@@ -1244,11 +1444,23 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
 
 
 def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
-    """
-    Will replace `old` by `new` (whole word match) in all jsonb value of `column` of `table`.
-    The `extra_filter` should use the `t` alias. It can also include `{parallel_filter}` to
-    execute the query in parallel.
-    `old` can be a simple term (str) or a regexp (util.PGRegexp)
+    r"""
+    Replace values in JSONB columns.
+
+    This function replaces `old` by `new` in JSONB values. It is useful for replacing
+    values in *all* translations of translated fields.
+
+    :param str table: table name where the values are to be replaced
+    :param str column: column name where the values are to be replaced
+    :param str old: original value to replace, can be a simple term (str) or a Postgres
+                    regular expression wrapped by :class:`~odoo.upgrade.util.pg.PGRegexp`
+    :param str new: new value to set, can be a simple term or a expression using
+                    `\<number>` notation to refer to *captured groups* if `old` is a
+                    regexp expression
+    :param str extra_filter: extra `WHERE` compatible clause to filter the values to
+                             update, must use the `t` alias for the table, it can also
+                             include `{parallel_filter}` to execute the query in parallel,
+                             see :func:`~odoo.upgrade.util.pg.explode_execute`
     """
     re_old = (
         old

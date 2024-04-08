@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Misc standalone functions.
-"""
+"""Miscellaneous standalone functions."""
 
 import collections
 import datetime
@@ -55,6 +53,16 @@ def str2bool(s, default=None):
 
 
 def version_gte(version):
+    """
+    Return whether currently running Odoo version is greater or equal to `version`.
+
+    This function is useful for conditional execution in an upgrade script that applies to
+    multiple versions, e.g. `0.0.0` scripts.
+
+    :param str version: Odoo version, must follow the format `[saas~]X.Y` where `X` is the
+                        major Odoo version, `saas~` is necessary only when `Y` is nonzero
+    :rtype: bool
+    """
     if "-" in version:
         raise SleepyDeveloperError("version cannot contains dash")
     return parse_version(release.serie) >= parse_version(version)
@@ -62,9 +70,18 @@ def version_gte(version):
 
 def version_between(a, b):
     """
-    Bounds are inclusives.
-    Equivalent to:
-        current_version >= a AND current_version <= b
+    Return whether currently running Odoo version is in the range `[a,b]`.
+
+    See also :func:`~odoo.upgrade.util.misc.version_gte`
+
+    .. note::
+
+        Bounds are inclusive.
+
+    :param str a: Odoo version, lower bound
+    :param str b: Odoo version, upper bound
+    :rtype: bool
+
     """
     if "-" in a + b:
         raise SleepyDeveloperError("version cannot contains dash")
@@ -73,7 +90,11 @@ def version_between(a, b):
 
 @_cached
 def has_enterprise():
-    """Return whernever the current installation has enterprise addons availables"""
+    """
+    Return whether the current installation has enterprise addons available.
+
+    :meta private: exclude from online docs
+    """
     # NOTE should always return True as customers need Enterprise to migrate or
     #      they are on SaaS, which include enterpise addons.
     #      This act as a sanity check for developpers or in case we release the scripts.
@@ -85,7 +106,11 @@ def has_enterprise():
 
 @_cached
 def has_design_themes():
-    """Return whernever the current installation has theme addons availables"""
+    """
+    Return whether the current installation has theme addons available.
+
+    :meta private: exclude from online docs
+    """
     if os.getenv("ODOO_HAS_DESIGN_THEMES"):
         return True
     return bool(get_module_path("theme_yes", downloaded=False, display_warning=False))
@@ -97,9 +122,10 @@ def on_CI():
 
 
 def splitlines(s):
-    """yield stripped lines of `s`.
-    Skip empty lines
-    Remove comments (starts with `#`).
+    """
+    Yield stripped lines of `s`. Skip empty lines Remove comments (starts with `#`).
+
+    :meta private: exclude from online docs
     """
     return (
         stripped_line for line in s.splitlines() for stripped_line in [line.split("#", 1)[0].strip()] if stripped_line
@@ -107,6 +133,19 @@ def splitlines(s):
 
 
 def expand_braces(s):
+    """
+    Expand braces in the input.
+
+    .. example::
+
+       .. code-block:: python
+
+          >>> util.expand_braces("a_{this,that}_b")
+          ['a_this_b', 'a_that_b']
+
+    :param str s: string to expand, must contain precisely one pair of braces.
+    :return: expanded input
+    """
     # expand braces (a la bash)
     r = re.compile(r"(.*){((?:[^},]*?)(?:,[^},]*?)+)}(.*)", flags=re.DOTALL)
     m = r.search(s)
@@ -134,6 +173,48 @@ try:
         _search_path = [Path(p) for p in odoo.upgrade.__path__]
 
     def import_script(path, name=None):
+        """
+        Import an upgrade script.
+
+        This function allows to import functions from other upgrade scripts into the
+        current one.
+
+        .. example::
+           In :file:`mymodule/15.0.1.0/pre-migrate.py`
+
+           .. code-block:: python
+
+              def my_util(cr):
+                  # do stuff
+
+           In :file:`myothermodule/16.0.1.0/post-migrate.py`
+
+           .. code-block:: python
+
+              from odoo.upgrade import util
+
+              script = util.import_script("mymodule/15.0.1.0/pre-migrate.py")
+
+              def migrate(cr, version):
+                  script.my_util(cr)  # reuse the function
+
+           This function returns a Python `module`.
+
+           .. code-block:: python
+
+              >>> util.import_script("base/0.0.0/end-moved0.py", name="my-moved0")
+              <module 'my-moved0' from '/home/odoo/src/upgrade-util/src/base/0.0.0/end-moved0.py'>
+
+        :param str path: relative path to the script to import in the form
+                         `$module/$version/$script-name`
+
+                         .. note::
+                            The script must be available in the upgrade path.
+
+        :param str or None name: name to assign to the returned module, take the name from
+                                 the imported file if `None`
+        :return: a module created from the imported upgrade script
+        """
         if not name:
             name, _ = os.path.splitext(os.path.basename(path))
         for full_path in (sp / path for sp in _search_path):
@@ -160,7 +241,11 @@ except ImportError:
 
 @contextmanager
 def skippable_cm():
-    """Allow a contextmanager to not yield."""
+    """
+    Return a context manager to allow another context manager to not yield.
+
+    See :func:`~odoo.upgrade.util.records.edit_view` for an example usage.
+    """
     if not hasattr(skippable_cm, "_msg"):
 
         @contextmanager
@@ -182,15 +267,25 @@ def skippable_cm():
 
 def chunks(iterable, size, fmt=None):
     """
-    Split `iterable` into chunks of `size` and wrap each chunk
-    using function 'fmt' (`iter` by default; join strings)
+    Split `iterable` into chunks of `size` and wrap each chunk using `fmt` function.
 
-    >>> list(chunks(range(10), 4, fmt=tuple))
-    [(0, 1, 2, 3), (4, 5, 6, 7), (8, 9)]
-    >>> ' '.join(chunks('abcdefghijklm', 3))
-    'abc def ghi jkl m'
-    >>>
+    This function is useful for splitting huge input data into smaller chunks that can be
+    processed independently.
 
+    .. example::
+
+       .. code-block:: python
+
+          >>> list(chunks(range(10), 4, fmt=tuple))
+          [(0, 1, 2, 3), (4, 5, 6, 7), (8, 9)]
+          >>> ' '.join(chunks('abcdefghijklm', 3))
+          'abc def ghi jkl m'
+
+    :param iterable iterable: iterable object to split
+    :param int size: chunk size
+    :param function fmt: function to apply to each chunk, when `None` is passed `fmt`
+                         becomes `"".join` if `iterable` is a string, otherwise `iter`
+    :return: a generator that iterates over the result of `fmt` applied to each chunk
     """
     if fmt is None:
         # fmt:off
@@ -265,7 +360,11 @@ def log_chunks(it, logger, chunk_size, qualifier="items"):
 
 
 class SelfPrint(object):
-    """Class that will return a self representing string. Used to evaluate domains."""
+    """
+    Class that will return a self representing string. Used to evaluate domains.
+
+    :meta private: exclude from online docs
+    """
 
     def __init__(self, name):
         self.__name = name
@@ -328,7 +427,11 @@ class SelfPrint(object):
 
 
 class SelfPrintEvalContext(collections.defaultdict):
-    """Evaluation Context that will return a SelfPrint object for all non-literal object"""
+    """
+    Evaluation Context that will return a SelfPrint object for all non-literal object.
+
+    :meta private: exclude from online docs
+    """
 
     def __init__(self, *args, **kwargs):
         super(SelfPrintEvalContext, self).__init__(None, *args, **kwargs)

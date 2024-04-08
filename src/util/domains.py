@@ -47,6 +47,11 @@ except NameError:
 
 _logger = logging.getLogger(__name__)
 DomainField = collections.namedtuple("DomainField", "table domain_column model_select")
+"""
+Domain field
+
+:meta private: exclude from online docs
+"""
 
 
 class _Skip(Exception):
@@ -178,6 +183,7 @@ def _valid_path_to(cr, path, from_, to):
 def _replace_path(cr, old, new, src_model, dst_model, path_str):
     """
     Replace `old` by `new` in the fields path `path_str` assuming the path starts from `src_model`.
+
     The replace only takes place if `old` points at `dst_model`.
     """
     dot_old = old.split(".")
@@ -284,20 +290,57 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
 
 def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adapt=False):
     """
-    Replace {old} by {new} in all domains for model {model} using an adapter callback.
+    Replace `old` by `new` in all domains of `model` and all its inheriting models using an `adapter` callback.
 
-    {adapter} is to adapt leafs. It is a function that takes three arguments and
-    returns a domain that substitutes the original leaf:
-    (leaf: Tuple[str,str,Any], in_or: bool, negated: bool) -> List[Union[str,Tuple[str,str,Any]]]
+    `adapter` is a callback function to adapt leaves. Adapter functions must take three
+    arguments and return a `domain <reference/orm/domains>`_ that substitutes the original
+    leaf. The arguments are:
 
-    The parameter {in_or} signals that the leaf is part of an or ("|") domain, otherwise
-    it is part of an and ("&") domain. The other parameter signals if the leaf is
-    {negated} ("!").
+    - `leaf`: a domain leaf which is a `tuple` of the form `(left, op, right)`
+    - `in_or`: a boolean, when `True` it means the leaf is part of an OR (`"|"`) domain,
+      otherwise it is part of an AND (`"&"`) domain
+    - `negated`: a boolean, when `True` it means that the leaf is negated (`"!"`)
 
-    Note that the {adapter} is called only on leafs that use the {old} field of {model}.
+    .. example::
+        .. code-block:: python
 
-    {force_adapt} will run the adapter on all leaves having the removed field in the path. Useful
-    when deleting a field (in which case {new} is ignored).
+            def adapter(leaf, in_or, negated):
+                left, op, right = leaf
+                ok, ko = (1, 2) if not negated else (2, 1)
+                if op == "="
+                    return [(left, "=", ok)]
+                elif op == "!=":
+                    return [(left, "=", ko)]
+                return [leaf]
+
+    `adapter` is called only on leafs that use the `old` field of `model` as **last** part
+    of the `left` part of leaves, unless `force_adapt` is `True`. The domains returned by
+    an adapter do not need to have the `old` field replaced by `new` in the `left` part of
+    the input leaf. The replace will be done anyway to the whole domain returned by the
+    adapter. The purpose of the `adapter` is to modify the operator and the `right` part
+    of the input leaf.
+
+    .. example::
+       When replacing `"field1"` by `"field2"`, the following happens:
+
+       - `("foo.bar.baz.field1", "=", 1)` gets adapted *only* if the record pointed to by
+         `foo.bar.baz` is of the requested `model`.
+       - `("foo.field1.baz", "=", 1)` is *not* adapted *even* if `foo` points to `model`,
+         unless `force_adapt` is `True`, because `field1` is not the last part of `left`
+         in this leaf.
+
+    .. note::
+       This function will replace domains in all *standard* domain fields. Including
+       filters, dashboards, and standard fields known to represent a domain.
+
+    :param str model: name of the model for which to adapt the domains
+    :param str old: name of the field to be adapted
+    :param str new: name of the field that should replace `old`
+    :param function adapter: adapter for leaves
+    :param list(str) skip_inherit: list of inheriting model names to don't adapt (skip)
+    :param bool force_adapt: when `True, run the `adapter` on all leaves having `new` in
+                                   `left` part of the leaf (path), useful when deleting a
+                                   field (in which case `new` is ignored).
     """
     _validate_model(model)
     target_model = model
