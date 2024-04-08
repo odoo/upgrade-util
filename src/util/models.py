@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+"""
+Utility functions for modifying models.
+
+Model operations are best done in `pre-` script of the involved modules.
+"""
+
 import json
 import logging
 import re
@@ -51,6 +57,17 @@ def _unknown_model_id(cr):
 
 
 def remove_model(cr, model, drop_table=True, ignore_m2m=()):
+    """
+    Remove a model and its references from the database.
+
+    Some required indirect references to the model are replaced by the *unknown model* -
+    an empty model that serves as placeholder for gone models.
+
+    :param str model: name of the model to remove
+    :param bool drop_table: whether to drop the table of this model
+    :param list(str) or str ignore_m2m: list of m2m tables to ignore - not removed, use
+                                        `"*"` to ignore (keep) all m2m tables
+    """
     _validate_model(model)
     model_underscore = model.replace(".", "_")
     chunk_size = 1000
@@ -201,6 +218,13 @@ delete_model = remove_model
 
 
 def rename_model(cr, old, new, rename_table=True):
+    """
+    Rename a model.
+
+    :param str old: current name of the model to rename
+    :param str new: new name of the model to rename
+    :param bool rename_table: whether to also rename the table of the model
+    """
     _validate_model(old)
     _validate_model(new)
     if old in ENVIRON["__renamed_fields"]:
@@ -321,6 +345,25 @@ def rename_model(cr, old, new, rename_table=True):
 
 
 def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore_m2m=()):
+    """
+    Merge a model into another one.
+
+    This function moves all the references from ``source`` model into ``target`` model and
+    *removes* ``source`` model and its references. By default, only the fields with the
+    same name in both models are moved from source to target, optionally a mapping with
+    differently named fields can be provided.
+
+    .. warning::
+        This function does not move the records from ``source`` model to ``target`` model.
+
+    :param str source: name of the model to be merged
+    :param str target: name of the destination model to merge into
+    :param bool drop_table: whether to drop the table of the source model
+    :param dict or None fields_mapping: mapping of field names from source to target
+                                        model, when `None` only fields with same name are
+                                        moved
+    :param list(str) or str ignore_m2m: list of m2m tables ignored to remove from source model.
+    """
     _validate_model(source)
     _validate_model(target)
     cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))

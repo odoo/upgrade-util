@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+"""
+Utility functions to perform operations via the ORM.
+
+The functions on this module allow to use the ORM safely during upgrades. They enhance or
+patch the ORM such that it can handle high volumes of data in a performant way. In some
+cases totally different alternatives to the ORM's own functions are provided. The functions
+on this module work along the ORM of *all* supported versions.
+"""
+
 import logging
 import re
 from contextlib import contextmanager
@@ -42,11 +51,15 @@ _logger = logging.getLogger(__name__)
 
 def env(cr):
     """
-    Creates a new environment from cursor.
+    Create a new environment.
 
-    ATTENTION: This function does NOT empty the cache maintained on the cursor
-    for superuser with and empty environment. A call to invalidate_cache will
-    most probably be necessary every time you directly modify something in database
+    .. warning::
+       This function does *not* empty the cache maintained on the cursor for superuser
+       with an empty environment. A call to `invalidate_cache` may be necessary every time
+       data is modified directly in the database.
+
+    :return: the new environment
+    :rtype: :class:`~odoo.api.Environment`
     """
     try:
         from odoo.api import Environment
@@ -61,7 +74,9 @@ def env(cr):
 
 def get_admin_channel(cr):
     """
-    Retrieves the admin channel or create it if it does not exist.
+    Retrieve the admin channel or create it if it does not exist.
+
+    :meta private: exclude from online docs
     """
     e = env(cr)
     admin_channel = None
@@ -109,7 +124,11 @@ def get_admin_channel(cr):
 
 
 def guess_admin_id(cr):
-    """guess the admin user id of `cr` database"""
+    """
+    Guess the admin user id of `cr` database.
+
+    :meta private: exclude from online docs
+    """
     if not version_gte("12.0"):
         return SUPERUSER_ID
     cr.execute(
@@ -216,6 +235,31 @@ def no_selection_cache_validation(f=None):
 
 @no_selection_cache_validation
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto"):
+    """
+    Recompute field values.
+
+    This function will recompute fields of a model restricted to a set of records - or
+    all. The re-computation is not done on all records at the same time. It is split in
+    batches (chunks). This avoids performance issues, and, in the worse cases, failures
+    due to `MemoryError`. After each chunk is processed the data is sent back to the
+    database according to one of the following strategies:
+
+    - *flush*: use the `flush` method of the ORM
+    - *commit*: `commit` the cursor - also flush
+    - *auto*: pick the best alternative between the two above given the number of records
+      to compute and the presence of tracked fields.
+
+    The *commit* strategy is less prone to cause a `MemoryError` for a huge volume of data.
+
+    :param str model: name of the model to recompute
+    :param list(str) fields: list of the name of the fields to recompute
+    :param list(int) or None ids: list of the IDs of the records to recompute, when `None`
+                                  recompute *all* records
+    :param logger: logger used to report the progress
+    :type logger: :class:`logging.Logger`
+    :param int chunk_size: number of records per chunk - used to split the processing
+    :param str strategy: strategy used to process the re-computation
+    """
     assert strategy in {"flush", "commit", "auto"}
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
@@ -251,6 +295,51 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
 
 
 class iter_browse(object):
+    """
+    Iterate over recordsets.
+
+    The `callable` object returned by this class can be used as an iterator that loads
+    records by chunks (into a `recordset`). After each chunk is exhausted their data is
+    sent back to the database - flushed or committed - and a new chunk is loaded.
+
+    This class allows to run code like:
+
+    .. code-block:: python
+
+        for record in env['my.model'].browse(ids):
+            record.field1 = val
+
+        env['my.model'].browse(ids)._compute_field2()
+        env['my.model'].create(values)
+
+    in a performant way while also avoiding `MemoryError`, even when `ids` or `values`
+    have millions of entries. The alternative using this class would be:
+
+    .. example::
+        .. code-block:: python
+
+            MyModel = util.env(cr)['my.model']
+            for record in util.iter_browse(MyModel, ids):
+                record.field1 = val
+
+            util.iter_browse(MyModel, ids)._compute_field2()
+            util.iter_browse(MyModel, ids).create(values)
+
+    :param model: the model to iterate
+    :type model: :class:`odoo.model.Model`
+    :param list(int) ids: list of IDs of the records to iterate
+    :param int chunk_size: number of records to load in each iteration chunk, `200` by
+                           default
+    :param logger: logger used to report the progress, by default
+                   :data:`~odoo.upgrade.util.orm._logger`
+    :type logger: :class:`logging.Logger`
+    :param str strategy: whether to `flush` or `commit` on each chunk, default is `flush`
+    :return: the object returned by this class can be used to iterate, or call any model
+             method, safely on millions of records.
+
+    See also :func:`~odoo.upgrade.util.orm.env`
+    """
+
     __slots__ = ("_model", "_cr_uid", "_size", "_chunk_size", "_logger", "_strategy", "_it", "_patch")
 
     def __init__(self, model, *args, **kw):
@@ -320,6 +409,16 @@ class iter_browse(object):
         return caller
 
     def create(self, values, **kw):
+        """
+        Create records.
+
+        An alternative to the default `create` method of the ORM that is safe to use to
+        create millions of records.
+
+        :param list(dict) values: list of values of the records to create
+        :param bool multi: whether to use the multi version of `create`, by default is
+                           `True` from Odoo 12 and above
+        """
         multi = kw.pop("multi", version_gte("saas~11.5"))
         if kw:
             raise TypeError("Unknow arguments: %s" % ", ".join(kw))
@@ -360,14 +459,18 @@ class iter_browse(object):
 @contextmanager
 def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     """
-    Helper to be used with a Python `with` statement,
-    to perform an operation with models and fields coming from Python modules acting as `manual` models/fields,
-    while restoring back the state of these models and fields once the operation done.
+    Mark fields of custom modules as `manual`.
+
+    Helper to be used with a Python `with` statement, to perform an operation with models and fields coming
+    from Python modules acting as `manual` models/fields, while restoring back the state of these models
+    and fields once the operation done.
     e.g.
      - validating views coming from custom modules, with the fields loaded as the custom source code was there,
      - crawling the menus as the models/fields coming from custom modules were available.
 
     !!! Rollback might be deactivated with the `rollback` parameter but for internal purpose ONLY !!!
+
+    :meta private: exclude from online docs
     """
     # 1. Convert models which are not in the registry to `manual` models
     #    and list the models that were converted, to restore them back afterwards.
