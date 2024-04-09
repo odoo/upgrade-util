@@ -303,6 +303,12 @@ class SelfPrint(object):
     def __rdiv__(self, other):
         return SelfPrint("%r / %r" % (other, self))
 
+    def __truediv__(self, other):
+        return SelfPrint("%r / %r" % (self, other))
+
+    def __rtruediv__(self, other):
+        return SelfPrint("%r / %r" % (other, self))
+
     def __floordiv__(self, other):
         return SelfPrint("%r // %r" % (self, other))
 

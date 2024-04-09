@@ -14,6 +14,7 @@ except ImportError:
 
 from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
 from odoo.tools import mute_logger
+from odoo.tools.safe_eval import safe_eval
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
@@ -1020,6 +1021,24 @@ class TestMisc(UnitTestCase):
     def test_expand_braces_failure(self, value):
         with self.assertRaises(ValueError):
             util.expand_braces(value)
+
+    @parametrize(
+        [
+            (value,)
+            for value in (
+                [
+                    "a",
+                    "a.b" "a.b()",
+                    "a.b(c)",
+                ]
+                + ["a {} 4".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
+                + ["4 {} b".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
+            )
+        ]
+    )
+    def test_SelfPrint(self, value):
+        evaluated = safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
+        self.assertEqual(str(evaluated), value)
 
 
 class TestQueryFormat(UnitTestCase):
