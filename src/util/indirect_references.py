@@ -110,8 +110,7 @@ def indirect_references(cr, bound_only=False):
 
 
 def generate_indirect_reference_cleaning_queries(cr, ir):
-    """Generator that yield queries to clean an `IndirectReference`"""
-
+    """Yield queries to clean an `IndirectReference`."""
     if ir.res_model:
         query = """
             SELECT {ir.res_model}

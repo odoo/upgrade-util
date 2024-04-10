@@ -110,6 +110,7 @@ def verify_companies(
 def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id", ids=None):
     """
     Check if the category of uom  on `model` is the same as the category of uom on `product.template`.
+
     When `ids` is not provided, every ids would be verified.
 
     Returns list of ids if inconsistencies found, else []
@@ -264,6 +265,7 @@ def verify_products(
 ):
     """
     Check if the product on the `foreign_model` is the same as the product on the `model`.
+
     When `ids` is not provided, every ids would be verified.
 
     The `foreign_model` should be the one that have a reference to the `model` using this

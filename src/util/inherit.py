@@ -94,9 +94,7 @@ def for_each_inherit(cr, model, skip=(), interval="[)"):
 
 
 def direct_inherit_parents(cr, model, skip=(), interval="[)"):
-    """
-    Yield the *direct* inherits parents.
-    """
+    """Yield the *direct* inherits parents."""
     if skip == "*":
         return
     skip = set(skip)
@@ -111,9 +109,7 @@ def direct_inherit_parents(cr, model, skip=(), interval="[)"):
 
 
 def inherit_parents(cr, model, skip=(), interval="[)"):
-    """
-    Recursively yield all inherit parents model names
-    """
+    """Recursively yield all inherit parents model names."""
     if skip == "*":
         return
     skip = set(skip)

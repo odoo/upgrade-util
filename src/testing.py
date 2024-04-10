@@ -26,7 +26,10 @@ VERSION_RE = re.compile(r"^(saas[-~])?(\d+).(\d+)$")
 
 def parametrize(argvalues):
     """
+    Parametrize a test function.
+
     Decorator for UnitTestCase test functions to parametrize the decorated test.
+
     Usage:
     ```python
     @parametrize([
@@ -251,6 +254,7 @@ def get_previous_major(major, minor):
 class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
     """
     Test case to modify data in origin version, and assert in target version.
+
     User must define a "prepare" and a "check" method.
     - prepare method can write in database, return value will be stored in a dedicated table and
       passed as argument to check.
@@ -282,7 +286,8 @@ class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
 # pylint: disable=inherit-non-class
 class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
     """
-    Test case to check invariant through any version
+    Test case to check invariant through any version.
+
     User must define a "invariant" method.
     invariant return value will be compared between the two version.
 

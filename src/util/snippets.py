@@ -28,8 +28,7 @@ class Snippet:
 
 def add_snippet_names(cr, table, column, snippets, select_query):
     """
-    Execute the select_query then for each snippet contained in arch add the right data-snippet
-    attribute on the right element.
+    Execute the select_query then for each snippet contained in arch add the right data-snippet attribute on the right element.
 
     :param str table: The table we are working on
     :param str column: The column we are working on
@@ -61,10 +60,7 @@ def add_snippet_names(cr, table, column, snippets, select_query):
 
 
 def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
-    """
-    Will search for all the snippets in the fields mentionned (should be html fields) and add
-    the corresponding data-snippet on them.
-    """
+    """Search for all the snippets in the fields mentionned (should be html fields) and add the corresponding data-snippet on them."""
     query = cr.mogrify(
         sql.SQL(
             """
@@ -118,7 +114,7 @@ def html_fields(cr):
 
 def parse_style(attr):
     """
-    Converts an HTML style attribute's text into a dict mapping property names to property values.
+    Convert an HTML style attribute's text into a dict mapping property names to property values.
 
     :param str attr: value of an HTML style attribute
     :return: dict of CSS property values per property name
@@ -139,7 +135,7 @@ def parse_style(attr):
 
 def format_style(styles):
     """
-    Converts a dict of CSS property names to property values into an HTML style attribute string.
+    Convert a dict of CSS property names to property values into an HTML style attribute string.
 
     :param dict styles: CSS property value per property name
     :return: str HTML style attribute
@@ -152,8 +148,7 @@ def format_style(styles):
 
 def html_converter(transform_callback, selector=None):
     """
-    Creates an upgrade converter for a single HTML text content or for HTML elements
-    that match a selector.
+    Create an upgrade converter for a single HTML text content or for HTML elements that match a selector.
 
     :param func transform_callback: transforms an HTML tree and returns True if
         a change happened
@@ -164,7 +159,10 @@ def html_converter(transform_callback, selector=None):
 
 
 def make_pickleable_callback(callback):
-    """`ProcessPoolExecutor.map` arguments needs to be pickleable
+    """
+    Make a callable importable.
+
+    `ProcessPoolExecutor.map` arguments needs to be pickleable
     Functions can only be pickled if they are importable.
     However, the callback's file is not importable due to the dash in the filename.
     We should then put the executed function in its own importable file.
@@ -243,8 +241,8 @@ class Convertor:
 
 
 def convert_html_columns(cr, table, columns, converter_callback, where_column="IS NOT NULL", extra_where="true"):
-    """
-    Converts HTML content for the given table column.
+    r"""
+    Convert HTML content for the given table column.
 
     :param cursor cr: database cursor
     :param str table: table name
@@ -254,10 +252,9 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
         change happened and the new content must be saved
     :param str where_column: filtering such as
         - "like '%abc%xyz%'"
-        - "~* '\\yabc.*xyz\\y'"
+        - "~* '\yabc.*xyz\y'"
     :param str extra_where: extra filtering on the where clause
     """
-
     assert "id" not in columns
 
     converters = {column: "->>'en_US'" if util.column_type(cr, table, column) == "jsonb" else "" for column in columns}
@@ -309,8 +306,8 @@ def convert_html_content(
     where_column="IS NOT NULL",
     **kwargs,
 ):
-    """
-    Converts HTML content.
+    r"""
+    Convert HTML content.
 
     :param cursor cr: database cursor
     :param func converter_callback: conversion function that converts the HTML
@@ -318,10 +315,9 @@ def convert_html_content(
         change happened and the new content must be saved
     :param str where_column: filtering such as
         - "like '%abc%xyz%'"
-        - "~* '\\yabc.*xyz\\y'"
+        - "~* '\yabc.*xyz\y'"
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
-
     convert_html_columns(
         cr,
         "ir_ui_view",

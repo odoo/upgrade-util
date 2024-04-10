@@ -220,9 +220,7 @@ VIRTUAL_INHERITS = {
 
 # from lib2to3.refactor.RefactoringTool class
 def _read_python_source(filename):
-    """
-    Do our best to decode a Python source file correctly.
-    """
+    """Do our best to decode a Python source file correctly."""
     try:
         f = open(filename, "rb")  # noqa: SIM115
     except OSError:
