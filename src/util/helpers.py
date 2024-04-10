@@ -172,8 +172,7 @@ def _ir_values_value(cr, prefix=None):
 
 
 def _dashboard_actions(cr, arch_match, *models):
-    """Yield (dashboard_id, action) of dashboards that match `arch_match` and apply on `models` (if specified)"""
-
+    """Yield (dashboard_id, action) of dashboards that match `arch_match` and apply on `models` (if specified)."""
     q = """
         SELECT id, arch
           FROM ir_ui_view_custom

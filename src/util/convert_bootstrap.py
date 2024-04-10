@@ -1,6 +1,4 @@
-"""
-Convert an XML/HTML document Bootstrap code from an older version to a newer one.
-"""
+"""Convert an XML/HTML document Bootstrap code from an older version to a newer one."""
 
 import logging
 import os.path
@@ -29,7 +27,7 @@ B = rf"(?:{BS}|{BE})"
 
 
 def _xpath_has_class(context, *cls):
-    """Extension function for xpath to check if the context node has all the classes passed as arguments"""
+    """Extension function for xpath to check if the context node has all the classes passed as arguments."""
     node_classes = set(context.context_node.attrib.get("class", "").split())
     return node_classes.issuperset(cls)
 
@@ -49,10 +47,7 @@ def _xpath_has_t_class_inner(attrs_values, classes):
 
 
 def _xpath_has_t_class(context, *cls):
-    """
-    Extension function for xpath to check if the context node has all the classes passed as arguments
-    in one of ``class`` or ``t-att(f)-class`` attributes.
-    """
+    """Extension function for xpath to check if the context node has all the classes passed as arguments in one of ``class`` or ``t-att(f)-class`` attributes."""
     return _xpath_has_class(context, *cls) or _xpath_has_t_class_inner(
         tuple(map(context.context_node.attrib.get, ("t-att-class", "t-attf-class"))), cls
     )
@@ -65,7 +60,7 @@ def _xpath_regex_inner(pattern, item):
 
 
 def _xpath_regex(context, item, pattern):
-    """Extension function for xpath to check if the passed item (attribute or text) matches the passed regex pattern"""
+    """Extension function for xpath to check if the passed item (attribute or text) matches the passed regex pattern."""
     if not item:
         return False
     if isinstance(item, list):
@@ -84,7 +79,7 @@ html_utf8_parser = etree.HTMLParser(encoding="utf-8")
 
 def innerxml(element, is_html=False):
     """
-    Returns the inner XML of an element as a string.
+    Return the inner XML of an element as a string.
 
     :param etree.ElementBase element: the element to convert.
     :param bool is_html: whether to use HTML for serialization, XML otherwise. Defaults to False.
@@ -96,23 +91,24 @@ def innerxml(element, is_html=False):
 
 
 def split_classes(*joined_classes):
-    """Returns a list of classes given one or more strings of joined classes separated by spaces"""
+    """Return a list of classes given one or more strings of joined classes separated by spaces."""
     return [c for classes in joined_classes for c in (classes or "").split(" ") if c]
 
 
 def get_classes(element):
-    """Returns the list of classes from the ``class`` attribute of an element"""
+    """Return the list of classes from the ``class`` attribute of an element."""
     return split_classes(element.get("class", ""))
 
 
 def join_classes(classes):
-    """Returns a string of classes joined by space given a list of classes"""
+    """Return a string of classes joined by space given a list of classes."""
     return " ".join(classes)
 
 
 def set_classes(element, classes):
     """
-    Sets the ``class`` attribute of an element from a list of classes.
+    Set the ``class`` attribute of an element from a list of classes.
+
     If the list is empty, the attribute is removed.
     """
     if classes:
@@ -123,7 +119,7 @@ def set_classes(element, classes):
 
 def edit_classlist(classes, add, remove):
     """
-    Helper function to edit a class list, adding and removing classes.
+    Edit a class list, adding and removing classes.
 
     :param str | typing.List[str] classes: the original classes list or str to edit.
     :param str | typing.Iterable[str] | None add: if specified, adds the given class(es) to the list.
@@ -161,8 +157,7 @@ def edit_classlist(classes, add, remove):
 
 def edit_element_t_classes(element, add, remove):
     """
-    Helper function to edit inplace qweb ``t-att-class`` and ``t-attf-class`` attributes of an element,
-    adding and removing the specified classes.
+    Edit inplace qweb ``t-att-class`` and ``t-attf-class`` attributes of an element, adding and removing the specified classes.
 
     N.B. adding new classes will not work if neither ``t-att-class`` nor ``t-attf-class`` are present.
 
@@ -222,7 +217,7 @@ def edit_element_t_classes(element, add, remove):
 
 def edit_element_classes(element, add, remove, is_qweb=False):
     """
-    Helper function to edit inplace the "class" attribute of an element, adding and removing classes.
+    Edit inplace the "class" attribute of an element, adding and removing classes.
 
     :param etree.ElementBase element: the element to edit.
     :param str | typing.Iterable[str] | None add: if specified, adds the given class(es) to the element.
@@ -243,7 +238,8 @@ ALL = object()
 
 def simple_css_selector_to_xpath(selector, prefix="//"):
     """
-    Converts a basic CSS selector cases to an XPath expression.
+    Convert a basic CSS selector cases to an XPath expression.
+
     Supports node names, classes, ``>`` and ``,`` combinators.
 
     :param str selector: the CSS selector to convert.
@@ -313,13 +309,11 @@ def adapt_xpath_for_qweb(xpath):
 
 
 class ElementOperation:
-    """
-    Abstract base class for defining operations to be applied on etree elements.
-    """
+    """Abstract base class for defining operations to be applied on etree elements."""
 
     def __call__(self, element, converter):
         """
-        Performs the operation on the given element.
+        Perform the operation on the given element.
 
         Abstract method that must be implemented by subclasses.
 
@@ -343,8 +337,7 @@ class ElementOperation:
     @classmethod
     def op(cls, *args, xpath=None, **kwargs):
         """
-        Creates a definition of an operation with the given arguments, and returns
-        a tuple of (xpath, operations list) that can be used in the converter definition list.
+        Create a definition of an operation with the given arguments, and returns a tuple of (xpath, operations list) that can be used in the converter definition list.
 
         :param typing.Any args: positional arguments to pass to the operation :meth:`~.__init__`.
         :param typing.Any kwargs: keyword arguments to pass to the operation :meth:`~.__init__`.
@@ -356,9 +349,7 @@ class ElementOperation:
 
 
 class RemoveElement(ElementOperation):
-    """
-    Removes the matched element(s) from the document.
-    """
+    """Remove the matched element(s) from the document."""
 
     def __call__(self, element, converter):
         parent = element.getparent()
@@ -369,7 +360,7 @@ class RemoveElement(ElementOperation):
 
 class EditClasses(ElementOperation):
     """
-    Adds and/or removes classes.
+    Add and/or remove classes.
 
     :param str | typing.Iterable[str] | None add: classes to add to the elements.
     :param str | typing.Iterable[str] | ALL | None remove: classes to remove from the elements.
@@ -411,10 +402,6 @@ class EditClasses(ElementOperation):
 
 
 class AddClasses(EditClasses):
-    """
-    Adds classes.
-    """
-
     def __init__(self, *classes):
         super().__init__(add=classes)
 
@@ -423,7 +410,7 @@ class AddClasses(EditClasses):
 
 class RemoveClasses(EditClasses):
     """
-    Removes classes.
+    Remove classes.
 
     N.B. no checks are made to ensure the class(es) to remove are actually present on the elements.
     """
@@ -434,7 +421,7 @@ class RemoveClasses(EditClasses):
 
 class ReplaceClasses(EditClasses):
     """
-    Replaces old classes with new ones.
+    Replace old classes with new ones.
 
     :param str | typing.Iterable[str] | ALL old: classes to remove from the elements.
     :param str | typing.Iterable[str] | None new: classes to add to the elements.
@@ -448,10 +435,10 @@ class ReplaceClasses(EditClasses):
 
 class PullUp(ElementOperation):
     """
-    Pulls up the element's children to the parent element, then removes the original element.
+    Pull up the element's children to the parent element, then removes the original element.
 
     Example:
-
+    -------
     before::
      .. code-block:: html
 
@@ -484,9 +471,7 @@ class PullUp(ElementOperation):
 
 
 class RenameAttribute(ElementOperation):
-    """
-    Renames an attribute. Silently ignores elements that do not have the attribute.
-    """
+    """Rename an attribute. Silently ignores elements that do not have the attribute."""
 
     def __init__(self, old_name, new_name, extra_xpath=""):
         self.old_name = old_name
@@ -567,9 +552,7 @@ class RegexReplaceClass(RegexReplace):
 
 
 class BS3to4ConvertBlockquote(ElementOperation):
-    """
-    Converts a BS3 ``<blockquote>`` element to a BS4 ``<div>`` element with the ``blockquote`` class.
-    """
+    """Convert a BS3 ``<blockquote>`` element to a BS4 ``<div>`` element with the ``blockquote`` class."""
 
     def __call__(self, element, converter):
         blockquote = converter.copy_element(element, tag="div", add_classes="blockquote", copy_attrs=False)
@@ -581,7 +564,8 @@ class BS3to4ConvertBlockquote(ElementOperation):
 # TODO abt: merge MakeCard and ConvertCard into one operation class
 class BS3to4MakeCard(ElementOperation):
     """
-    Pre-processes a BS3 panel, thumbnail, or well element to be converted to a BS4 card.
+    Pre-processe a BS3 panel, thumbnail, or well element to be converted to a BS4 card.
+
     Card components conversion is then handled by the ``ConvertCard`` operation class.
     """
 
@@ -598,9 +582,7 @@ class BS3to4MakeCard(ElementOperation):
 
 # TODO abt: refactor code
 class BS3to4ConvertCard(ElementOperation):
-    """
-    Fully converts a BS3 panel, thumbnail, or well element and their contents to a BS4 card.
-    """
+    """Fully convert a BS3 panel, thumbnail, or well element and their contents to a BS4 card."""
 
     POST_CONVERSIONS = {
         "title": ["card-title"],
@@ -682,7 +664,8 @@ class BS3to4ConvertCard(ElementOperation):
 
 class BS4to5ConvertCloseButton(ElementOperation):
     """
-    Converts BS4 ``button.close`` elements to BS5 ``button.btn-close``.
+    Convert BS4 ``button.close`` elements to BS5 ``button.btn-close``.
+
     Also fixes the ``data-dismiss`` attribute to ``data-bs-dismiss``, and removes any inner contents.
     """
 
@@ -700,9 +683,7 @@ class BS4to5ConvertCloseButton(ElementOperation):
 
 
 class BS4to5ConvertCardDeck(ElementOperation):
-    """
-    Converts BS4 ``.card-deck`` elements to grid components (``.row``, ``.col``, etc.).
-    """
+    """Convert BS4 ``.card-deck`` elements to grid components (``.row``, ``.col``, etc.)."""
 
     def __call__(self, element, converter):
         cards = element.xpath(converter.adapt_xpath("./*[hasclass('card')]"))
@@ -719,9 +700,7 @@ class BS4to5ConvertCardDeck(ElementOperation):
 
 
 class BS4to5ConvertFormInline(ElementOperation):
-    """
-    Converts BS4 ``.form-inline`` elements to grid components (``.row``, ``.col``, etc.).
-    """
+    """Convert BS4 ``.form-inline`` elements to grid components (``.row``, ``.col``, etc.)."""
 
     def __call__(self, element, converter):
         edit_element_classes(element, add="row row-cols-lg-auto", remove="form-inline", is_qweb=converter.is_qweb)
@@ -990,8 +969,7 @@ class BootstrapConverter:
 
     def convert(self, src_version, dst_version):
         """
-        Converts the loaded document inplace from the source version to the destination,
-        returning the converted document and the number of conversion operations applied.
+        Convert the loaded document inplace from the source version to the destination, returning the converted document and the number of conversion operations applied.
 
         :param str src_version: the source Bootstrap version.
         :param str dst_version: the destination Bootstrap version.
@@ -1064,7 +1042,8 @@ class BootstrapConverter:
 
     def element_factory(self, *args, **kwargs):
         """
-        Helper method to be used by operation for creating new elements using the correct document type.
+        Create new elements using the correct document type.
+
         Basically a wrapper for either etree.XML or etree.HTML depending on the type of document loaded.
 
         :param args: positional arguments to pass to the etree.XML or etree.HTML function.
@@ -1075,7 +1054,8 @@ class BootstrapConverter:
 
     def build_element(self, tag, classes=None, contents=None, **attributes):
         """
-        Helper method to create a new element with the given tag, classes, contents and attributes.
+        Create a new element with the given tag, classes, contents and attributes.
+
         Like :meth:`~.element_factory`, can be used by operations to create elements abstracting away the document type.
 
         :param str tag: the tag of the element to create.
@@ -1103,7 +1083,8 @@ class BootstrapConverter:
         **attributes,
     ):
         """
-        Helper method that creates a copy of an element, optionally changing the tag, classes, contents and attributes.
+        Create a copy of an element, optionally changing the tag, classes, contents and attributes.
+
         Like :meth:`~.element_factory`, can be used by operations to copy elements abstracting away the document type.
 
         :param etree.ElementBase element: the element to copy.
@@ -1133,7 +1114,7 @@ class BootstrapConverter:
 
 def convert_tree(tree, src_version, dst_version, **converter_kwargs):
     """
-    Converts an already parsed lxml tree from Bootstrap v3 to v4 inplace.
+    Convert an already parsed lxml tree from Bootstrap v3 to v4 inplace.
 
     :param etree.ElementTree tree: the lxml tree to convert.
     :param str src_version: the version of Bootstrap the document is currently using.
