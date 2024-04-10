@@ -33,6 +33,7 @@ line-length = 120
 ignore = [
     "B904",  # raise-without-from-inside-except; not python2 compatible
     "B905",  # zip-without-explicit-strict; not python2 compatible
+    "D1",    # undocumented-*
     "E501",  # line-too-long; handled by auto-formatting
     "E731",  # lambda-assignment
     "PERF203",  # try-except-in-loop
@@ -58,6 +59,7 @@ select = [
     "A",   # flake8-builtins
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
+    "D",   # pydocstyle
     "E",   # pycodestyle
     "ERA", # eradicate
     "F",   # Pyflakes
@@ -92,6 +94,8 @@ known-local-folder = ["odoo.upgrade", "odoo.addons.base.maintenance.migrations",
 [tool.ruff.lint.isort.sections]
 odoo-addons = ["odoo.addons", "openerp.addons"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
 
 [tool.ruff.lint.per-file-ignores]
 "*/__init__.py" = [
@@ -103,3 +107,7 @@ odoo-addons = ["odoo.addons", "openerp.addons"]
     "RUF005",
     "RUF007",
 ]
+# ignore docstring lint for tests files
+"src/*/tests/*.py" = ["D"]
+# and for upgrade scripts
+"src/*/*/{pre,post,end}-*.py" = ["D"]
