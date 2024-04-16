@@ -15,6 +15,7 @@ py3_only_patterns = [
     "src/util/snippets.py",
     "src/util/convert_bootstrap.py",
     "src/*/tests/*.py",
+    "src/*/17.0.*/*.py",
 ]
 py3_files = []
 
