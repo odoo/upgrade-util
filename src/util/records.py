@@ -1091,6 +1091,9 @@ def delete_unused(cr, *xmlids, **kwargs):
     This function will remove records pointed by `xmlids` only if they are not referenced
     from any table.
 
+    .. note::
+       The records that cannot be removed are set as `noupdate=True`.
+
     :param list(str) xmlids: list of xml_ids to check for removal
     :param bool deactivate: whether to deactivate records that cannot be removed because
                             they are referenced, `False` by default
