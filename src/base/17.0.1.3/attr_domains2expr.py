@@ -1,6 +1,7 @@
 """
-This file contains tools for making views compatible with Odoo 17. Two main changes are
-performed here:
+This file contains tools for making views compatible with Odoo 17.
+
+Two main changes are performed here:
 1. Convert `attrs` attributes of view elements from domains into Python expressions.
 2. Remove `states` attribute, merge its logic into `invisible` attribute.
 
@@ -43,7 +44,9 @@ from odoo.upgrade import util
 
 def adapt_view(cr, view_xmlid):
     """
-    Example usage of the utilities in this script.
+    Adapt one view.
+
+    Example usage of the utilities in this file.
 
     We use `util.edit_view` because it handles the propagation of the changes to all
     languages while updating the whole arch. Alternatively you could just update specific
@@ -55,7 +58,6 @@ def adapt_view(cr, view_xmlid):
     IrUiView = util.env(cr)["ir.ui.view"].with_context(lang=lang)
     ```
     """
-
     vid = util.ref(view_xmlid)
     IrUiView = util.env(cr)["ir.ui.view"]
     view = IrUiView.browse(vid)
@@ -90,9 +92,7 @@ class InvalidDomainError(Exception):
 
 
 class Ast2StrVisitor(ast._Unparser):
-    """
-    Extend standard unparser to allow specific names to be replaced.
-    """
+    """Extend standard unparser to allow specific names to be replaced."""
 
     def __init__(self, replace_names=None):
         self._replace_names = replace_names if replace_names else DEFAULT_CONTEXT_REPLACE
@@ -104,7 +104,9 @@ class Ast2StrVisitor(ast._Unparser):
 
 def mod2bool_str(s):
     """
-    Convert yes/no/true/false/on/off into True/False strings. Otherwise returns the input unchanged.
+    Convert yes/no/true/false/on/off into True/False strings.
+
+    Otherwise returns the input unchanged.
     The checked values would raise an error instead if used in a Python expression.
     Note that 0 and 1 are left unchanged since they have the same True/False meaning in Python.
     """
@@ -117,7 +119,7 @@ def mod2bool_str(s):
 
 
 def _clean_bool(s):
-    """Minimal simplification of trivial boolean expressions"""
+    """Minimal simplification of trivial boolean expressions."""
     return {
         "(1)": "1",
         "(0)": "0",
@@ -130,7 +132,9 @@ def _clean_bool(s):
 
 def target_elem_and_view_type(elem, comb_arch):
     """
-    Find the target of an element. If there is no `comb_arch` or the element doesn't look like
+    Find the target of an element.
+
+    If there is no `comb_arch` or the element doesn't look like
     targeting anything (no position attributes) assume the input `elem` is the target and return it.
     Along with the target we also return the view type of the elem, plus the field path from the
     arch root.
@@ -400,7 +404,8 @@ def fix_attrs(cr, model, arch, comb_arch):
 
 def check_true_false(lv, ov, rv_ast):
     """
-    Returns True/False if the leaf (lp, op, rp) is something that can be considered as a True/False leaf.
+    Return True/False if the leaf (lp, op, rp) is something that can be considered as a True/False leaf.
+
     Otherwise returns None.
     """
     ov = {"=": "==", "<>": "!="}.get(ov, ov)
@@ -432,7 +437,9 @@ def ast_term2domain_term(term):
 
 def convert_attrs_val(cr, model, field_path, val):
     """
-    Convert an `attrs` value into a python formula. We need to use the AST representation because
+    Convert an `attrs` value into a python formula.
+
+    We need to use the AST representation because
     values representing domains could be:
     * an if, or boolean, expression returning alternative domains
     * a string constant with the domain
@@ -516,6 +523,7 @@ def target_field_type(cr, model, path):
 def convert_domain_leaf(cr, model, field_path, leaf):
     """
     Convert a domain leaf (tuple) into a python expression.
+
     It always return the expression surrounded by parenthesis such that it's safe to use it as a sub-expression.
     """
     if isinstance(leaf, bool):
