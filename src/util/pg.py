@@ -570,9 +570,12 @@ def alter_column_type(cr, table, column, type, using=None, logger=_logger):
     cr.execute(format_query(cr, "ALTER TABLE {} ADD COLUMN {} {}", table, column, sql.SQL(type)))
 
     using = sql.SQL(format_query(cr, using, tmp_column))
+    where_clause = sql.SQL("")
+    if column_type(cr, table, column) != "bool":
+        where_clause = sql.SQL(format_query(cr, "WHERE {} IS NOT NULL", tmp_column))
     explode_execute(
         cr,
-        format_query(cr, "UPDATE {} SET {} = {} WHERE {} IS NOT NULL", table, column, using, tmp_column),
+        format_query(cr, "UPDATE {} SET {} = {} {}", table, column, using, where_clause),
         table=table,
         logger=logger,
     )
