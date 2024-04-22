@@ -308,7 +308,7 @@ def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_log
     :return: the sum of `cr.rowcount` for each query run
     :rtype: int
 
-    .. warning:
+    .. warning::
        It's up to the caller to ensure the queries do not update the same records in
        different buckets. It is advised to never use this function for `DELETE` queries on
        tables with self references due to the potential `ON DELETE` effects.

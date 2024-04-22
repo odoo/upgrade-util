@@ -314,7 +314,7 @@ def remove_record(cr, name):
     """
     Remove a record and its references corresponding to the given :term:`xml_id <external identifier>`.
 
-    :param str name: record xml_id, under the format `module`.`name`
+    :param str name: record xml_id, under the format `module.name`
     """
     if isinstance(name, basestring):
         if "." not in name:
@@ -630,8 +630,8 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
     .. note::
        This function does not remove records, it only updates xml_ids.
 
-    :param str old: current xml_id of the record, under the format `module`.`name`
-    :param str new: new xml_id of the record, under the format `module`.`name`
+    :param str old: current xml_id of the record, under the format `module.name`
+    :param str new: new xml_id of the record, under the format `module.name`
     :param bool or None noupdate: value to set on the `noupdate` flag of the xml_id,
                                   ignored if `None`
     :param str on_collision: how to proceed if the xml_id already exists, the options are
@@ -707,7 +707,7 @@ def ref(cr, xmlid):
     """
     Return the id corresponding to the given :term:`xml_id <external identifier>`.
 
-    :param str xml_id: record xml_id, under the format `module`.`name`
+    :param str xml_id: record xml_id, under the format `module.name`
     :return: ID of the referenced record, `None` if not found.
     :rtype: int or `None`
     """
@@ -734,7 +734,7 @@ def force_noupdate(cr, xmlid, noupdate=True, warn=False):
     """
     Update the `noupdate` flag of a record.
 
-    :param str xmlid: record xml_id, under the format `module`.`name`
+    :param str xmlid: record xml_id, under the format `module.name`
     :param bool noupdate: value to set on the `noupdate` flag
     :param warn: whether to output a warning in the logs when the flag was switched from
                  `True` to `False`
@@ -769,10 +769,11 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     found record. When no matching record is found, nothing is done. In all cases the
     referenced record, after a possible update, of the xml_id is returned.
 
-    :param str xmlid: record xml_id, under the format `module`.`name`
+    :param str xmlid: record xml_id, under the format `module.name`
     :param str model: model name of the record
     :param dict values: mapping of field names to values the record must fulfill
-                        .. example:
+
+                        .. example::
 
                            .. code-block:: python
 
@@ -782,7 +783,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     :return: the ID of the matched record, `None` if no record found
     :rtype: int or None
 
-    .. tip:
+    .. tip::
        This function is useful when migrating in-database records into a custom module, to
        create the xml_ids before the module is updated and avoid duplication.
     """
@@ -872,7 +873,7 @@ def update_record_from_xml(
 
     Optionally this function can reset the translations of some fields.
 
-    :param str xmlid: record xml_id, under the format `module`.`name`
+    :param str xmlid: record xml_id, under the format `module.name`
     :param bool reset_write_metadata: whether to update the `write_date` of the record
     :param bool force_create: whether the record is created if it does not exist
     :param str from_module: name of the module from which to update the record, necessary
@@ -882,12 +883,12 @@ def update_record_from_xml(
     :param bool ensure_references: whether referred records via `ref` XML attributes
                                    should also be updated.
 
-    .. warning:
+    .. warning::
        This functions uses the ORM, therefore it can only be used after **all** models
        referenced in the data specs of the record are already **loaded**. In practice this
        means that this function should be used in `post-` or `end-` scripts.
 
-    .. note:
+    .. note::
        The standard behavior of ORM is to create the record if it doesn't exist, including
        its xml_id. That will happen on this function as well.
     """
