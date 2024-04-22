@@ -75,8 +75,7 @@ def version_between(a, b):
     See also :func:`~odoo.upgrade.util.misc.version_gte`
 
     .. note::
-
-        Bounds are inclusive.
+       The bounds are inclusive.
 
     :param str a: Odoo version, lower bound
     :param str b: Odoo version, upper bound
