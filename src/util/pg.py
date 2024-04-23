@@ -642,18 +642,44 @@ def view_exists(cr, view):
     return bool(cr.rowcount)
 
 
-def remove_constraint(cr, table, name, cascade=False):
+def remove_constraint(cr, table, name, cascade=False, warn=True):
+    """
+    Remove a table constraint.
+
+    This function removes the constraint `name` from `table`. It also removes records from
+    `ir_model_constraint` and its xml_ids. It logs not found constraints.
+
+    .. note::
+
+       If there is no constraint `name`, this function will attempt to remove
+       ``{table}_{name}``, the latter is the default name the ORM uses for constraints
+       created from `_sql_constraints`.
+
+    :param str table: table from where to remove the constraint
+    :param str name: name of the constraint to remove
+    :param bool cascade: cascade the constraint removal
+    :param bool warn: use warning level when logging not found constraints, otherwise use
+                      info level
+    :return: whether the constraint was removed
+    :rtype: bool
+    """
     _validate_table(table)
+    log = _logger.warning if warn else _logger.info
     cascade = "CASCADE" if cascade else ""
     cr.execute('ALTER TABLE "{}" DROP CONSTRAINT IF EXISTS "{}" {}'.format(table, name, cascade))
-    # small exception: odoo specific action.
-    # needs to be kept here to avoid resurive imports.
-    # a solution would be to not do it now but adds an `end-` script that remove the invalid entries
-    # from the `ir_model_constraint` table
+    # Exceptionally remove Odoo records, even if we are in PG land on this file. This is somehow
+    # valid because ir.model.constraint are ORM low-level objects that relate directly to table
+    # constraints.
     cr.execute("DELETE FROM ir_model_constraint WHERE name = %s RETURNING id", [name])
     if cr.rowcount:
         ids = tuple(c for (c,) in cr.fetchall())
         cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
+        return True
+    if name.startswith(table + "_"):
+        log("%r not found in ir_model_constraint, table=%r", name, table)
+        return False
+    log("%r not found in ir_model_constraint, attempting to remove with table %r prefix", name, table)
+    return remove_constraint(cr, table, "{}_{}".format(table, name), cascade, warn)
 
 
 def get_fk(cr, table, quote_ident=True):
@@ -728,7 +754,7 @@ class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstrai
 
     def drop(self, cr):
         if self.isconstraint:
-            remove_constraint(cr, self.on, self.name)
+            remove_constraint(cr, self.on, self.name, warn=False)
         else:
             cr.execute('DROP INDEX "%s"' % self.name)
 
@@ -1064,7 +1090,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
         )
         for (const,) in cr.fetchall():
             _logger.info("Dropping constraint %s on table %s", const, new_table)
-            remove_constraint(cr, new_table, const)
+            remove_constraint(cr, new_table, const, warn=False)
 
     # rename fkeys
     cr.execute(
