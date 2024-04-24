@@ -150,6 +150,8 @@ def _get_domain_fields(cr):
         DomainField("documents_share", "domain", documents_domains_target),
         DomainField("documents_workflow_rule", "domain", documents_domains_target),
         DomainField("loyalty_rule", "rule_domain", "'product.product'"),
+        DomainField("loyalty_rule", "product_domain", "'product.product'"),
+        DomainField("loyalty_reward", "discount_product_domain", "'product.product'"),
     ]
 
     for df in result:
