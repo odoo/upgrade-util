@@ -491,7 +491,10 @@ def convert_attrs_val(cr, model, field_path, val):
                 op = {"&": "and", "|": "or"}[item]
                 stack.append(f"({left} {op} {right})")
             else:
-                stack.append(convert_domain_leaf(cr, model, field_path, item))
+                try:
+                    stack.append(convert_domain_leaf(cr, model, field_path, item))
+                except Exception:
+                    raise InvalidDomainError(ast.unparse(orig_ast)) from None
         assert len(stack) == 1
         res = stack.pop()
         assert res[0] == "(" and res[-1] == ")", res
