@@ -431,6 +431,30 @@ class TestIterBrowse(UnitTestCase):
 
 
 class TestPG(UnitTestCase):
+    def test_alter_column_type(self):
+        cr = self.env.cr
+        cr.execute(
+            """
+            ALTER TABLE res_partner_title ADD COLUMN x bool;
+
+            UPDATE res_partner_title
+               SET x = CASE id % 3
+                           WHEN 1 THEN NULL
+                           WHEN 2 THEN True
+                           ELSE False
+                       END
+            """
+        )
+        self.assertEqual(util.column_type(cr, "res_partner_title", "x"), "bool")
+        util.alter_column_type(cr, "res_partner_title", "x", "int", using="CASE {0} WHEN True THEN 2 ELSE 1 END")
+        self.assertEqual(util.column_type(cr, "res_partner_title", "x"), "int4")
+        cr.execute("SELECT id, x FROM res_partner_title")
+        data = cr.fetchall()
+        self.assertTrue(
+            all(x == 1 or (x == 2 and id_ % 3 == 2) for id_, x in data),
+            "Some values where not casted correctly via USING",
+        )
+
     @parametrize(
         [
             ("test", "<p>test</p>"),

@@ -571,7 +571,7 @@ def alter_column_type(cr, table, column, type, using=None, logger=_logger):
 
     using = sql.SQL(format_query(cr, using, tmp_column))
     where_clause = sql.SQL("")
-    if column_type(cr, table, column) != "bool":
+    if column_type(cr, table, tmp_column) != "bool":
         where_clause = sql.SQL(format_query(cr, "WHERE {} IS NOT NULL", tmp_column))
     explode_execute(
         cr,
