@@ -579,9 +579,10 @@ class TestPG(UnitTestCase):
 
         threading.current_thread().testing = False
         # exploded queries will generate a SerializationFailed error, causing some of the queries to be retried
-        util.explode_execute(
-            cr, util.format_query(cr, "DELETE FROM {}", TEST_TABLE_NAME), TEST_TABLE_NAME, bucket_size=1
-        )
+        with mute_logger(util.pg._logger.name, "odoo.sql_db"):
+            util.explode_execute(
+                cr, util.format_query(cr, "DELETE FROM {}", TEST_TABLE_NAME), TEST_TABLE_NAME, bucket_size=1
+            )
         threading.current_thread().testing = True
 
         if hasattr(self, "_savepoint_id"):
