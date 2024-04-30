@@ -216,7 +216,7 @@ def fix_elem(cr, model, elem, comb_arch):
                 etree.tostring(telem).decode(),
             )
 
-    if "attrs" in elem.attrib:
+    if elem.get("attrs"):
         attrs_val = elem.get("attrs")
         ast_attrs = ast_parse(attrs_val)
         if isinstance(ast_attrs, ast.Dict):
@@ -232,7 +232,7 @@ def fix_elem(cr, model, elem, comb_arch):
                 attrs_val,
                 etree.tostring(elem).decode(),
             )
-        elem.attrib.pop("attrs")
+    elem.attrib.pop("attrs", "")
 
     for mod in MODS:
         if mod not in elem.attrib and mod not in attrs:
