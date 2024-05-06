@@ -107,7 +107,7 @@ def verify_companies(
         )
 
 
-def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id", ids=None):
+def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id", ids=None, extra_where=""):
     """
     Check if the category of uom  on `model` is the same as the category of uom on `product.template`.
 
@@ -140,6 +140,7 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
          WHERE tu.category_id != ptu.category_id
                {ids}
                {active}
+               {extra_where}
     """.format(
         table=q(table),
         uom_column=q(uom_field),
@@ -149,6 +150,7 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         product_template_name=get_value_or_en_translation(cr, "product_template", "name"),
         ids=" AND t.id IN %s" if ids else "",
         active=" AND pp.active" if INCLUDE_ARCHIVED_PRODUCTS else "",
+        extra_where=" AND {}".format(extra_where) if extra_where else "",
     )
 
     rows = []
