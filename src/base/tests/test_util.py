@@ -1046,6 +1046,37 @@ class TestRecords(UnitTestCase):
         [count] = self.env.cr.fetchone()
         self.assertEqual(count, 1)
 
+    @unittest.skipUnless(util.version_gte("12.0"), "Only work on Odoo >= 12")
+    def test_remove_action_apply_cascade(self):
+        action = self.env["ir.actions.act_url"].create({"name": "act_test", "url": "test.com"})
+        self.env["ir.model.data"].create(
+            {"name": "act_test", "module": "base", "model": "ir.actions.act_url", "res_id": action.id}
+        )
+
+        filter_ = self.env["ir.filters"].create({"name": "filter", "model_id": "res.users", "action_id": action.id})
+
+        util.remove_record(self.env.cr, "base.act_test")
+
+        self.assertIsNone(util.ref(self.env.cr, "base.act_test"))
+        self.assertFalse(action.exists())
+        self.assertFalse(filter_.exists())
+
+    @unittest.skipUnless(util.version_gte("12.0"), "Only work on Odoo >= 12")
+    def test_remove_action_apply_setnull(self):
+        action = self.env["ir.actions.server"].create(
+            {"name": "act_test", "model_id": util.ref(self.env.cr, "base.model_res_users")}
+        )
+
+        user = self.env["res.users"].create({"login": "U1", "name": "U1", "action_id": action.id})
+
+        util.remove_action(self.env.cr, action_id=action.id)
+
+        util.invalidate(user)
+
+        self.assertFalse(action.exists())
+        self.assertTrue(user.exists())
+        self.assertFalse(user.action_id)
+
 
 class TestMisc(UnitTestCase):
     @parametrize(

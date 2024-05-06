@@ -310,6 +310,51 @@ else:
 # fmt:on
 
 
+def remove_action(cr, xml_id=None, action_id=None):
+    assert bool(xml_id) ^ bool(action_id)
+
+    action_model = None
+    if action_id:
+        cr.execute("SELECT type FROM ir_actions WHERE id=%s", [action_id])
+        [action_model] = cr.fetchone()
+    else:
+        module, _, name = xml_id.partition(".")
+        cr.execute("SELECT model, res_id FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
+        action_model, action_id = cr.fetchone()
+        if action_model not in {ihn.model for ihn in for_each_inherit(cr, "ir.actions.actions")}:
+            raise ValueError(
+                "%r should point to a model inheriting from 'ir.actions.actions', not a %r" % (xml_id, action_model)
+            )
+
+    # on_delete value is correct only from version 11, thus can only be used on upgrades to version > 11
+    if not version_gte("12.0"):
+        return remove_records(cr, action_model, [action_id])
+
+    cr.execute(
+        """
+        SELECT name,
+               model,
+               on_delete
+          FROM ir_model_fields
+         WHERE relation = 'ir.actions.actions'
+           AND on_delete IN ( 'cascade', 'set null' )
+           AND ttype = 'many2one'
+        """
+    )
+
+    for column_name, model, on_delete in cr.fetchall():
+        model_table = table_of_model(cr, model)
+        if on_delete == "cascade":
+            query = format_query(cr, "SELECT id FROM {} WHERE {} = %s", model_table, column_name)
+            cr.execute(query, (action_id,))
+            remove_records(cr, model, [id_ for (id_,) in cr.fetchall()])
+        else:
+            query = format_query(cr, "UPDATE {} SET {} = NULL WHERE {} = %s", model_table, column_name, column_name)
+            explode_execute(cr, cr.mogrify(query, [action_id]).decode(), table=model_table)
+
+    return remove_records(cr, action_model, [action_id])
+
+
 def remove_record(cr, name):
     """
     Remove a record and its references corresponding to the given :term:`xml_id <external identifier>`.
@@ -351,6 +396,10 @@ def remove_record(cr, name):
     if model == "res.groups":
         _logger.log(NEARLYWARN, "Removing group %r", name)
         return remove_group(cr, group_id=res_id)
+
+    if model in {ihn.model for ihn in for_each_inherit(cr, "ir.actions.actions")}:
+        _logger.log(NEARLYWARN, "Removing action %r", name)
+        return remove_action(cr, action_id=res_id)
 
     return remove_records(cr, model, [res_id])
 
