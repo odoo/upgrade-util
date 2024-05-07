@@ -21,6 +21,8 @@ INCLUDE_ARCHIVED_PRODUCTS = str2bool(
 )
 FIX_PRODUCT_UOM = str2bool(os.environ.get("ODOO_MIG_FIX_ALL_UOM_INCONSISTENCIES"), default=False)
 
+FROM_ENV = object()
+
 
 def verify_companies(
     cr, model, field_name, logger=_logger, model_company_field="company_id", comodel_company_field="company_id"
@@ -107,7 +109,15 @@ def verify_companies(
         )
 
 
-def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id", ids=None):
+def verify_uoms(
+    cr,
+    model,
+    uom_field="product_uom_id",
+    product_field="product_id",
+    include_archived_products=FROM_ENV,
+    auto_fix=FROM_ENV,
+    ids=None,
+):
     """
     Check if the category of uom  on `model` is the same as the category of uom on `product.template`.
 
@@ -119,6 +129,12 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
     table = table_of_model(cr, model)
 
     q = lambda s: quote_ident(s, cr._cnx)
+
+    if include_archived_products is FROM_ENV:
+        include_archived_products = INCLUDE_ARCHIVED_PRODUCTS
+
+    if auto_fix is FROM_ENV:
+        auto_fix = FIX_PRODUCT_UOM
 
     query = """
         SELECT t.id line_id,
@@ -148,7 +164,7 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         category_name=get_value_or_en_translation(cr, "uom_category", "name"),
         product_template_name=get_value_or_en_translation(cr, "product_template", "name"),
         ids=" AND t.id IN %s" if ids else "",
-        active=" AND pp.active" if not INCLUDE_ARCHIVED_PRODUCTS else "",
+        active=" AND pp.active" if not include_archived_products else "",
     )
 
     rows = []
@@ -166,7 +182,7 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
 
     title = model.replace(".", " ").title()
 
-    if FIX_PRODUCT_UOM:
+    if auto_fix:
         line_new_ids = {line_id: prod_uom_id for line_id, _, _, _, prod_uom_id, _, _, _, _ in rows}
         cr.execute(
             """
@@ -261,6 +277,7 @@ def verify_products(
     foreign_model_reference_field,
     model_product_field="product_id",
     foreign_model_product_field="product_id",
+    include_archived_products=FROM_ENV,
     ids=None,
 ):
     """
@@ -288,6 +305,10 @@ def verify_products(
     foreign_table = table_of_model(cr, foreign_model)
 
     q = lambda s: quote_ident(s, cr._cnx)
+
+    if include_archived_products is FROM_ENV:
+        include_archived_products = INCLUDE_ARCHIVED_PRODUCTS
+
     query = """
         SELECT f.id,
                f.{foreign_model_product_field},
@@ -312,7 +333,7 @@ def verify_products(
         model_product_field=q(model_product_field),
         foreign_model_product_field=q(foreign_model_product_field),
         ids=" AND t.id IN %s" if ids else "",
-        active=" AND tpp.active" if not INCLUDE_ARCHIVED_PRODUCTS else "",
+        active=" AND tpp.active" if not include_archived_products else "",
     )
 
     rows = []
