@@ -148,7 +148,7 @@ def verify_uoms(cr, model, uom_field="product_uom_id", product_field="product_id
         category_name=get_value_or_en_translation(cr, "uom_category", "name"),
         product_template_name=get_value_or_en_translation(cr, "product_template", "name"),
         ids=" AND t.id IN %s" if ids else "",
-        active=" AND pp.active" if INCLUDE_ARCHIVED_PRODUCTS else "",
+        active=" AND pp.active" if not INCLUDE_ARCHIVED_PRODUCTS else "",
     )
 
     rows = []
@@ -312,7 +312,7 @@ def verify_products(
         model_product_field=q(model_product_field),
         foreign_model_product_field=q(foreign_model_product_field),
         ids=" AND t.id IN %s" if ids else "",
-        active=" AND tpp.active" if INCLUDE_ARCHIVED_PRODUCTS else "",
+        active=" AND tpp.active" if not INCLUDE_ARCHIVED_PRODUCTS else "",
     )
 
     rows = []
