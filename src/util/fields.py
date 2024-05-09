@@ -40,7 +40,13 @@ except ImportError:
 from .const import ENVIRON
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
 from .exceptions import SleepyDeveloperError
-from .helpers import _dashboard_actions, _validate_model, table_of_model
+from .helpers import (
+    _dashboard_actions,
+    _remove_export_lines,
+    _validate_model,
+    resolve_model_fields_path,
+    table_of_model,
+)
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext, log_progress, version_gte
 from .orm import env, invalidate
@@ -201,6 +207,9 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             """,
             [(fieldname, fieldname + " desc"), model, r"\y{}\y".format(fieldname)],
         )
+
+    # ir.exports.line
+    _remove_export_lines(cr, model, fieldname)
 
     def adapter(leaf, is_or, negated):
         # replace by TRUE_LEAF, unless negated or in a OR operation but not negated
@@ -1071,21 +1080,32 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         cr.execute(q.format(col_prefix=col_prefix), p)
 
         # ir.exports.line
-        q = """
-            UPDATE ir_exports_line l
-               SET name = regexp_replace(l.name, %(old)s, %(new)s, 'g')
-        """
         if only_models:
-            q += """
-              FROM ir_exports e
-             WHERE e.id = l.export_id
-               AND e.resource IN %(models)s
-               AND
-            """
-        else:
-            q += "WHERE "
-        q += "l.name ~ %(old)s"
-        cr.execute(q, p)
+            cr.execute(
+                """
+                SELECT el.id,
+                       e.resource,
+                       STRING_TO_ARRAY(el.name, '/')
+                  FROM ir_exports_line el
+                  JOIN ir_exports e
+                    ON el.export_id = e.id
+                 WHERE el.name ~ %s
+                """,
+                [r"\y{}\y".format(old)],
+            )
+            fixed_lines_paths = {}
+            for line_id, line_model, line_path in cr.fetchall():
+                new_path = [
+                    new if x.field_name == old and x.field_model in only_models else x.field_name
+                    for x in resolve_model_fields_path(cr, line_model, line_path)
+                ]
+                if len(new_path) == len(line_path) and new_path != line_path:
+                    fixed_lines_paths[line_id] = "/".join(new_path)
+            if fixed_lines_paths:
+                cr.execute(
+                    "UPDATE ir_exports_line SET name = (%s::jsonb)->>(id::text) WHERE id IN %s",
+                    [Json(fixed_lines_paths), tuple(fixed_lines_paths)],
+                )
 
         # mail.alias
         if column_exists(cr, "mail_alias", "alias_defaults"):

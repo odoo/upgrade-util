@@ -39,7 +39,7 @@ def indirect_references(cr, bound_only=False):
         IR("ir_model_fields", "relation", None),  # destination of a relation field
         IR("ir_model_data", "model", "res_id"),
         IR("ir_filters", "model_id", None, set_unknown=True),  # YUCK!, not an id
-        IR("ir_exports", "resource", None, set_unknown=True),
+        IR("ir_exports", "resource", None),
         IR("ir_ui_view", "model", None, set_unknown=True),
         IR("ir_values", "model", "res_id"),
         IR("wkf_transition", "trigger_model", None),
