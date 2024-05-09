@@ -407,6 +407,63 @@ class TestRemoveFieldDomains(UnitTestCase):
         self.assertEqual(altered_domain, expected)
 
 
+class TestIrExports(UnitTestCase):
+    def setUp(self):
+        super().setUp()
+        self.export = self.env["ir.exports"].create(
+            [
+                {
+                    "name": "Test currency export",
+                    "resource": "res.currency",
+                    "export_fields": [
+                        (0, 0, {"name": "full_name"}),
+                        (0, 0, {"name": "rate_ids/company_id/user_ids/name"}),
+                        (0, 0, {"name": "rate_ids/company_id/user_ids/partner_id/user_ids/name"}),
+                        (0, 0, {"name": "rate_ids/name"}),
+                    ],
+                }
+            ]
+        )
+        util.flush(self.export)
+
+    def _invalidate(self):
+        util.invalidate(self.export.export_fields)
+        util.invalidate(self.export)
+
+    def test_rename_field(self):
+        util.rename_field(self.cr, "res.partner", "user_ids", "renamed_user_ids")
+        self._invalidate()
+        self.assertEqual(
+            self.export.export_fields[2].name, "rate_ids/company_id/user_ids/partner_id/renamed_user_ids/name"
+        )
+
+        util.rename_field(self.cr, "res.users", "name", "new_name")
+        self._invalidate()
+        self.assertEqual(self.export.export_fields[1].name, "rate_ids/company_id/user_ids/new_name")
+
+    def test_remove_field(self):
+        util.remove_field(self.cr, "res.currency.rate", "company_id")
+        self._invalidate()
+        self.assertEqual(len(self.export.export_fields), 2)
+        self.assertEqual(self.export.export_fields[0].name, "full_name")
+        self.assertEqual(self.export.export_fields[1].name, "rate_ids/name")
+
+    def test_rename_model(self):
+        util.rename_model(self.cr, "res.currency", "res.currency2")
+        self._invalidate()
+        self.assertEqual(self.export.resource, "res.currency2")
+
+    def test_remove_model(self):
+        util.remove_model(self.cr, "res.currency.rate")
+        self._invalidate()
+        self.assertEqual(len(self.export.export_fields), 1)
+        self.assertEqual(self.export.export_fields[0].name, "full_name")
+
+        util.remove_model(self.cr, "res.currency")
+        self.cr.execute("SELECT * FROM ir_exports WHERE id = %s", [self.export.id])
+        self.assertFalse(self.cr.fetchall())
+
+
 class TestIterBrowse(UnitTestCase):
     def test_iter_browse_iter(self):
         cr = self.env.cr
