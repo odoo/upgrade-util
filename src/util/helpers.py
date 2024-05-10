@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
+from collections import namedtuple
 
 import lxml
 
@@ -214,3 +215,103 @@ def _get_theme_models():
         "theme.website.menu": "website.menu",
         "theme.ir.attachment": "ir.attachment",
     }
+
+
+FieldsPathPart = namedtuple("FieldsPathPart", "field_model field_name relation_model")
+FieldsPathPart.__doc__ = """
+Encapsulate information about a field within a fields path.
+
+:param str field_model: model of the field
+:param str field_name: name of the field
+:param str relation_model: target model of the field, if relational, otherwise ``None``
+"""
+for _f in FieldsPathPart._fields:
+    getattr(FieldsPathPart, _f).__doc__ = None
+
+
+def resolve_model_fields_path(cr, model, path):
+    """
+    Resolve model fields paths.
+
+    This function returns a list of :class:`~odoo.upgrade.util.helpers.FieldsPathPart`
+    where each item describes a field in ``path`` (in the same order). The returned list
+    could be shorter than the original ``path`` due to a missing field or model, or
+    because there is a non-relational field in the path. The only non-relational field
+    allowed in a fields path is the last one, in which case the returned list has the same
+    length as the input ``path``.
+
+    .. example::
+
+       .. code-block:: python
+
+          >>> util.resolve_model_fields_path(cr, "res.partner", "user_ids.partner_id.title".split("."))
+          [FieldsPathPart(field_model='res.partner', field_name='user_ids', relation_model='res.users'),
+          FieldsPathPart(field_model='res.users', field_name='partner_id', relation_model='res.partner'),
+          FieldsPathPart(field_model='res.partner', field_name='title', relation_model='res.partner.title')]
+
+       Last field is not relational:
+
+       .. code-block:: python
+
+          >>> resolve_model_fields_path(cr, "res.partner", "user_ids.active".split("."))
+          [FieldsPathPart(field_model='res.partner', field_name='user_ids', relation_model='res.users'),
+          FieldsPathPart(field_model='res.users', field_name='active', relation_model=None)]
+
+       The path is wrong, it uses a non-relational field:
+
+       .. code-block:: python
+
+          >>> resolve_model_fields_path(cr, "res.partner", "user_ids.active.name".split("."))
+          [FieldsPathPart(field_model='res.partner', field_name='user_ids', relation_model='res.users'),
+          FieldsPathPart(field_model='res.users', field_name='active', relation_model=None)]
+
+       The path is broken, it uses a non-existing field:
+
+       .. code-block:: python
+
+          >>> resolve_model_fields_path(cr, "res.partner", "user_ids.non_existing_id.active".split("."))
+          [FieldsPathPart(field_model='res.partner', field_name='user_ids', relation_model='res.users')]
+
+    :param str model: starting model of the fields path
+    :param typing.Sequence[str] path: fields path
+    :return: resolved fields path parts
+    :rtype: list(:class:`~odoo.upgrade.util.helpers.FieldsPathPart`)
+    """
+    path = list(path)
+    cr.execute(
+        """
+        WITH RECURSIVE resolved_fields_path AS (
+            -- non-recursive term
+               SELECT imf.model AS field_model,
+                      imf.name AS field_name,
+                      imf.relation AS relation_model,
+                      p.path AS path,
+                      1 AS part_index
+                 FROM (VALUES (%(model)s, %(path)s)) p(model, path)
+                 JOIN ir_model_fields imf
+                   ON imf.model = p.model
+                  AND imf.name = p.path[1]
+
+            UNION ALL
+
+            -- recursive term
+               SELECT rimf.model AS field_model,
+                      rimf.name AS field_name,
+                      rimf.relation AS relation_model,
+                      rfp.path AS path,
+                      rfp.part_index + 1 AS part_index
+                 FROM resolved_fields_path rfp
+                 JOIN ir_model_fields rimf
+                   ON rimf.model = rfp.relation_model
+                  AND rimf.name = rfp.path[rfp.part_index + 1]
+                WHERE cardinality(rfp.path) > rfp.part_index
+        )
+        SELECT field_model,
+               field_name,
+               relation_model
+          FROM resolved_fields_path
+         ORDER BY part_index
+        """,
+        {"model": model, "path": list(path)},
+    )
+    return [FieldsPathPart(**row) for row in cr.dictfetchall()]
