@@ -58,14 +58,14 @@ def adapt_view(cr, view_xmlid):
     IrUiView = util.env(cr)["ir.ui.view"].with_context(lang=lang)
     ```
     """
-    vid = util.ref(view_xmlid)
+    vid = util.ref(cr, view_xmlid)
     IrUiView = util.env(cr)["ir.ui.view"]
     view = IrUiView.browse(vid)
 
     # disable view to avoid it being applied to the parent arch
     view.active = False
     # get combined arch of the parent view
-    comb_arch = view.inherit_id._get_combined_arch()
+    comb_arch = view.inherit_id._get_combined_arch() if view.inherit_id else None
 
     # update current view arch
     new_arch = etree.fromstring(view.arch_db)
