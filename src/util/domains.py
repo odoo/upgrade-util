@@ -33,7 +33,7 @@ except ImportError:
     from openerp.tools.safe_eval import safe_eval
 
 from .const import NEARLYWARN
-from .helpers import _dashboard_actions, _validate_model
+from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext
 from .pg import column_exists, get_value_or_en_translation, table_exists
@@ -160,21 +160,13 @@ def _get_domain_fields(cr):
 
 
 def _model_of_path(cr, model, path):
-    for field in path:
-        cr.execute(
-            """
-            SELECT relation
-              FROM ir_model_fields
-             WHERE model = %s
-               AND name = %s
-        """,
-            [model, field],
-        )
-        if not cr.rowcount:
-            return None
-        [model] = cr.fetchone()
-
-    return model
+    if not path:
+        return model
+    path = tuple(path)
+    resolved_parts = resolve_model_fields_path(cr, model, path)
+    if len(resolved_parts) == len(path):
+        return resolved_parts[-1].relation_model
+    return None
 
 
 def _valid_path_to(cr, path, from_, to):
