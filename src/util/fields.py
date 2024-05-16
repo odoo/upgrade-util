@@ -57,6 +57,7 @@ from .pg import (
     savepoint,
     table_exists,
 )
+from .records import adapt_search_views
 from .report import add_to_migration_reports, get_anchor_link_to_record
 
 # python3 shims
@@ -201,6 +202,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             """,
             [(fieldname, fieldname + " desc"), model, r"\y{}\y".format(fieldname)],
         )
+    # clean filter's of custom search view
+    adapt_search_views(cr, fieldname, model, skip_inherit=skip_inherit)
 
     def adapter(leaf, is_or, negated):
         # replace by TRUE_LEAF, unless negated or in a OR operation but not negated
@@ -1156,6 +1159,8 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*", force_adapt=True)
             adapt_related(cr, model, old, new, skip_inherit="*")
             adapt_depends(cr, model, old, new, skip_inherit="*")
+            # clean filter's of custom search view
+            adapt_search_views(cr, old, model, new, skip_inherit="*")
 
         inherited_models = tuple(
             inh.model for model in only_models for inh in for_each_inherit(cr, model, skip_inherit)
