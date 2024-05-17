@@ -37,6 +37,7 @@ except ImportError:
         return "%s_%s_index" % (table_name, column_name)
 
 
+from . import spreadsheet
 from .const import ENVIRON
 from .context import adapt_context, clean_context
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
@@ -320,6 +321,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     for inh in for_each_inherit(cr, model, skip_inherit):
         remove_field(cr, inh.model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
 
+    spreadsheet.remove_field_in_all_spreadsheets(cr, model, fieldname)
+
 
 def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
     """
@@ -533,6 +536,8 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
     # rename field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
         rename_field(cr, inh.model, old, new, update_references=update_references, skip_inherit=skip_inherit)
+
+    spreadsheet.rename_field_in_all_spreadsheets(cr, model, old, new)
 
 
 def convert_field_to_html(cr, model, field, skip_inherit=()):
