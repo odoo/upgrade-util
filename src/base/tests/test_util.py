@@ -1047,6 +1047,72 @@ class TestRecords(UnitTestCase):
         self.assertEqual(count, 1)
 
 
+class TestEditView(UnitTestCase):
+    @parametrize(
+        [
+            (True, True, True),
+            (False, True, False),
+        ]
+    )
+    def test_active_auto(self, initial_value, by_xmlid, by_view_id):
+        cr = self.env.cr
+        xmlid = "base.view_view_form"
+        view_id = util.ref(cr, xmlid)
+
+        cr.execute("UPDATE ir_ui_view SET active = %s WHERE id = %s", [initial_value, view_id])
+
+        # call by xmlid
+        with util.edit_view(cr, xmlid=xmlid, skip_if_not_noupdate=False, active="auto"):
+            pass
+
+        cr.execute("SELECT active FROM ir_ui_view WHERE id = %s", [view_id])
+        self.assertEqual(cr.fetchone()[0], by_xmlid)
+
+        # reset value
+        cr.execute("UPDATE ir_ui_view SET active = %s WHERE id = %s", [initial_value, view_id])
+
+        # call by view_id
+        with util.edit_view(cr, view_id=view_id, active="auto"):
+            pass
+
+        cr.execute("SELECT active FROM ir_ui_view WHERE id = %s", [view_id])
+        self.assertEqual(cr.fetchone()[0], by_view_id)
+
+    @parametrize(
+        [
+            (True, True, True),
+            (True, False, False),
+            (True, None, True),
+            (False, True, True),
+            (False, False, False),
+            (False, None, False),
+        ]
+    )
+    def test_active_explicit(self, initial_value, value, expected_value):
+        cr = self.env.cr
+        xmlid = "base.view_view_form"
+        view_id = util.ref(cr, xmlid)
+
+        cr.execute("UPDATE ir_ui_view SET active = %s WHERE id = %s", [initial_value, view_id])
+
+        # call by xmlid
+        with util.edit_view(cr, xmlid=xmlid, skip_if_not_noupdate=False, active=value):
+            pass
+
+        cr.execute("SELECT active FROM ir_ui_view WHERE id = %s", [view_id])
+        self.assertEqual(cr.fetchone()[0], expected_value)
+
+        # reset value
+        cr.execute("UPDATE ir_ui_view SET active = %s WHERE id = %s", [initial_value, view_id])
+
+        # call by view_id
+        with util.edit_view(cr, view_id=view_id, active=value):
+            pass
+
+        cr.execute("SELECT active FROM ir_ui_view WHERE id = %s", [view_id])
+        self.assertEqual(cr.fetchone()[0], expected_value)
+
+
 class TestMisc(UnitTestCase):
     @parametrize(
         [

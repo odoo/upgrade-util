@@ -158,7 +158,7 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
 
 
 @contextmanager
-def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=True):
+def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active="auto"):
     """
     Context manager to edit a view's arch.
 
@@ -181,23 +181,28 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active=Tr
     `skip_if_not_noupdate` is set to `False`. If `noupdate` is `False`, the view will be
     yielded for edit.
 
-    If the `active` argument is not `None`, the `active` flag of the view will be set
+    If the `active` argument is `True` or `False`, the `active` flag of the view will be set
     accordingly.
 
-    .. warning::
-       The default value of `active` is `True`, therefore views are always *activated* by
-       default. To avoid inadvertently activating views, pass `None` as `active` parameter.
+    .. note::
+        If `active` is "auto" (default value), the view will be activated if selected
+        via `xmlid` and left untouched if selected via `view_id`.
 
     :param str xmlid: optional, xml_id of the view edit
     :param int view_id: optional, ID of the view to edit
     :param bool skip_if_not_noupdate: whether to force the edit of views requested via
                                      `xmlid` parameter even if they are flagged as
                                      `noupdate=True`, ignored if `view_id` is set
-    :param bool or None active: active flag value to set, nothing is set when `None`
+    :param bool or None or "auto" active: active flag value to set. Unchanged when `None`.
     :return: a context manager that yields the parsed arch, upon exit the context manager
              writes back the changes.
     """
     assert bool(xmlid) ^ bool(view_id), "You Must specify either xmlid or view_id"
+    if active not in (True, False, None, "auto"):
+        raise ValueError("Invalid `active` value: {!r}".format(active))
+    if active == "auto":
+        active = True if xmlid else None
+
     noupdate = True
     if xmlid:
         if "." not in xmlid:
