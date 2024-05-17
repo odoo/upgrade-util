@@ -13,7 +13,8 @@ py3_only_patterns = [
     "src/testing.py",
     "src/util/jinja_to_qweb.py",
     "src/util/snippets.py",
-    "src/util/convert_bootstrap.py",
+    "src/util/views/convert.py",
+    "src/util/views/bootstrap.py",
     "src/*/tests/*.py",
     "src/*/17.0.*/*.py",
 ]
