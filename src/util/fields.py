@@ -38,6 +38,7 @@ except ImportError:
 
 
 from .const import ENVIRON
+from .context import adapt_context, clean_context
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
 from .exceptions import SleepyDeveloperError
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path, table_of_model
@@ -62,23 +63,13 @@ from .report import add_to_migration_reports, get_anchor_link_to_record
 
 # python3 shims
 try:
-    basestring  # noqa: B018
+    unicode  # noqa: B018
 except NameError:
-    basestring = unicode = str
+    unicode = str
 
 
 _logger = logging.getLogger(__name__)
 IMD_FIELD_PATTERN = "field_%s__%s" if version_gte("saas~11.2") else "field_%s_%s"
-
-_CONTEXT_KEYS_TO_CLEAN = (
-    "group_by",
-    "pivot_measures",
-    "pivot_column_groupby",
-    "pivot_row_groupby",
-    "graph_groupbys",
-    "orderedBy",
-)
-
 
 def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     """
@@ -123,46 +114,10 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
 
     ENVIRON["__renamed_fields"][model][fieldname] = None
 
-    def filter_value(key, value):
-        if key == "orderedBy" and isinstance(value, dict):
-            res = {k: (filter_value(None, v) if k == "name" else v) for k, v in value.items()}
-            # return if name didn't match fieldname
-            return res if "name" not in res or res["name"] is not None else None
-        if not isinstance(value, basestring):
-            # if not a string, ignore it
-            return value
-        if value.split(":")[0] != fieldname:
-            # only return if not matching fieldname
-            return value
-        return None  # value filtered out
-
-    def clean_context(context):
-        if not isinstance(context, dict):
-            return False
-
-        changed = False
-        for key in _CONTEXT_KEYS_TO_CLEAN:
-            if context.get(key):
-                context_part = [filter_value(key, e) for e in context[key]]
-                changed |= context_part != context[key]
-                context[key] = [e for e in context_part if e is not None]
-
-        for vt in ["pivot", "graph", "cohort"]:
-            key = "{}_measure".format(vt)
-            if key in context:
-                new_value = filter_value(key, context[key])
-                changed |= context[key] != new_value
-                context[key] = new_value if new_value is not None else "id"
-
-            if vt in context:
-                changed |= clean_context(context[vt])
-
-        return changed
-
     # clean dashboard's contexts
     for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
         context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext(), nocopy=True)
-        changed = clean_context(context)
+        changed = clean_context(context, fieldname)
         action.set("context", unicode(context))
         if changed:
             add_to_migration_reports(
@@ -176,7 +131,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     )
     for id_, name, context_s in cr.fetchall():
         context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
-        changed = clean_context(context)
+        changed = clean_context(context, fieldname)
         cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
         if changed:
             add_to_migration_reports(("ir.filters", id_, name), "Filters/Dashboards")
@@ -1146,50 +1101,11 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         # ir.ui.view.custom
         # adapt the context. The domain will be done by `adapt_domain`
         eval_context = SelfPrintEvalContext()
-        def_old = "default_{}".format(old)
-        def_new = "default_{}".format(new)
         match = "{0[old]}|{0[def_old]}".format(p)
-
-        def adapt_value(key, value):
-            if key == "orderedBy" and isinstance(value, dict):
-                # only adapt the "name" key
-                return {k: (adapt_value(None, v) if k == "name" else v) for k, v in value.items()}
-
-            if not isinstance(value, basestring):
-                # ignore if not a string
-                return value
-
-            parts = value.split(":", 1)
-            if parts[0] != old:
-                # if not match old, leave it
-                return value
-            # change to new, and return it
-            parts[0] = new
-            return ":".join(parts)
-
-        def adapt_dict(d):
-            # adapt (in place) dictionary values
-            if not isinstance(d, dict):
-                return
-
-            for key in _CONTEXT_KEYS_TO_CLEAN:
-                if d.get(key):
-                    d[key] = [adapt_value(key, e) for e in d[key]]
-
-            for vt in ["pivot", "graph", "cohort"]:
-                key = "{}_measure".format(vt)
-                if key in d:
-                    d[key] = adapt_value(key, d[key])
-
-                if vt in d:
-                    adapt_dict(d[vt])
 
         for _, act in _dashboard_actions(cr, match, *only_models or ()):
             context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
-            adapt_dict(context)
-
-            if def_old in context:
-                context[def_new] = context.pop(def_old)
+            adapt_context(context, old, new)
             act.set("context", unicode(context))
 
     # domains, related and inhited models
