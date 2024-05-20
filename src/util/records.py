@@ -1183,11 +1183,15 @@ def __update_record_from_xml(
             [("name", "=", from_module), ("state", "=", "installed")]
         )
         if module_to_reload_from:
-            if hasattr(module_to_reload_from, "_update_translations"):
-                module_to_reload_from._update_translations()
-            else:
-                # < 9.0
-                module_to_reload_from.update_translations()
+            if version_gte("14.0"):
+                module_to_reload_from._update_translations(overwrite=True)
+            elif version_gte("11.0"):
+                module_to_reload_from.with_context(overwrite=True)._update_translations()
+            elif version_gte("10.0"):
+                module_to_reload_from.with_context(overwrite=True).update_translations()
+            # Not tested - no use cases in current odoo/upgrade code.
+            # elif version_gte("7.0"):
+            #     module_to_reload_from.update_translations(cr, SUPERUSER_ID, [module_to_reload_from.id], None, context={"overwrite": True})
 
 
 def delete_unused(cr, *xmlids, **kwargs):
