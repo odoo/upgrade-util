@@ -512,12 +512,10 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=()):
         [tuple(inherit_models), list(keep)],
     )
     for field, ftype, relation, store in cr.fetchall():
-        if ftype.endswith("2many") and store:
-            # for mixin, x2many are filtered by their model.
-            # for "classic" inheritance, the caller is responsible to drop the underlying m2m table
-            # (or keeping the field)
+        if ftype == "one2many" and store:
+            # for mixin, one2many are filtered by their model and res_id.
             table = table_of_model(cr, relation)
-            irs = [ir for ir in indirect_references(cr) if ir.table == table]
+            irs = [ir for ir in indirect_references(cr) if ir.table == table and ir.res_id is not None]
             for ir in irs:
                 query = 'DELETE FROM "{}" WHERE ({})'.format(ir.table, ir.model_filter())
                 cr.execute(query, [model])  # cannot be executed in parallel. See git blame.
