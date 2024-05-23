@@ -258,6 +258,21 @@ class TestAdaptOneDomain(UnitTestCase):
         else:
             self.assertIsNone(new_domain)
 
+    @unittest.skipUnless(util.version_gte("17.0"), "`any` operator only supported from Odoo 17")
+    def test_any_operator(self):
+        domain = [("partner_id", "any", [("complete_name", "=", "Odoo")])]
+        expected = [("partner_id", "any", [("full_name", "=", "Odoo")])]
+
+        new_domain = _adapt_one_domain(self.cr, "res.partner", "complete_name", "full_name", "res.company", domain)
+        self.assertEqual(new_domain, expected)
+
+        # test it also works recursively
+        domain = [("partner_id", "any", [("title", "not any", [("shortcut", "like", "S.A.")])])]
+        expected = [("partner_id", "any", [("title", "not any", [("abbr", "like", "S.A.")])])]
+
+        new_domain = _adapt_one_domain(self.cr, "res.partner.title", "shortcut", "abbr", "res.company", domain)
+        self.assertEqual(new_domain, expected)
+
 
 class TestAdaptDomainView(UnitTestCase):
     def test_adapt_domain_view(self):

@@ -226,7 +226,22 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
     def clean_term(term):
         if isinstance(term, basestring) or not isinstance(term[0], basestring):
             return term
-        return (clean_path(term[0]), term[1], term[2])
+        left, op, right = term
+        left = clean_path(left)
+        if op in ("any", "not any"):
+            new_right = _adapt_one_domain(
+                cr,
+                target_model,
+                old,
+                new,
+                model=_model_of_path(cr, model, left.split(".")),
+                domain=right,
+                adapter=adapter,
+                force_adapt=force_adapt,
+            )
+            if new_right is not None:
+                right = new_right
+        return (left, op, right)
 
     final_dom = []
     changed = False
