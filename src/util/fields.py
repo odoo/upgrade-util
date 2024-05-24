@@ -430,21 +430,25 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
 
 def rename_field(cr, model, old, new, update_references=True, domain_adapter=None, skip_inherit=()):
     """
-    Rename a field and its references from `old` to `new` on the given `model` and all inheriting models, unless exceptions are specified in `skip_inherit`.
+    Rename a field and its references from `old` to `new` on the given `model`.
+
+    The field is updated in all inheriting models, except for models specified in
+    `skip_inherit`.
 
     This functions also updates references, indirect or direct ones, including filters,
     server actions, related fields, emails, dashboards, domains, and many more. See
-    :func:`update_field_usage`
+    :func:`~odoo.upgrade.util.fields.update_field_usage`
 
     For the update of domains a special adapter function can be used. The default adapter
-    just replaces `old` by `new` in each domain leaf. Refer to :func:`adapt_domains` for
-    information about domain adapters.
+    just replaces `old` by `new` in each domain leaf. Refer to
+    :func:`~odoo.upgrade.util.domains.adapt_domains` for information about domain adapters.
 
     :param str model: model name of the field to rename
     :param str old: current name of the field to rename
     :param str new: new name of the field to rename
     :param bool update_references: whether to update all references
-    :param function domain_adapter: adapter to use for domains, see :func:`adapt_domains`
+    :param function domain_adapter: adapter to use for domains, see
+                                    :func:`~odoo.upgrade.util.domains.adapt_domains`
     :param list(str) or str skip_inherit: models to skip when renaming the field in
                                           inheriting models, use `"*"` to skip all
     """
@@ -932,13 +936,14 @@ def update_field_usage(cr, model, old, new, domain_adapter=None, skip_inherit=()
 
     This function can be used to replace the usage of a field by another. Domains are
     updated using the `domain_adapter`. By default the domain adapter just replaces `old`
-    by `new` in domain leaves. See :func:`adapt_domains` for more information about domain
-    adapters.
+    by `new` in domain leaves. See :func:`~odoo.upgrade.util.domains.adapt_domains` for
+    more information about domain adapters.
 
     :param str model: model name of the field
     :param str old: source name of the field to replace
     :param str new: target name of the field to set
-    :param function domain_adapter: adapter to use for domains, see :func:`adapt_domains`
+    :param function domain_adapter: adapter to use for domains, see
+                                    :func:`~odoo.upgrade.util.domains.adapt_domains`
     :param list(str) or str skip_inherit: models to skip when renaming the field in
                                           inheriting models, use `"*"` to skip all
     """

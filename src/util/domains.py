@@ -307,7 +307,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
 
 def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adapt=False):
     """
-    Replace `old` by `new` in all domains of `model` and all its inheriting models using an `adapter` callback.
+    Replace `old` by `new` in domains using `model` and inheriting models.
 
     `adapter` is a callback function to adapt leaves. Adapter functions must take three
     arguments and return a `domain <reference/orm/domains>`_ that substitutes the original
@@ -330,12 +330,16 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                     return [(left, "=", ko)]
                 return [leaf]
 
-    `adapter` is called only on leafs that use the `old` field of `model` as **last** part
-    of the `left` part of leaves, unless `force_adapt` is `True`. The domains returned by
-    an adapter do not need to have the `old` field replaced by `new` in the `left` part of
-    the input leaf. The replace will be done anyway to the whole domain returned by the
-    adapter. The purpose of the `adapter` is to modify the operator and the `right` part
-    of the input leaf.
+    `adapter` is called only on leaves that use the `old` field of `model` as **last**
+    part of the `left` part of leaves, unless `force_adapt` is `True`. In the latter case
+    the adapter is called if the field appears anywhere in the path, useful for relational
+    fields only.
+
+    The domains returned by an adapter do not need to have the `old` field replaced by
+    `new` in the `left` part of the input leaf. The replace will be done anyway to the
+    whole domain returned by the adapter. The usual purpose of the `adapter` is to modify
+    the operator and the `right` part of the input leaf. When `adapter` is not set only
+    the replacement takes place.
 
     .. example::
        When replacing `"field1"` by `"field2"`, the following happens:
@@ -355,9 +359,9 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     :param str new: name of the field that should replace `old`
     :param function adapter: adapter for leaves
     :param list(str) skip_inherit: list of inheriting model names to don't adapt (skip)
-    :param bool force_adapt: when `True, run the `adapter` on all leaves having `new` in
-                                   `left` part of the leaf (path), useful when deleting a
-                                   field (in which case `new` is ignored).
+    :param bool force_adapt: when `True`, run the `adapter` on all leaves having `new` in
+                             `left` part of the leaf (path), useful when deleting a field
+                             (in which case `new` is ignored).
     """
     _validate_model(model)
     target_model = model
