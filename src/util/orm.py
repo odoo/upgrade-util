@@ -83,12 +83,11 @@ def get_admin_channel(cr):
     # mail.channel was renamed to discuss.channel in 16.3
     channel_model_name = "mail.channel" if "mail.channel" in e else "discuss.channel"
     if channel_model_name in e:
+        admin_channel = e.ref("mail.channel_admin", raise_if_not_found=False)
+        if admin_channel:
+            return admin_channel
         admin_group = e.ref("base.group_system", raise_if_not_found=False)
         if admin_group:
-            admin_channel = e.ref("__upgrade__.channel_administrators", raise_if_not_found=False)
-            if admin_channel:
-                return admin_channel
-
             search_rules = [
                 ("channel_type", "=", "channel"),
                 ("group_public_id", "=", admin_group.id),
@@ -113,10 +112,11 @@ def get_admin_channel(cr):
 
             e["ir.model.data"].create(
                 {
-                    "name": "channel_administrators",
-                    "module": "__upgrade__",
+                    "name": "channel_admin",
+                    "module": "mail",
                     "model": channel_model_name,
                     "res_id": admin_channel.id,
+                    "noupdate": True,
                 }
             )
 
