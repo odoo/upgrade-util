@@ -47,6 +47,11 @@ def dispatch_by_dbuuid(cr, version, callbacks):
 
 
 def rename_custom_model(cr, model_name, new_model_name, custom_module=None, report_details=""):
+    cr.execute("SELECT 1 FROM ir_model WHERE model = %s", [model_name])
+    if not cr.rowcount:
+        _logger.warning("Model %r not found: skip renaming", model_name)
+        return
+
     rename_model(cr, model_name, new_model_name, rename_table=True)
     module_details = " from module '{}'".format(custom_module) if custom_module else ""
     add_to_migration_reports(
