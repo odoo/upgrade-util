@@ -102,6 +102,7 @@ def rename_custom_table(
 def rename_custom_column(cr, table_name, col_name, new_col_name, custom_module=None, report_details=""):
     _validate_table(table_name)
     if not column_exists(cr, table_name, col_name):
+        _logger.warning("Column %r not found on table %r: skip renaming", col_name, table_name)
         return
     cr.execute('ALTER TABLE "{}" RENAME COLUMN "{}" TO "{}"'.format(table_name, col_name, new_col_name))
     module_details = " from module '{}'".format(custom_module) if custom_module else ""
