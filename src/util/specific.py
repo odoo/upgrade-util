@@ -63,8 +63,12 @@ def rename_custom_model(cr, model_name, new_model_name, custom_module=None, repo
 
 
 def rename_custom_module(cr, old_module_name, new_module_name, report_details=""):
-    rename_module(cr, old_module_name, new_module_name)
+    cr.execute("SELECT 1 FROM ir_module_module WHERE name = %s", [old_module_name])
+    if not cr.rowcount:
+        _logger.warning("Module %r not found: skip renaming", old_module_name)
+        return
 
+    rename_module(cr, old_module_name, new_module_name)
     add_to_migration_reports(
         category="Custom modules",
         message="The custom module '{old_module_name}' was renamed to '{new_module_name}'. {report_details}".format(
