@@ -5,7 +5,7 @@ from .helpers import _validate_table
 from .misc import _cached
 from .models import rename_model
 from .modules import rename_module
-from .pg import column_exists, rename_table
+from .pg import column_exists, rename_table, table_exists
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -84,6 +84,10 @@ def rename_custom_table(
     custom_module=None,
     report_details="",
 ):
+    if not table_exists(cr, table_name):
+        _logger.warning("Table %r not found: skip renaming", table_name)
+        return
+
     rename_table(cr, table_name, new_table_name, remove_constraints=False)
 
     module_details = " from module '{}'".format(custom_module) if custom_module else ""
