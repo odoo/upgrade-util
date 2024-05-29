@@ -1,5 +1,5 @@
-from odoo.addons.base.maintenance.migrations.spreadsheet.tokenizer import tokenize
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase
+from odoo.addons.base.maintenance.migrations.util.spreadsheet import tokenize
 
 
 class SpreadsheetTokenizeTest(UnitTestCase):
