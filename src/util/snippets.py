@@ -279,7 +279,7 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
         convert = Convertor(converters, converter_callback)
         for query in util.log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
             cr.execute(query)
-            for data in executor.map(convert, cr.fetchall()):
+            for data in executor.map(convert, cr.fetchall(), chunksize=1000):
                 if "id" in data:
                     cr.execute(update_query, data)
 
