@@ -6,6 +6,8 @@ import os
 from .const import ENVIRON
 from .misc import _cached, parse_version, version_gte
 
+from odoo.upgrade import util
+
 _logger = logging.getLogger(__name__)
 
 
@@ -63,7 +65,8 @@ def _get_base_version(cr):
         state, version = cr.fetchone()
         if state != "to upgrade":
             major = ".".join(version.split(".")[:2])
-            _logger.warning(
+            _logger.log(
+                util.NEARLYWARN if util.on_CI() else logging.WARNING,
                 "Assuming upgrading from Odoo %s. If it's not the case, specify the environment variable `ODOO_BASE_VERSION`.",
                 major,
             )
