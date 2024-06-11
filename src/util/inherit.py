@@ -3,7 +3,7 @@ import logging
 import operator
 import os
 
-from .const import ENVIRON
+from .const import ENVIRON, NEARLYWARN
 from .misc import _cached, parse_version, version_gte
 
 _logger = logging.getLogger(__name__)
@@ -63,7 +63,8 @@ def _get_base_version(cr):
         state, version = cr.fetchone()
         if state != "to upgrade":
             major = ".".join(version.split(".")[:2])
-            _logger.warning(
+            _logger.log(
+                NEARLYWARN,
                 "Assuming upgrading from Odoo %s. If it's not the case, specify the environment variable `ODOO_BASE_VERSION`.",
                 major,
             )
