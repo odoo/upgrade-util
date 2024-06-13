@@ -1048,9 +1048,12 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
         """,
         [new_table],
     )
-    (old_pkey,) = cr.fetchone()
-    new_pkey = new_table + "_pkey"
-    cr.execute(sql.SQL("ALTER INDEX {} RENAME TO {}").format(sql.Identifier(old_pkey), sql.Identifier(new_pkey)))
+    if cr.rowcount:
+        (old_pkey,) = cr.fetchone()
+        new_pkey = new_table + "_pkey"
+        cr.execute(sql.SQL("ALTER INDEX {} RENAME TO {}").format(sql.Identifier(old_pkey), sql.Identifier(new_pkey)))
+    else:
+        new_pkey = ""  # no PK renamed
 
     # rename indexes (except the pkey's one and those not containing $old_table)
     cr.execute(
