@@ -1,3 +1,4 @@
+import ast
 import operator
 import re
 import threading
@@ -26,6 +27,20 @@ class TestAdaptOneDomain(UnitTestCase):
     def setUp(self):
         super(TestAdaptOneDomain, self).setUp()
         self.mock_adapter = mock.Mock()
+
+    def test_adapt_renamed_field(self):
+        domain = [("user_ids.partner_id.user_ids.partner_id", "=", False)]
+        Filter = self.env["ir.filters"]
+        filter1 = Filter.create(
+            {"name": "Test filter for adapt domain", "model_id": "res.partner", "domain": str(domain)}
+        )
+        assert domain == ast.literal_eval(filter1.domain)
+        util.invalidate(Filter)
+        util.rename_field(self.cr, "res.partner", "user_ids", "renamed_user_ids")
+        match_domain = [("renamed_user_ids.partner_id.renamed_user_ids.partner_id", "=", False)]
+        new_domain = ast.literal_eval(filter1.domain)
+
+        self.assertEqual(match_domain, new_domain)
 
     def test_change_no_leaf(self):
         # testing plan: updata path of a domain where the last element is not changed
