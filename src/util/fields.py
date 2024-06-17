@@ -457,6 +457,10 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
     rf = ENVIRON["__renamed_fields"][model]
     rf[new] = rf.pop(old, old)
 
+    if update_references:
+        # skip all inherit, they will be handled by the resursive call
+        update_field_usage(cr, model, old, new, domain_adapter=domain_adapter, skip_inherit="*")
+
     try:
         with savepoint(cr):
             cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
@@ -567,10 +571,6 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
         new_index_name = make_index_name(table, new)
         old_index_name = make_index_name(table, old)
         cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(new_index_name, old_index_name))
-
-    if update_references:
-        # skip all inherit, they will be handled by the resursive call
-        update_field_usage(cr, model, old, new, domain_adapter=domain_adapter, skip_inherit="*")
 
     # rename field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
