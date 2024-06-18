@@ -1098,10 +1098,13 @@ def __update_record_from_xml(
 
 def delete_unused(cr, *xmlids, **kwargs):
     """
-    Remove unused records.
+    Remove unrestricted records.
 
-    This function will remove records pointed by `xmlids` only if they are not referenced
-    from any table.
+    This function will remove records, pointed by `xmlids`, only if they are NOT referenced
+    from any table with `restrict` or `set` ondelete clauses.
+
+    .. warning::
+       Indirect references are not checked and can cause the util to fail.
 
     .. note::
        The records that cannot be removed are set as `noupdate=True`.
