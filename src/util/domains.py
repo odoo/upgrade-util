@@ -24,11 +24,9 @@ except ImportError:
     unescape = lambda x: x
 
 try:
-    from odoo.osv import expression
     from odoo.tools import exception_to_unicode
     from odoo.tools.safe_eval import safe_eval
 except ImportError:
-    from openerp.osv import expression
     from openerp.tools import exception_to_unicode
     from openerp.tools.safe_eval import safe_eval
 
@@ -44,6 +42,95 @@ try:
     basestring  # noqa: B018
 except NameError:
     basestring = unicode = str
+
+# import from domains/expression
+try:
+    import odoo.domains as _dom
+
+    FALSE_LEAF = _dom._FALSE_LEAF
+    TRUE_LEAF = _dom._TRUE_LEAF
+    NOT_OPERATOR = _dom.DomainNot.OPERATOR
+    AND_OPERATOR = _dom.DomainAnd.OPERATOR
+    OR_OPERATOR = _dom.DomainOr.OPERATOR
+    DOMAIN_OPERATORS = {NOT_OPERATOR, AND_OPERATOR, OR_OPERATOR}
+
+    # normalization functions are redefined here because they will be deprecated
+    # the Domain factory normalized but also distributes operators during creation of domains
+
+    def normalize_domain(domain):
+        """Return a normalized version of the domain.
+
+        The normalized version have all implicit '&' operators explicit.
+        One property of normalized domain expressions is that they
+        can be easily combined together as if they were single domain components.
+        """
+        assert isinstance(
+            domain, (list, tuple)
+        ), "Domains to normalize must have a 'domain' form: a list or tuple of domain components"
+        if not domain:
+            return [TRUE_LEAF]
+        result = []
+        expected = 1
+        op_arity = {NOT_OPERATOR: 1, AND_OPERATOR: 2, OR_OPERATOR: 2}
+        for token in domain:
+            if expected == 0:  # more than expected, like in [A, B]
+                result[0:0] = [AND_OPERATOR]  # put an extra '&' in front
+                expected = 1
+            if isinstance(token, (list, tuple)):  # domain term
+                expected -= 1
+                if len(token) == 3 and token[1] in ("any", "not any"):
+                    new_token = (token[0], token[1], normalize_domain(token[2]))
+                    result.append(new_token)
+                else:
+                    result.append(normalize_leaf(token))
+            else:
+                expected += op_arity.get(token, 0) - 1
+                result.append(token)
+        if expected:
+            raise ValueError("Domain {!r} is syntactically not correct.".format(domain))
+        return result
+
+    def normalize_leaf(leaf):
+        if not is_leaf(leaf):
+            raise TypeError("Leaf must be a tuple or list of 3 values")
+        left, operator, right = leaf
+        original = operator
+        operator = operator.lower()
+        if operator == "<>":
+            operator = "!="
+        if isinstance(right, bool) and operator in ("in", "not in"):
+            _logger.warning("The domain term '%s' should use the '=' or '!=' operator.", ((left, original, right),))
+            operator = "=" if operator == "in" else "!="
+        if isinstance(right, (list, tuple)) and operator in ("=", "!="):
+            _logger.warning(
+                "The domain term '%s' should use the 'in' or 'not in' operator.", ((left, original, right),)
+            )
+            operator = "in" if operator == "=" else "not in"
+        return left, operator, right
+
+    def is_leaf(leaf):
+        return (
+            isinstance(leaf, (tuple, list))
+            and len(leaf) == 3
+            and leaf[1] in _dom.CONDITION_OPERATORS
+            and (isinstance(leaf[0], str) or leaf in (TRUE_LEAF, FALSE_LEAF))
+        )
+except ImportError:
+    try:
+        from odoo.osv import expression
+    except ImportError:
+        from openerp.osv import expression
+    FALSE_LEAF = expression.FALSE_LEAF
+    TRUE_LEAF = expression.TRUE_LEAF
+    NOT_OPERATOR = expression.NOT_OPERATOR
+    AND_OPERATOR = expression.AND_OPERATOR
+    OR_OPERATOR = expression.OR_OPERATOR
+    DOMAIN_OPERATORS = expression.DOMAIN_OPERATORS
+    normalize_domain = expression.normalize_domain
+    normalize_leaf = expression.normalize_leaf
+    is_leaf = expression.is_leaf
+    del expression  # unset so it's not used directly
+
 
 _logger = logging.getLogger(__name__)
 DomainField = collections.namedtuple("DomainField", "table domain_column model_select")
@@ -200,14 +287,14 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
     if isinstance(domain, basestring):
         try:
             replaced_domain, ctx = SelfPrintEvalContext.preprocess(domain)
-            eval_dom = expression.normalize_domain(safe_eval(replaced_domain, ctx, nocopy=True))
+            eval_dom = normalize_domain(safe_eval(replaced_domain, ctx, nocopy=True))
         except Exception as e:
             oops = exception_to_unicode(e)
             _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
             return None
     else:
         try:
-            eval_dom = expression.normalize_domain(domain)
+            eval_dom = normalize_domain(domain)
         except Exception as e:
             oops = exception_to_unicode(e)
             _logger.log(NEARLYWARN, "Invalid %r domain: %r: %s", model, domain, oops)
@@ -238,7 +325,7 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
 
     final_dom = []
     changed = False
-    op_arity = {expression.NOT_OPERATOR: 1, expression.AND_OPERATOR: 2, expression.OR_OPERATOR: 2}
+    op_arity = {NOT_OPERATOR: 1, AND_OPERATOR: 2, OR_OPERATOR: 2}
     op_stack = []  # (operator, number of terms missing)
     for element in eval_dom:
         while op_stack and op_stack[-1][1] == 0:
@@ -253,26 +340,26 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
             final_dom.append(element)
             continue
 
-        if not expression.is_leaf(element):
+        if not is_leaf(element):
             _logger.log(NEARLYWARN, "Invalid domain on %r: %s", model, domain)
             return None
 
         if op_stack:
             op_stack[-1][1] -= 1  # previous operator got a term
 
-        if tuple(element) in [expression.TRUE_LEAF, expression.FALSE_LEAF]:
+        if tuple(element) in [TRUE_LEAF, FALSE_LEAF]:
             final_dom.append(element)
             continue
 
         is_or = False
         neg = False
         for op, _ in reversed(op_stack):
-            if op != expression.NOT_OPERATOR:
-                is_or = op == expression.OR_OPERATOR
+            if op != NOT_OPERATOR:
+                is_or = op == OR_OPERATOR
                 break
             neg = not neg
 
-        leaf = expression.normalize_leaf(element)
+        leaf = normalize_leaf(element)
         path = leaf[0].split(".")
         # force_adapt=True -> always adapt if found anywhere on left path
         # otherwise adapt only when {old} field is the last parts of left path

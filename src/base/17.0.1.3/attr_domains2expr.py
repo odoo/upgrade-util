@@ -36,10 +36,10 @@ import uuid
 
 from lxml import etree
 
-from odoo.osv.expression import DOMAIN_OPERATORS, normalize_domain
 from odoo.tools.safe_eval import safe_eval
 
 from odoo.upgrade import util
+from odoo.upgrade.util.domains import DOMAIN_OPERATORS, normalize_domain
 
 
 def adapt_view(cr, view_xmlid):
