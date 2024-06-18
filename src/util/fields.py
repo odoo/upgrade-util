@@ -24,14 +24,14 @@ except ImportError:
 
 try:
     from odoo import release
-    from odoo.osv import expression
     from odoo.tools.misc import mute_logger
     from odoo.tools.safe_eval import safe_eval
 except ImportError:
     from openerp import release
-    from openerp.osv import expression
     from openerp.tools.misc import mute_logger
     from openerp.tools.safe_eval import safe_eval
+
+from .domains import FALSE_LEAF, TRUE_LEAF
 
 try:
     from odoo.tools.sql import make_index_name
@@ -214,8 +214,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     def adapter(leaf, is_or, negated):
         # replace by TRUE_LEAF, unless negated or in a OR operation but not negated
         if is_or ^ negated:
-            return [expression.FALSE_LEAF]
-        return [expression.TRUE_LEAF]
+            return [FALSE_LEAF]
+        return [TRUE_LEAF]
 
     # clean domains
     adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
