@@ -13,14 +13,18 @@ try:
 except ImportError:
     import mock
 
-from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
 from odoo.tools import mute_logger
 from odoo.tools.safe_eval import safe_eval
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
 from odoo.addons.base.maintenance.migrations.util import snippets
-from odoo.addons.base.maintenance.migrations.util.domains import _adapt_one_domain, _model_of_path
+from odoo.addons.base.maintenance.migrations.util.domains import (
+    FALSE_LEAF,
+    TRUE_LEAF,
+    _adapt_one_domain,
+    _model_of_path,
+)
 from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
 
 
