@@ -315,27 +315,3 @@ def resolve_model_fields_path(cr, model, path):
         {"model": model, "path": list(path)},
     )
     return [FieldsPathPart(**row) for row in cr.dictfetchall()]
-
-
-def _remove_export_lines(cr, model, field=None):
-    q = """
-    SELECT el.id,
-           e.resource,
-           STRING_TO_ARRAY(el.name, '/')
-      FROM ir_exports_line el
-      JOIN ir_exports e
-        ON el.export_id = e.id
-    """
-    if field:
-        q = cr.mogrify(q + " WHERE el.name ~ %s ", [r"\y{}\y".format(field)]).decode()
-    cr.execute(q)
-    to_rem = [
-        line_id
-        for line_id, line_model, line_path in cr.fetchall()
-        if any(
-            x.field_model == model and (field is None or x.field_name == field)
-            for x in resolve_model_fields_path(cr, line_model, line_path)
-        )
-    ]
-    if to_rem:
-        cr.execute("DELETE FROM ir_exports_line WHERE id IN %s", [tuple(to_rem)])
