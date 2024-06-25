@@ -23,7 +23,14 @@ except ImportError:
 
 from .const import NEARLYWARN
 from .exceptions import MigrationError
-from .helpers import _get_theme_models, _ir_values_value, _validate_model, model_of_table, table_of_model
+from .helpers import (
+    _get_theme_models,
+    _ir_values_value,
+    _validate_model,
+    model_of_table,
+    resolve_model_fields_path,
+    table_of_model,
+)
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
 from .misc import parse_version, version_gte
@@ -472,6 +479,41 @@ def _rm_refs(cr, model, ids=None):
         """,
             [model],
         )
+
+
+def _remove_import_export_paths(cr, model, field=None):
+    export_q = """
+            SELECT el.id,
+                   e.resource,
+                   STRING_TO_ARRAY(el.name, '/')
+              FROM ir_exports_line el
+              JOIN ir_exports e
+                ON el.export_id = e.id
+        """
+    if field:
+        export_q = cr.mogrify(export_q + " WHERE el.name ~ %s ", [r"\y{}\y".format(field)]).decode()
+
+    import_q = """
+        SELECT id,
+               res_model,
+               STRING_TO_ARRAY(field_name, '/')
+          FROM base_import_mapping
+        """
+    if field:
+        import_q = cr.mogrify(import_q + " WHERE field_name ~ %s ", [r"\y{}\y".format(field)]).decode()
+
+    for query, impex_model in [(export_q, "ir.exports.line"), (import_q, "base_import.mapping")]:
+        cr.execute(query)
+        to_rem = [
+            path_id
+            for path_id, related_model, path in cr.fetchall()
+            if any(
+                x.field_model == model and (field is None or x.field_name == field)
+                for x in resolve_model_fields_path(cr, related_model, path)
+            )
+        ]
+        if to_rem:
+            remove_records(cr, impex_model, to_rem)
 
 
 def is_changed(cr, xmlid, interval="1 minute"):

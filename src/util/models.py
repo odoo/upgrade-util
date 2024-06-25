@@ -11,7 +11,7 @@ import re
 
 from .const import ENVIRON
 from .fields import IMD_FIELD_PATTERN, remove_field
-from .helpers import _ir_values_value, _remove_export_lines, _validate_model, model_of_table, table_of_model
+from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit, inherit_parents
 from .misc import _cached, chunks, log_progress
@@ -31,7 +31,7 @@ from .pg import (
 
 # avoid namespace clash
 from .pg import rename_table as pg_rename_table
-from .records import _rm_refs, remove_records, remove_view, replace_record_references_batch
+from .records import _remove_import_export_paths, _rm_refs, remove_records, remove_view, replace_record_references_batch
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -129,8 +129,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                 cr.execute(query, args + (tuple(ids),))
                 notify = notify or bool(cr.rowcount)
 
-    # for ir.exports.line we have to take care of "nested" references in fields "paths"
-    _remove_export_lines(cr, model)
+    _remove_import_export_paths(cr, model)
 
     _rm_refs(cr, model)
 
