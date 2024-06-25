@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
+import sys
 from collections import namedtuple
 
 import lxml
@@ -218,15 +219,16 @@ def _get_theme_models():
 
 
 FieldsPathPart = namedtuple("FieldsPathPart", "field_model field_name relation_model")
-FieldsPathPart.__doc__ = """
+if sys.version_info[0] >= 3:
+    FieldsPathPart.__doc__ = """
 Encapsulate information about a field within a fields path.
 
 :param str field_model: model of the field
 :param str field_name: name of the field
 :param str relation_model: target model of the field, if relational, otherwise ``None``
 """
-for _f in FieldsPathPart._fields:
-    getattr(FieldsPathPart, _f).__doc__ = None
+    for _f in FieldsPathPart._fields:
+        getattr(FieldsPathPart, _f).__doc__ = None
 
 
 def resolve_model_fields_path(cr, model, path):
