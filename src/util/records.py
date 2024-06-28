@@ -1147,9 +1147,9 @@ def delete_unused(cr, *xmlids, **kwargs):
     )
 
     deleted = []
-    for model, ids, xmlids in cr.fetchall():
+    for model, ids, xids in cr.fetchall():
         table = table_of_model(cr, model)
-        res_id_to_xmlid = dict(zip(ids, xmlids))
+        res_id_to_xmlid = dict(zip(ids, xids))
 
         sub = " UNION ".join(
             [

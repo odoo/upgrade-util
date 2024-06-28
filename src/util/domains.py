@@ -368,7 +368,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
         """.format(df=df),
             [match_old],
         )
-        for id_, model, domain in cr.fetchall():
+        for id_, model, domain in cr.fetchall():  # noqa: PLR1704
             new_domain = _adapt_one_domain(
                 cr, target_model, old, new, model, domain, adapter=adapter, force_adapt=force_adapt
             )

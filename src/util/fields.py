@@ -1211,11 +1211,11 @@ def adapt_depends(cr, model, old, new, skip_inherit=()):
         """,
         [match_old],
     )
-    for id_, model, depends in cr.fetchall():
+    for id_, field_model, depends in cr.fetchall():
         temp_depends = depends.split(",")
         for i in range(len(temp_depends)):
             domain = _adapt_one_domain(
-                cr, target_model, old, new, model, [(temp_depends[i], "=", "depends")], force_adapt=True
+                cr, target_model, old, new, field_model, [(temp_depends[i], "=", "depends")], force_adapt=True
             )
             if domain:
                 temp_depends[i] = domain[0][0]
@@ -1246,8 +1246,10 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
         """,
         [match_old],
     )
-    for id_, model, related in cr.fetchall():
-        domain = _adapt_one_domain(cr, target_model, old, new, model, [(related, "=", "related")], force_adapt=True)
+    for id_, field_model, related in cr.fetchall():
+        domain = _adapt_one_domain(
+            cr, target_model, old, new, field_model, [(related, "=", "related")], force_adapt=True
+        )
         if domain:
             cr.execute("UPDATE ir_model_fields SET related = %s WHERE id = %s", [domain[0][0], id_])
 

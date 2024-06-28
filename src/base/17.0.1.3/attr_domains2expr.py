@@ -187,9 +187,7 @@ def target_elem_and_view_type(elem, comb_arch):
 def is_simple_pred(expr):
     if expr in ("0", "1", "True", "False"):
         return True
-    if re.match(r"""context\.get\((['"])\w+\1\)""", expr):
-        return True
-    return False
+    return bool(re.match(r"""context\.get\((['"])\w+\1\)""", expr))
 
 
 def fix_elem(cr, model, elem, comb_arch):
@@ -455,7 +453,7 @@ def convert_attrs_val(cr, model, field_path, val):
         )
     if isinstance(val, ast.BoolOp):
         return "({})".format(
-            (" and " if type(val.op) == ast.And else " or ").join(
+            (" and " if type(val.op) is ast.And else " or ").join(
                 convert_attrs_val(cr, model, field_path, v) for v in val.values
             )
         )
