@@ -96,10 +96,10 @@ if ThreadPoolExecutor is not None:
         cursor = db_connect(cr.dbname).cursor
 
         def execute(query):
-            with cursor() as cr:
-                cr.execute(query)
-                cnt = cr.rowcount
-                cr.commit()
+            with cursor() as tcr:
+                tcr.execute(query)
+                cnt = tcr.rowcount
+                tcr.commit()
                 return cnt
 
         cr.commit()
