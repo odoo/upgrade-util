@@ -222,6 +222,8 @@ def no_selection_cache_validation(f=None):
     old_convert = ofields.Selection.convert_to_cache
 
     def _convert(self, value, record, validate=True):
+        if self.model_name == "res.users" and self.name == "lang":
+            return old_convert(self, value, record, validate=validate)
         return old_convert(self, value, record, validate=False)
 
     if f is None:
