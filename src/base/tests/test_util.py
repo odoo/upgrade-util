@@ -464,6 +464,72 @@ class TestIrExports(UnitTestCase):
         self.assertFalse(self.cr.fetchall())
 
 
+class TestBaseImportMappings(UnitTestCase):
+    def setUp(self):
+        super().setUp()
+        self.import_mapping = self.env["base_import.mapping"].create(
+            [
+                {"res_model": "res.currency", "column_name": "Column name", "field_name": path}
+                for path in [
+                    "full_name",
+                    "rate_ids/company_id/user_ids/name",
+                    "rate_ids/company_id/user_ids/partner_id/user_ids/name",
+                    "rate_ids/name",
+                ]
+            ]
+        )
+
+        util.flush(self.import_mapping)
+
+    def test_rename_field(self):
+        util.rename_field(self.cr, "res.partner", "user_ids", "renamed_user_ids")
+        util.invalidate(self.import_mapping)
+
+        self.assertEqual(
+            self.import_mapping[2].field_name, "rate_ids/company_id/user_ids/partner_id/renamed_user_ids/name"
+        )
+
+        util.rename_field(self.cr, "res.users", "name", "new_name")
+        util.invalidate(self.import_mapping)
+
+        self.assertEqual(self.import_mapping[1].field_name, "rate_ids/company_id/user_ids/new_name")
+
+    def test_remove_field(self):
+        prev_mappings = self.env["base_import.mapping"].search([])
+
+        util.remove_field(self.cr, "res.currency.rate", "company_id")
+        util.invalidate(self.import_mapping)
+
+        removed_mappings = prev_mappings - self.env["base_import.mapping"].search([])
+        remaining_mappings = self.import_mapping - removed_mappings
+
+        self.assertEqual(len(removed_mappings), 2)
+        self.assertEqual(remaining_mappings[0].field_name, "full_name")
+        self.assertEqual(remaining_mappings[1].field_name, "rate_ids/name")
+
+    def test_rename_model(self):
+        util.rename_model(self.cr, "res.currency", "res.currency2")
+        util.invalidate(self.import_mapping)
+
+        self.assertEqual(self.import_mapping[0].res_model, "res.currency2")
+
+    def test_remove_model(self):
+        prev_mappings = self.env["base_import.mapping"].search([])
+
+        util.remove_model(self.cr, "res.currency.rate")
+        util.invalidate(self.import_mapping)
+
+        removed_mappings = prev_mappings - self.env["base_import.mapping"].search([])
+        remaining_mappings = self.import_mapping - removed_mappings
+
+        self.assertEqual(len(removed_mappings), 3)
+        self.assertEqual(remaining_mappings[0].field_name, "full_name")
+
+        util.remove_model(self.cr, "res.currency")
+        self.cr.execute("SELECT * FROM base_import_mapping WHERE id = %s", [remaining_mappings.id])
+        self.assertFalse(self.cr.fetchall())
+
+
 class TestIterBrowse(UnitTestCase):
     def test_iter_browse_iter(self):
         cr = self.env.cr
