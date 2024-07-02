@@ -13,7 +13,7 @@ try:
 except ImportError:
     import mock
 
-from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
+from odoo.upgrade.util.domains import FALSE_LEAF, TRUE_LEAF
 from odoo.tools import mute_logger
 from odoo.tools.safe_eval import safe_eval
 
