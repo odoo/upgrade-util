@@ -111,6 +111,7 @@ def _get_domain_fields(cr):
         DomainField("ir_model_fields", "domain", "model"),
         DomainField("ir_act_window", "domain", "res_model"),
         DomainField("ir_filters", "domain", "model_id"),  # model_id is a varchar
+        DomainField("ir_embedded_actions", "domain", "parent_res_model"),
         DomainField("ir_rule", "domain_force", "(SELECT model FROM ir_model m WHERE m.id = t.model_id)"),
         DomainField("document_directory", "domain", "(SELECT model FROM ir_model m WHERE m.id = t.ressource_type_id)"),
         DomainField(
