@@ -495,18 +495,21 @@ def _remove_import_export_paths(cr, model, field=None):
     else:
         export_q += " WHERE el.name IS NOT NULL"
 
-    import_q = """
-        SELECT id,
-               res_model,
-               STRING_TO_ARRAY(field_name, '/')
-          FROM base_import_mapping
-        """
-    if field:
-        import_q = cr.mogrify(import_q + " WHERE field_name ~ %s ", [r"\y{}\y".format(field)]).decode()
-    else:
-        import_q += " WHERE field_name IS NOT NULL "
+    impex_data = [(export_q, "ir_exports_line")]
+    if table_exists(cr, "base_import_mapping"):
+        import_q = """
+            SELECT id,
+                   res_model,
+                   STRING_TO_ARRAY(field_name, '/')
+              FROM base_import_mapping
+            """
+        if field:
+            import_q = cr.mogrify(import_q + " WHERE field_name ~ %s ", [r"\y{}\y".format(field)]).decode()
+        else:
+            import_q += " WHERE field_name IS NOT NULL "
+        impex_data.append((import_q, "base_import_mapping"))
 
-    for query, impex_model in [(export_q, "ir.exports.line"), (import_q, "base_import.mapping")]:
+    for query, impex_model in impex_data:
         cr.execute(query)
         to_rem = [
             path_id
