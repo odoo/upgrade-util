@@ -4,7 +4,7 @@ import logging
 from .helpers import _validate_table
 from .misc import _cached
 from .models import rename_model
-from .modules import rename_module
+from .modules import module_installed, rename_module
 from .pg import column_exists, rename_table, table_exists
 from .report import add_to_migration_reports
 
@@ -114,6 +114,9 @@ def rename_custom_column(cr, table_name, col_name, new_col_name, custom_module=N
 
 
 def reset_cowed_views(cr, xmlid, key=None):
+    if not module_installed(cr, "website"):
+        # Cowed views can only exist in multi-website environments
+        return None
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
 
