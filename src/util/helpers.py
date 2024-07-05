@@ -279,6 +279,8 @@ def resolve_model_fields_path(cr, model, path):
     :return: resolved fields path parts
     :rtype: list(:class:`~odoo.upgrade.util.helpers.FieldsPathPart`)
     """
+    if not path:
+        return []
     path = list(path)
     cr.execute(
         """

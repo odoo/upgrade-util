@@ -492,6 +492,8 @@ def _remove_import_export_paths(cr, model, field=None):
         """
     if field:
         export_q = cr.mogrify(export_q + " WHERE el.name ~ %s ", [r"\y{}\y".format(field)]).decode()
+    else:
+        export_q += " WHERE el.name IS NOT NULL"
 
     import_q = """
         SELECT id,
@@ -501,6 +503,8 @@ def _remove_import_export_paths(cr, model, field=None):
         """
     if field:
         import_q = cr.mogrify(import_q + " WHERE field_name ~ %s ", [r"\y{}\y".format(field)]).decode()
+    else:
+        import_q += " WHERE field_name IS NOT NULL "
 
     for query, impex_model in [(export_q, "ir.exports.line"), (import_q, "base_import.mapping")]:
         cr.execute(query)
