@@ -749,6 +749,14 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
                 # Don't change the view keys inconditionally to avoid changing unrelated views.
                 cr.execute("UPDATE ir_ui_view SET key = %s WHERE key = %s", [new, old])
 
+        if model == "ir.ui.menu" and column_exists(cr, "res_users_settings", "homemenu_config"):
+            query = """
+                UPDATE res_users_settings
+                   SET homemenu_config = regexp_replace(homemenu_config::text, %(old)s, %(new)s)::jsonb
+                 WHERE homemenu_config::text ~ %(old)s
+            """
+            cr.execute(query, {"old": r"\y{}\y".format(re.escape(old)), "new": new})
+
         for parent_model, inh in direct_inherit_parents(cr, model):
             if inh.via:
                 parent = parent_model.replace(".", "_")
