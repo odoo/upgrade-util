@@ -420,6 +420,7 @@ class TestIrExports(UnitTestCase):
                         (0, 0, {"name": "rate_ids/company_id/user_ids/name"}),
                         (0, 0, {"name": "rate_ids/company_id/user_ids/partner_id/user_ids/name"}),
                         (0, 0, {"name": "rate_ids/name"}),
+                        (0, 0, {}),
                     ],
                 }
             ]
@@ -444,7 +445,7 @@ class TestIrExports(UnitTestCase):
     def test_remove_field(self):
         util.remove_field(self.cr, "res.currency.rate", "company_id")
         self._invalidate()
-        self.assertEqual(len(self.export.export_fields), 2)
+        self.assertEqual(len(self.export.export_fields), 3)
         self.assertEqual(self.export.export_fields[0].name, "full_name")
         self.assertEqual(self.export.export_fields[1].name, "rate_ids/name")
 
@@ -456,11 +457,11 @@ class TestIrExports(UnitTestCase):
     def test_remove_model(self):
         util.remove_model(self.cr, "res.currency.rate")
         self._invalidate()
-        self.assertEqual(len(self.export.export_fields), 1)
-        self.assertEqual(self.export.export_fields[0].name, "full_name")
+        self.assertEqual(len(self.export.export_fields), 2)
+        self.assertEqual(self.export.export_fields.mapped("name"), ["full_name", False])
 
         util.remove_model(self.cr, "res.currency")
-        self.cr.execute("SELECT * FROM ir_exports WHERE id = %s", [self.export.id])
+        self.cr.execute("SELECT * FROM ir_exports WHERE id IN %s", [tuple(self.export.ids)])
         self.assertFalse(self.cr.fetchall())
 
 
@@ -475,6 +476,7 @@ class TestBaseImportMappings(UnitTestCase):
                     "rate_ids/company_id/user_ids/name",
                     "rate_ids/company_id/user_ids/partner_id/user_ids/name",
                     "rate_ids/name",
+                    False,
                 ]
             ]
         )
@@ -523,10 +525,10 @@ class TestBaseImportMappings(UnitTestCase):
         remaining_mappings = self.import_mapping - removed_mappings
 
         self.assertEqual(len(removed_mappings), 3)
-        self.assertEqual(remaining_mappings[0].field_name, "full_name")
+        self.assertEqual(remaining_mappings.mapped("field_name"), ["full_name", False])
 
         util.remove_model(self.cr, "res.currency")
-        self.cr.execute("SELECT * FROM base_import_mapping WHERE id = %s", [remaining_mappings.id])
+        self.cr.execute("SELECT * FROM base_import_mapping WHERE id IN %s", [tuple(remaining_mappings.ids)])
         self.assertFalse(self.cr.fetchall())
 
 
