@@ -394,7 +394,7 @@ class TestRemoveFieldDomains(UnitTestCase):
         cr = self.env.cr
         cr.execute(
             "INSERT INTO ir_filters(name, model_id, domain, context, sort)"
-            "     VALUES ('test', 'base.module.update', %s, '{}', 'id') RETURNING id",
+            "     VALUES ('test', 'base.module.update', %s, '{}', '[]') RETURNING id",
             [str(domain)],
         )
         (filter_id,) = cr.fetchone()
