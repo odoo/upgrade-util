@@ -396,6 +396,8 @@ def fix_attrs(cr, model, arch, comb_arch):
             new_elem = etree.Element("attribute", name=mod)
             new_elem.text = fake_elem.get(mod)
             parent.append(new_elem)
+        if len(parent) == 0 and parent.getparent() is not None:
+            parent.getparent().remove(parent)
 
     return success
 
