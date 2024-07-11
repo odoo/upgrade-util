@@ -205,7 +205,7 @@ class HTMLConverter:
         )
         has_changed = self.has_changed(els)
         new_content = (
-            re.sub(r"(^<wrap>|</wrap>$)", "", etree.tostring(els, encoding="unicode").strip())
+            re.sub(r"(^<wrap>|</wrap>$|^<wrap/>$)", "", etree.tostring(els, encoding="unicode").strip())
             if has_changed
             else content
         )
