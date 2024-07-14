@@ -29,6 +29,7 @@ def indirect_references(cr, bound_only=False):
         IR("ir_cron", "model", None, set_unknown=True),
         IR("ir_act_report_xml", "model", None, set_unknown=True),
         IR("ir_act_window", "res_model", "res_id"),
+        IR("ir_act_window", "res_model", None),
         IR("ir_act_window", "src_model", None),
         IR("ir_act_server", "wkf_model_name", None),
         IR("ir_act_server", "crud_model_name", None),
