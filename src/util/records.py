@@ -9,15 +9,16 @@ from contextlib import contextmanager
 from operator import itemgetter
 
 import lxml
+from psycopg2 import sql
 from psycopg2.extras import Json, execute_values
 
 try:
-    from odoo import release
+    from odoo import modules, release
     from odoo.tools.convert import xml_import
     from odoo.tools.misc import file_open
     from odoo.tools.translate import xml_translate
 except ImportError:
-    from openerp import release
+    from openerp import modules, release
     from openerp.tools.convert import xml_import
     from openerp.tools.misc import file_open
 
@@ -105,6 +106,18 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
         cr.execute("SELECT id FROM ir_ui_view WHERE key = %s AND id != %s", [xml_id, view_id])
         for [v_id] in cr.fetchall():
             remove_view(cr, view_id=v_id, silent=silent, key=xml_id)
+
+    if not key and column_exists(cr, "ir_ui_view", "key"):
+        cr.execute("SELECT key FROM ir_ui_view WHERE id = %s and key != %s", [view_id, xml_id])
+        [key] = cr.fetchone() or [None]
+
+    # Occurrences of xml_id and key in the t-call of views are to be found and removed.
+    if xml_id != "?" or key:
+        if xml_id != key:
+            remove_redudant_tcalls(cr, xml_id)
+            remove_redudant_tcalls(cr, key)
+        else:
+            remove_redudant_tcalls(cr, xml_id)
 
     if not view_id:
         return
@@ -1622,3 +1635,46 @@ def remove_act_window_view_mode(cr, model, view_mode):
         """,
         [view_mode, model, view_mode, view_mode],
     )
+
+
+def remove_redudant_tcalls(cr, match=None):
+    """
+    Remove t-calls of the removed view.
+
+    This function removes the t-call of the removed view from all types of views
+    based on xml_id and key.
+
+    :param str match: contains xml_id or key based on argument
+    """
+    arch_col = (
+        get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
+        if column_exists(cr, "ir_ui_view", "arch_db")
+        else "arch"
+    )
+    cr.execute(
+        format_query(
+            cr,
+            """
+            SELECT iv.id, imd.module, imd.name
+              FROM ir_ui_view iv
+         LEFT JOIN ir_model_data imd
+                ON iv.id = imd.res_id
+               AND imd.model = 'ir.ui.view'
+             WHERE {} ~ %s
+        """,
+            sql.SQL(arch_col),
+        ),
+        [r"""\yt-call=(["'']){}\1""".format(match)],
+    )
+    standard_modules = set(modules.get_modules()) - {"studio_customization"}
+    for vid, module, name in cr.fetchall():
+        with edit_view(cr, view_id=vid) as arch:
+            for node in arch.findall(".//t[@t-call='{}']".format(match)):
+                node.getparent().remove(node)
+        if not module or module not in standard_modules:
+            _logger.info(
+                "The view %s with ID: %s has been updated, removed a t-call to a deprecated view %s",
+                ('"{}.{}"'.format(module, name) if module else ""),
+                vid,
+                match,
+            )
