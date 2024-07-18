@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from .fields import rename_field
 from .helpers import _validate_table
 from .misc import _cached
 from .models import rename_model
@@ -57,6 +58,21 @@ def rename_custom_model(cr, model_name, new_model_name, custom_module=None, repo
     add_to_migration_reports(
         category="Custom models",
         message="The custom model '{model_name}'{module_details} was renamed to '{new_model_name}'. {report_details}".format(
+            **locals()
+        ),
+    )
+
+
+def rename_custom_field(cr, old_field_name, new_field_name, model, report_details=""):
+    cr.execute("SELECT 1 FROM ir_model_fields WHERE name = %s AND model = %s", [old_field_name, model])
+    if not cr.rowcount:
+        _logger.warning("Field %r not found: skip renaming", old_field_name)
+        return
+
+    rename_field(cr, model, old_field_name, new_field_name)
+    add_to_migration_reports(
+        category="Custom fields",
+        message="The custom field '{old_field_name}' was renamed to '{new_field_name}'. {report_details}".format(
             **locals()
         ),
     )
