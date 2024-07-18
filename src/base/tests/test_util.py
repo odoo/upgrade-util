@@ -1825,3 +1825,65 @@ class TestConvertFieldToHtml(UnitTestCase):
 
         self.assertEqual(default.json_value, '"<p>Test text</p>"')
         self.assertEqual(partner.x_testx, "<p>test partner field</p>")
+
+
+class TestRemoveView(UnitTestCase):
+    def test_remove_view(self):
+        test_view_1 = self.env["ir.ui.view"].create(
+            {
+                "name": "test_view_1",
+                "type": "qweb",
+                "key": "base.test_view_1",
+                "arch": """
+                <t t-name="base.test_view_1">
+                    <div>Test View 1 Content</div>
+                </t>
+                """,
+            }
+        )
+        self.env["ir.model.data"].create(
+            {"name": "test_view_1", "module": "base", "model": "ir.ui.view", "res_id": test_view_1.id}
+        )
+        test_view_2 = self.env["ir.ui.view"].create(
+            {
+                "name": "test_view_2",
+                "type": "qweb",
+                "key": "base.test_view_2",
+                "arch": """
+                <t t-name="base.test_view_2">
+                    <t t-call="base.test_view_1"/>
+                    <div>Test View 2 Content</div>
+                </t>
+                """,
+            }
+        )
+        test_view_3 = self.env["ir.ui.view"].create(
+            {
+                "name": "test_view_3",
+                "type": "qweb",
+                "key": "base.test_view_3",
+                "arch": """
+                <t t-name="base.test_view_3">
+                    <t t-call="base.test_view_1"/>
+                    <t t-call="base.test_view_2"/>
+                </t>
+                """,
+            }
+        )
+        self.env["ir.model.data"].create(
+            {"name": "test_view_3", "module": "base", "model": "ir.ui.view", "res_id": test_view_3.id}
+        )
+
+        # call by xml_id
+        util.remove_view(self.env.cr, xml_id="base.test_view_1")
+        util.invalidate(test_view_2)
+        util.invalidate(test_view_3)
+        self.assertFalse(test_view_1.exists())
+        self.assertNotIn('t-call="base.test_view_1"', test_view_2.arch_db)
+        self.assertNotIn('t-call="base.test_view_1"', test_view_3.arch_db)
+
+        # call by view_id
+        util.remove_view(self.env.cr, view_id=test_view_2.id)
+        util.invalidate(test_view_3)
+        self.assertFalse(test_view_2.exists())
+        self.assertNotIn('t-call="base.test_view_2"', test_view_3.arch_db)
