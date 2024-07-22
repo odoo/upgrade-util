@@ -25,11 +25,11 @@ except ImportError:
 
 try:
     from odoo.osv import expression
-    from odoo.tools import ustr
+    from odoo.tools import exception_to_unicode
     from odoo.tools.safe_eval import safe_eval
 except ImportError:
     from openerp.osv import expression
-    from openerp.tools import ustr
+    from openerp.tools import exception_to_unicode
     from openerp.tools.safe_eval import safe_eval
 
 from .const import NEARLYWARN
@@ -202,14 +202,14 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
         try:
             eval_dom = expression.normalize_domain(safe_eval(domain, evaluation_context, nocopy=True))
         except Exception as e:
-            oops = ustr(e)
+            oops = exception_to_unicode(e)
             _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
             return None
     else:
         try:
             eval_dom = expression.normalize_domain(domain)
         except Exception as e:
-            oops = ustr(e)
+            oops = exception_to_unicode(e)
             _logger.log(NEARLYWARN, "Invalid %r domain: %r: %s", model, domain, oops)
             return None
 
