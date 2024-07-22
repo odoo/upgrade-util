@@ -652,8 +652,13 @@ class TestPG(UnitTestCase):
         result = cr.fetchone()[0]
         self.assertEqual(result, expected)
 
+    def _get_cr(self):
+        cr = self.registry.cursor()
+        self.addCleanup(cr.close)
+        return cr
+
     def test_explode_mult_filters(self):
-        cr = self.env.cr
+        cr = self._get_cr()
         queries = util.explode_query_range(
             cr,
             """
@@ -704,7 +709,7 @@ class TestPG(UnitTestCase):
         self.assertEqual(len(qs), 1)  # 10% rule for second bucket, 1 <= 0.1(count - 1) since count >= 11
 
     def test_parallel_rowcount(self):
-        cr = self.env.cr
+        cr = self._get_cr()
         cr.execute("SELECT count(*) FROM res_lang")
         [expected] = cr.fetchone()
 
@@ -724,7 +729,7 @@ class TestPG(UnitTestCase):
         TEST_TABLE_NAME = "_upgrade_serialization_failure_test_table"
         N_ROWS = 10
 
-        cr = self.env.cr
+        cr = self._get_cr()
 
         cr.execute(
             util.format_query(
