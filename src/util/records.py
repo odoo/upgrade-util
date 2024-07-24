@@ -185,8 +185,8 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active="a
 
     When the view is identified by `view_id`, the arch is always yielded if the view
     exists, with disregard to any `noupdate` flag it may have associated. When `xmlid` is
-    set, if the view `noupdate` flag is `True` then the arch will not be yielded *unless*
-    `skip_if_not_noupdate` is set to `False`. If `noupdate` is `False`, the view will be
+    set, if the view `noupdate` flag is `False` then the arch will not be yielded *unless*
+    `skip_if_not_noupdate` is set to `False`. If `noupdate` is `True`, the view will be
     yielded for edit.
 
     If the `active` argument is `True` or `False`, the `active` flag of the view will be set
