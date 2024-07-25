@@ -232,11 +232,10 @@ def rename_model(cr, old, new, rename_table=True):
     if old in ENVIRON["__renamed_fields"]:
         ENVIRON["__renamed_fields"][new] = ENVIRON["__renamed_fields"].pop(old)
     if rename_table:
-        pg_rename_table(
-            cr,
-            table_of_model(cr, old),
-            table_of_model(cr, new),
-        )
+        old_table = table_of_model(cr, old)
+        new_table = table_of_model(cr, new)
+        if new_table != old_table:
+            pg_rename_table(cr, old_table, new_table)
 
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]
