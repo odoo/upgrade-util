@@ -320,8 +320,13 @@ def fix_elem(cr, model, elem, comb_arch):
             )
         for key in extra:
             value = ast.unparse(attrs[key])
-            _logger.info("Inlined %s=%r", key, value)
-            elem.set(key, value)
+            try:
+                etree.QName(key)
+            except ValueError as e:
+                _logger.error("Skipping invalid attribute name %r in `attrs` with value: %s: %r", key, value, e)  # noqa: TRY400
+            else:
+                elem.set(key, value)
+                _logger.info("Inlined %s=%r", key, value)
 
     return success
 
