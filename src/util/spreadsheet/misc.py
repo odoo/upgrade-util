@@ -85,11 +85,11 @@ def _magic_spreadsheet_field(cr):
     return cr.fetchone()[0] and 'spreadsheet_binary_data' or 'data'
 
 def apply_in_all_spreadsheets(cr, like_pattern, callback):
-    print("like pattern :   ", like_pattern)
+    # print("like pattern :   ", like_pattern)
     b = False
     # upgrade the initial data and all revisions based on it
     for attachment_id, res_model, res_id, db_datas in read_spreadsheet_initial_data(cr, like_pattern):
-        print("attachment :   ", attachment_id)
+        print("attachment data id:   ", attachment_id)
         print("datas:   ", len(db_datas))
         b = True
 
@@ -122,7 +122,7 @@ def apply_in_all_spreadsheets(cr, like_pattern, callback):
     b = False
     # upgrade snapshots
     for attachment_id, _res_model, _res_id, db_datas in read_spreadsheet_snapshots(cr, like_pattern):
-        print("attachment :   ", attachment_id)
+        print("attachment snapshot id:   ", attachment_id)
 
         b=True
         data, revisions = callback(db_datas, [])
