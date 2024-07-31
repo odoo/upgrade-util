@@ -530,6 +530,27 @@ def force_install_module(cr, module, if_installed=None):
         if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
             dep_match = "AND d.auto_install_required = TRUE AND e.auto_install_required = TRUE"
 
+        country_match = country_join = ""
+        if table_exists(cr, "module_country"):
+            country_join = """
+                 LEFT JOIN module_country mc
+                        ON mc.module_id = on_me.id
+                 LEFT JOIN (
+                        SELECT c.id, p.country_id
+                          FROM res_company c
+                          JOIN res_partner p
+                            ON p.id = c.partner_id
+                         WHERE c.active
+                      ) AS c
+                        ON c.country_id = mc.country_id
+            """
+            country_match = """
+               AND (
+                    count(mc) = 0  -- no country set
+                 OR count(c) > 0 -- or have active companies with a matching country
+               )
+            """
+
         cat_match = ""
         if NO_AUTOINSTALL:
             # even if we skip auto installs, we still need to auto install the real link-modules.
@@ -544,6 +565,7 @@ def force_install_module(cr, module, if_installed=None):
               JOIN ir_module_module on_me ON on_me.id = d.module_id
               JOIN ir_module_module_dependency e ON e.module_id = on_me.id
               JOIN ir_module_module its_deps ON its_deps.name = e.name
+                {}
              WHERE d.name = ANY(%s)
                AND on_me.state = 'uninstalled'
                AND on_me.auto_install = TRUE
@@ -553,7 +575,9 @@ def force_install_module(cr, module, if_installed=None):
             HAVING
                    -- are all dependencies (to be) installed?
                    array_agg(its_deps.state)::text[] <@ %s
-        """.format(dep_match, cat_match),
+                {}
+
+        """.format(country_join, dep_match, cat_match, country_match),
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
         for (mod,) in cr.fetchall():
@@ -656,6 +680,27 @@ def trigger_auto_install(cr, module):
     if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
         dep_match = "d.auto_install_required = true"
 
+    country_match = country_join = ""
+    if table_exists(cr, "module_country"):
+        country_join = """
+             LEFT JOIN module_country mc
+                    ON mc.module_id = m.id
+             LEFT JOIN (
+                    SELECT c.id, p.country_id
+                      FROM res_company c
+                      JOIN res_partner p
+                        ON p.id = c.partner_id
+                     WHERE c.active
+                  ) AS c
+                    ON c.country_id = mc.country_id
+        """
+        country_match = """
+           AND (
+                count(mc) = 0  -- no country set
+             OR count(c) > 0 -- or have active companies with a matching country
+           )
+        """
+
     cat_match = "true"
     if NO_AUTOINSTALL:
         # even if we skip auto installs, we still need to auto install the real link-modules.
@@ -668,6 +713,7 @@ def trigger_auto_install(cr, module):
               FROM ir_module_module_dependency d
               JOIN ir_module_module m ON m.id = d.module_id
               JOIN ir_module_module md ON md.name = d.name
+                {}
              WHERE m.name = %s
                AND m.state = 'uninstalled'
                AND m.auto_install = true
@@ -675,7 +721,8 @@ def trigger_auto_install(cr, module):
                AND {}
           GROUP BY m.id
             HAVING bool_and(md.state IN %s)
-    """.format(dep_match, cat_match)
+                {}
+    """.format(country_join, dep_match, cat_match, country_match)
 
     cr.execute(query, [module, INSTALLED_MODULE_STATES])
     if cr.rowcount:
