@@ -689,7 +689,33 @@ def _set_module_category(cr, module, category):
     cr.execute("UPDATE ir_module_module SET category_id=%s WHERE name=%s", [cid, module])
 
 
-def new_module(cr, module, deps=(), auto_install=False, category=None):
+def _set_module_countries(cr, module, countries):
+    if not table_exists(cr, "module_country"):
+        return
+    clean_query = """
+        DELETE
+          FROM module_country mc
+         USING ir_module_module m
+         WHERE m.id = mc.module_id
+           AND m.name = %s
+    """
+    cr.execute(clean_query, [module])
+
+    if not countries:
+        return
+
+    insert_query = """
+        INSERT INTO module_country(module_id, country_id)
+             SELECT m.id, c.id
+               FROM ir_module_module m,
+                    res_country c
+              WHERE m.name = %s
+                AND c.code IN %s
+    """
+    cr.execute(insert_query, [module, tuple(c.upper() for c in countries)])
+
+
+def new_module(cr, module, deps=(), auto_install=False, category=None, countries=()):
     if deps:
         _assert_modules_exists(cr, *deps)
 
@@ -732,6 +758,7 @@ def new_module(cr, module, deps=(), auto_install=False, category=None):
 
     if category is not None:
         _set_module_category(cr, module, category)
+    _set_module_countries(cr, module, countries)
 
     module_auto_install(cr, module, auto_install)
     trigger_auto_install(cr, module)
@@ -822,12 +849,17 @@ def _trigger_auto_discovery(cr):
     graph = {}
     for module in odoo.modules.get_modules():
         manifest = get_manifest(module)
-        graph[module] = (set(manifest["depends"]), manifest["auto_install"], manifest["category"])
+        graph[module] = (
+            set(manifest["depends"]),
+            manifest["auto_install"],
+            manifest["category"],
+            manifest.get("countries"),
+        )
 
     for module in topological_sort({k: v[0] for k, v in graph.items()}):
-        deps, auto_install, category = graph[module]
+        deps, auto_install, category, countries = graph[module]
         if module not in existing:
-            new_module(cr, module, deps=deps, auto_install=auto_install, category=category)
+            new_module(cr, module, deps=deps, auto_install=auto_install, category=category, countries=countries)
         else:
             current_deps = set(existing[module])
             plus = deps - current_deps
@@ -835,6 +867,7 @@ def _trigger_auto_discovery(cr):
             if plus or minus:
                 module_deps_diff(cr, module, plus=plus, minus=minus)
             _set_module_category(cr, module, category)
+            _set_module_countries(cr, module, countries)
             module_auto_install(cr, module, auto_install)
 
         if module in force_installs:
