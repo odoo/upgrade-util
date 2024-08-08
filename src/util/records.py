@@ -410,8 +410,34 @@ def remove_records(cr, model, ids):
     table = table_of_model(cr, model)
     cr.execute('DELETE FROM "{}" WHERE id IN %s'.format(table), [ids])
     for ir in indirect_references(cr, bound_only=True):
-        query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
-        cr.execute(query, [model, ids])
+        if not ir.company_dependent_comodel:
+            query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
+            cr.execute(query, [model, ids])
+        elif ir.company_dependent_comodel == model:
+            query = cr.mogrify(
+                format_query(
+                    cr,
+                    """
+                    UPDATE {table}
+                    SET {column} = (
+                        SELECT jsonb_object_agg(
+                            key,
+                            CASE
+                                WHEN value::int4 IN %s THEN NULL
+                                ELSE value::int4
+                            END)
+                        FROM jsonb_each_text({column})
+                    )
+                    WHERE {column} IS NOT NULL
+                    AND {column} @? %s
+                    AND {{parallel_filter}}
+                    """,
+                    table=ir.table,
+                    column=ir.res_id,
+                ),
+                [ids, "$.* ? ({})".format(" || ".join(map("@ == {}".format, ids)))],
+            ).decode()
+            explode_execute(cr, query, table=ir.table)
     _rm_refs(cr, model, ids)
 
     if model == "res.groups":
@@ -1439,6 +1465,29 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     # indirect references
     for ir in indirect_references(cr, bound_only=True):
         if ir.table in ignores:
+            continue
+        if ir.company_dependent_comodel:
+            if ir.company_dependent_comodel == model_src:
+                assert model_src == model_dst
+                query = cr.mogrify(
+                    format_query(
+                        cr,
+                        """
+                        UPDATE {table}
+                           SET {column} = (
+                                   SELECT jsonb_object_agg(key, COALESCE((%s::jsonb->>value)::int, value::int))
+                                   FROM jsonb_each_text({column})
+                               )
+                         WHERE {column} IS NOT NULL
+                           AND {column} @? %s
+                           AND {{parallel_filter}}
+                        """,
+                        table=ir.table,
+                        column=ir.res_id,
+                    ),
+                    [Json(id_mapping), "$.* ? ({})".format(" || ".join(map("@ == {}".format, id_mapping)))],
+                ).decode()
+                explode_execute(cr, query, table=ir.table)
             continue
         res_model_upd = []
         if ir.res_model:

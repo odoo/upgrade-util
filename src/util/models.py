@@ -22,6 +22,7 @@ from .pg import (
     column_updatable,
     explode_execute,
     explode_query_range,
+    format_query,
     get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
@@ -76,6 +77,34 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 
     # remove references
     for ir in indirect_references(cr):
+        if ir.company_dependent_comodel:
+            if ir.company_dependent_comodel == "ir.model":
+                # clean on delete set null
+                cr.execute("SELECT id FROM ir_model WHERE name = %s", [model])
+                [mod_id] = cr.fetchone() or [None]
+                if mod_id:
+                    cr.execute(
+                        format_query(
+                            """
+                            UPDATE {table}
+                               SET {field} = (
+                                   SELECT jsonb_object_agg(
+                                          key,
+                                          CASE
+                                              WHEN value::int4 = %s THEN NULL
+                                              ELSE value::int4
+                                          END)
+                                     FROM jsonb_each_text({field})
+                                   )
+                             WHERE {field} IS NOT NULL
+                               AND {field} @? %s
+                            """,
+                            table=ir.table,
+                            field=ir.res_id,
+                        ),
+                        [mod_id, "$.* ? (@ == {})".format(mod_id)],
+                    )
+            continue
         if ir.table in ("ir_model", "ir_model_fields", "ir_model_data"):
             continue
         ref_model = model_of_table(cr, ir.table)

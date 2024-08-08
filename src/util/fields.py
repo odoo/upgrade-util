@@ -506,7 +506,8 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
             # (before saas~11.2, where pattern changed)
             name = "%s_%s" % (name, fid)
             cr.execute("UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s", [name, fid])
-        cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
+        if table_exists(cr, "ir_property"):
+            cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
     # Updates custom field relation name to match the renamed standard field during upgrade.
     cr.execute(
         """
@@ -652,7 +653,66 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
         convert_field_to_html(cr, inh.model, field, skip_inherit=skip_inherit)
 
 
-def convert_field_to_property(
+def _convert_field_to_company_dependent(
+    cr, model, field, type, target_model=None, default_value=None, default_value_ref=None, company_field="company_id"
+):
+    _validate_model(model)
+    if target_model:
+        _validate_model(target_model)
+
+    type2field = {"char", "float", "boolean", "integer", "text", "many2one", "date", "datetime", "selection", "html"}
+    assert type in type2field
+
+    table = table_of_model(cr, model)
+
+    # update "ir_model_fields"."company_dependent" as an identifier for indirect reference
+    cr.execute(
+        """
+        UPDATE ir_model_fields
+           SET company_dependent = TRUE
+         WHERE model = %s
+           AND name = %s
+     RETURNING id
+        """,
+        (model, field),
+    )
+    if not cr.rowcount:
+        # no ir_model_fields, no column
+        remove_column(cr, table, field, cascade=True)
+        return
+    [field_id] = cr.fetchone()
+
+    if default_value is None:  # noqa: SIM108
+        where_condition = "{0} IS NOT NULL"
+    else:
+        where_condition = cr.mogrify("{0} != %s", [default_value]).decode()
+    where_condition += format_query(cr, " AND {} IS NOT NULL", company_field)
+
+    using = format_query(cr, "jsonb_build_object({}, {{0}})", company_field)
+    alter_column_type(cr, table, field, "jsonb", using=using, where=where_condition)
+
+    # delete all old default
+    cr.execute("DELETE FROM ir_default WHERE field_id = %s", [field_id])
+
+    # add fallback
+    if default_value:
+        cr.execute(
+            "INSERT INTO ir_default(field_id, json_value) VALUES (%s, %s) RETURNING id",
+            (field_id, json.dumps(default_value)),
+        )
+        [default_id] = cr.fetchone()
+        if default_value_ref:
+            module, _, xid = default_value_ref.partition(".")
+            cr.execute(
+                """
+                INSERT INTO ir_model_data(module, name, model, res_id, noupdate)
+                     VALUES (%s, %s, 'ir.default', %s, True)
+                """,
+                [module, xid, default_id],
+            )
+
+
+def _convert_field_to_property(
     cr, model, field, type, target_model=None, default_value=None, default_value_ref=None, company_field="company_id"
 ):
     """
@@ -777,7 +837,13 @@ def convert_field_to_property(
 
 
 # alias with a name related to the new API to declare property fields (company_dependent=True attribute)
-make_field_company_dependent = convert_field_to_property
+if version_gte("saas~17.5"):
+    make_field_company_dependent = _convert_field_to_company_dependent
+else:
+    make_field_company_dependent = _convert_field_to_property
+
+# retro-compatibility
+convert_field_to_property = make_field_company_dependent
 
 
 def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_field=None):
