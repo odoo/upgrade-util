@@ -5,7 +5,11 @@ from .helpers import model_of_table, table_of_model
 from .pg import column_exists, table_exists
 
 
-class IndirectReference(collections.namedtuple("IndirectReference", "table res_model res_id res_model_id set_unknown")):
+class IndirectReference(
+    collections.namedtuple(
+        "IndirectReference", "table res_model res_id res_model_id set_unknown company_dependent_comodel"
+    )
+):
     def model_filter(self, prefix="", placeholder="%s"):
         if prefix and prefix[-1] != ".":
             prefix += "."
@@ -109,12 +113,25 @@ def indirect_references(cr, bound_only=False):
 
         yield ir
 
+    if column_exists(cr, "ir_model_fields", "company_dependent"):
+        cr.execute(
+            """
+            SELECT model, name, relation
+              FROM ir_model_fields
+             WHERE company_dependent IS TRUE
+               AND ttype = 'many2one'
+            """,
+        )
+        for table_name, column_name, comodel_name in cr.fetchall():
+            yield IR(table_name, None, column_name, company_dependent_comodel=comodel_name)
+
     # XXX Once we will get the model field of `many2one_reference` fields in the database, we should get them also
     # (and filter the one already hardcoded)
 
 
 def generate_indirect_reference_cleaning_queries(cr, ir):
     """Yield queries to clean an `IndirectReference`."""
+    assert not ir.company_dependent_comodel  # not supported for now
     if ir.res_model:
         query = """
             SELECT {ir.res_model}

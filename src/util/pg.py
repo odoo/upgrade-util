@@ -570,7 +570,7 @@ def remove_column(cr, table, column, cascade=False):
         cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"{2}'.format(table, column, drop_cascade))
 
 
-def alter_column_type(cr, table, column, type, using=None, logger=_logger):
+def alter_column_type(cr, table, column, type, using=None, where=None, logger=_logger):
     # remove the existing linked `ir_model_fields_selection` recods in case it was a selection field
     if table_exists(cr, "ir_model_fields_selection"):
         cr.execute(
@@ -604,9 +604,13 @@ def alter_column_type(cr, table, column, type, using=None, logger=_logger):
     cr.execute(format_query(cr, "ALTER TABLE {} ADD COLUMN {} {}", table, column, sql.SQL(type)))
 
     using = sql.SQL(format_query(cr, using, tmp_column))
-    where_clause = sql.SQL("")
-    if column_type(cr, table, tmp_column) != "bool":
-        where_clause = sql.SQL(format_query(cr, "WHERE {} IS NOT NULL", tmp_column))
+    if where is None:
+        where_clause = sql.SQL("")
+        if column_type(cr, table, tmp_column) != "bool":
+            where_clause = sql.SQL(format_query(cr, "WHERE {} IS NOT NULL", tmp_column))
+    else:
+        where_clause = sql.SQL(format_query(cr, "WHERE " + where, tmp_column))
+
     explode_execute(
         cr,
         format_query(cr, "UPDATE {} SET {} = {} {}", table, column, using, where_clause),
