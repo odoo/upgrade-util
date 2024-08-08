@@ -19,6 +19,7 @@ from odoo.tools.safe_eval import safe_eval
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
+from odoo.addons.base.maintenance.migrations.util import snippets
 from odoo.addons.base.maintenance.migrations.util.domains import _adapt_one_domain, _model_of_path
 from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
 
@@ -1369,6 +1370,44 @@ class TestMisc(UnitTestCase):
     def test_SelfPrint(self, value):
         evaluated = safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
         self.assertEqual(str(evaluated), value)
+
+
+def not_doing_anything_converter(el):
+    return True
+
+
+class TestHTMLFormat(UnitTestCase):
+    def testsnip(self):
+        view_arch = """
+            <html>
+                <div class="fake_class_not_doing_anything"><br/></div>
+                <script>
+                (event) =&gt; {
+                };
+                </script>
+            </html>
+        """
+        view_id = self.env["ir.ui.view"].create(
+            {
+                "name": "not_for_anything",
+                "type": "qweb",
+                "mode": "primary",
+                "key": "test.htmlconvert",
+                "arch_db": view_arch,
+            }
+        )
+        cr = self.env.cr
+        snippets.convert_html_content(
+            cr,
+            snippets.html_converter(
+                not_doing_anything_converter, selector="//*[hasclass('fake_class_not_doing_anything')]"
+            ),
+        )
+        util.invalidate(view_id)
+        res = self.env["ir.ui.view"].search_read([("id", "=", view_id.id)], ["arch_db"])
+        self.assertEqual(len(res), 1)
+        oneline = lambda s: re.sub(r"\s+", " ", s.strip())
+        self.assertEqual(oneline(res[0]["arch_db"]), oneline(view_arch))
 
 
 class TestQueryFormat(UnitTestCase):

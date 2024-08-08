@@ -11,6 +11,7 @@ from psycopg2 import sql
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
+from .const import NEARLYWARN
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import import_script, log_progress
@@ -157,7 +158,7 @@ def html_converter(transform_callback, selector=None):
     :param str selector: targets the elements to loop on
     :return: object HTMLConverter with callback
     """
-    return HTMLConverter(transform_callback, selector)
+    return HTMLConverter(make_pickleable_callback(transform_callback), selector)
 
 
 def make_pickleable_callback(callback):
@@ -182,10 +183,16 @@ def make_pickleable_callback(callback):
         raise MigrationError(error_msg) from None
 
 
-class HTMLConverter:
+class BaseConverter:
     def __init__(self, callback, selector=None):
+        self.callback = callback
         self.selector = selector
-        self.callback = make_pickleable_callback(callback)
+
+    def for_html(self):
+        return HTMLConverter(self.callback, self.selector)
+
+    def for_qweb(self):
+        return QWebConverter(self.callback, self.selector)
 
     def has_changed(self, els):
         if self.selector:
@@ -201,17 +208,38 @@ class HTMLConverter:
         # Wrap in <wrap> node before parsing to preserve external comments and multi-root nodes,
         # except for when this looks like a full html doc, because in this case the wrap tag breaks the logic in
         # https://github.com/lxml/lxml/blob/2ac88908ffd6df380615c0af35f2134325e4bf30/src/lxml/html/html5parser.py#L184
-        els = html.fromstring(
-            content if content.strip()[:5].lower() == "<html" else f"<wrap>{content}</wrap>",
-            parser=utf8_parser,
-        )
+        els = self._loads(content if content.strip()[:5].lower() == "<html" else f"<wrap>{content}</wrap>")
         has_changed = self.has_changed(els)
-        new_content = (
-            re.sub(r"(^<wrap>|</wrap>$|^<wrap/>$)", "", etree.tostring(els, encoding="unicode").strip())
-            if has_changed
-            else content
-        )
+        new_content = re.sub(r"(^<wrap>|</wrap>$|^<wrap/>$)", "", self._dumps(els).strip()) if has_changed else content
         return (has_changed, new_content)
+
+    def _loads(self, string):
+        raise NotImplementedError
+
+    def _dumps(self, node):
+        raise NotImplementedError
+
+
+class HTMLConverter(BaseConverter):
+    def for_html(self):
+        return self
+
+    def _loads(self, string):
+        return html.fromstring(string, parser=utf8_parser)
+
+    def _dumps(self, node):
+        return html.tostring(node, encoding="unicode")
+
+
+class QWebConverter(BaseConverter):
+    def for_qweb(self):
+        return self
+
+    def _loads(self, string):
+        return html.fromstring(string, parser=html.XHTMLParser(encoding="utf-8"))
+
+    def _dumps(self, node):
+        return etree.tostring(node, encoding="unicode")
 
 
 class Convertor:
@@ -320,14 +348,26 @@ def convert_html_content(
         - "~* '\yabc.*xyz\y'"
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
+    if hasattr(converter_callback, "for_html"):  # noqa: SIM108
+        html_converter = converter_callback.for_html()
+    else:
+        # trust the given converter to handle HTML
+        html_converter = converter_callback
+
+    for table, columns in html_fields(cr):
+        convert_html_columns(cr, table, columns, html_converter, where_column=where_column, **kwargs)
+
+    if hasattr(converter_callback, "for_qweb"):
+        qweb_converter = converter_callback.for_qweb()
+    else:
+        _logger.log(NEARLYWARN, "Cannot adapt converter callback %r for qweb; using it directly", converter_callback)
+        qweb_converter = converter_callback
+
     convert_html_columns(
         cr,
         "ir_ui_view",
         ["arch_db"],
-        converter_callback,
+        qweb_converter,
         where_column=where_column,
         **dict(kwargs, extra_where="type = 'qweb'"),
     )
-
-    for table, columns in html_fields(cr):
-        convert_html_columns(cr, table, columns, converter_callback, where_column=where_column, **kwargs)
