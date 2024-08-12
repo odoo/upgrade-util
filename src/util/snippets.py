@@ -12,7 +12,9 @@ from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
 from .exceptions import MigrationError
-from odoo.upgrade import util
+from .helpers import table_of_model
+from .misc import import_script, log_progress
+from .pg import column_exists, column_type, get_max_workers, table_exists
 
 _logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")
@@ -38,7 +40,7 @@ def add_snippet_names(cr, table, column, snippets, select_query):
     _logger.info("Add snippet names on %s.%s", table, column)
     cr.execute(select_query)
 
-    it = util.log_progress(cr.fetchall(), _logger, qualifier="rows", size=cr.rowcount, log_hundred_percent=True)
+    it = log_progress(cr.fetchall(), _logger, qualifier="rows", size=cr.rowcount, log_hundred_percent=True)
 
     def quote(ident):
         return quote_ident(ident, cr._cnx)
@@ -103,11 +105,11 @@ def html_fields(cr):
     """
     )
     for model, columns in cr.fetchall():
-        table = util.table_of_model(cr, model)
-        if not util.table_exists(cr, table):
+        table = table_of_model(cr, model)
+        if not table_exists(cr, table):
             # an SQL VIEW
             continue
-        existing_columns = [column for column in columns if util.column_exists(cr, table, column)]
+        existing_columns = [column for column in columns if column_exists(cr, table, column)]
         if existing_columns:
             yield table, existing_columns
 
@@ -169,7 +171,7 @@ def make_pickleable_callback(callback):
     """
     callback_filepath = inspect.getfile(callback)
     name = f"_upgrade_{uuid.uuid4().hex}"
-    mod = sys.modules[name] = util.import_script(callback_filepath, name=name)
+    mod = sys.modules[name] = import_script(callback_filepath, name=name)
     try:
         return getattr(mod, callback.__name__)
     except AttributeError:
@@ -257,7 +259,7 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
     """
     assert "id" not in columns
 
-    converters = {column: "->>'en_US'" if util.column_type(cr, table, column) == "jsonb" else "" for column in columns}
+    converters = {column: "->>'en_US'" if column_type(cr, table, column) == "jsonb" else "" for column in columns}
     select = ", ".join(f'"{column}"' for column in columns)
     where = " OR ".join(f'"{column}"{converters[column]} {where_column}' for column in columns)
 
@@ -275,9 +277,9 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
 
-    with ProcessPoolExecutor(max_workers=util.get_max_workers()) as executor:
+    with ProcessPoolExecutor(max_workers=get_max_workers()) as executor:
         convert = Convertor(converters, converter_callback)
-        for query in util.log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
+        for query in log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
             cr.execute(query)
             for data in executor.map(convert, cr.fetchall(), chunksize=1000):
                 if "id" in data:
