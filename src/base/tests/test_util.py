@@ -807,6 +807,63 @@ class TestORM(UnitTestCase):
         self.assertEqual(cron.code, "answer = 42")
 
 
+class TestField(UnitTestCase):
+    def test_invert_boolean_field(self):
+        cr = self.env.cr
+
+        with self.assertRaises(ValueError):
+            util.invert_boolean_field(cr, "res.partner", "name", "nom")
+
+        fltr = self.env["ir.filters"].create(
+            {"name": "test", "model_id": "ir.model.data", "domain": "[('noupdate', '=', True)]"}
+        )
+
+        query = """
+            SELECT {0}, count(*)
+              FROM ir_model_data
+          GROUP BY {0}
+        """
+
+        cr.execute(util.format_query(cr, query, "noupdate"))
+        initial_repartition = dict(cr.fetchall())
+
+        # util.parallel_execute will `commit` the cursor and create new ones
+        # as we are in a test, we should not commit as we are in a subtransaction
+        with mock.patch.object(cr, "commit", lambda: ...):
+            util.invert_boolean_field(cr, "ir.model.data", "noupdate", "yesupdate")
+
+        util.invalidate(fltr)
+        self.assertEqual(literal_eval(fltr.domain), ["!", ("yesupdate", "=", True)])
+
+        cr.execute(util.format_query(cr, query, "yesupdate"))
+        inverted_repartition = dict(cr.fetchall())
+
+        self.assertEqual(inverted_repartition[False], initial_repartition[True])
+        self.assertEqual(inverted_repartition[True], initial_repartition[False] + initial_repartition.get(None, 0))
+        self.assertEqual(inverted_repartition.get(None, 0), 0)
+
+        # rename back
+        with mock.patch.object(cr, "commit", lambda: ...):
+            util.rename_field(cr, "ir.model.data", "yesupdate", "noupdate")
+
+        util.invalidate(fltr)
+        self.assertEqual(literal_eval(fltr.domain), ["!", ("noupdate", "=", True)])
+
+        # invert with same name; will invert domains and data
+        with mock.patch.object(cr, "commit", lambda: ...):
+            util.invert_boolean_field(cr, "ir.model.data", "noupdate", "noupdate")
+
+        util.invalidate(fltr)
+        self.assertEqual(literal_eval(fltr.domain), ["!", "!", ("noupdate", "=", True)])
+
+        cr.execute(util.format_query(cr, query, "noupdate"))
+        back_repartition = dict(cr.fetchall())
+
+        # merge None into False in the initial repartition
+        initial_repartition[False] += initial_repartition.pop(None, 0)
+        self.assertEqual(back_repartition, initial_repartition)
+
+
 class TestHelpers(UnitTestCase):
     def test_model_table_convertion(self):
         cr = self.env.cr

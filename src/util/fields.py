@@ -48,6 +48,7 @@ from .pg import (
     alter_column_type,
     column_exists,
     column_type,
+    explode_execute,
     explode_query_range,
     format_query,
     get_value_or_en_translation,
@@ -578,6 +579,26 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
     # rename field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
         rename_field(cr, inh.model, old, new, update_references=update_references, skip_inherit=skip_inherit)
+
+
+def invert_boolean_field(cr, model, old, new, skip_inherit=()):
+    """Rename a boolean field and invert its value."""
+    _validate_model(model)
+    table = table_of_model(cr, model)
+    if column_type(cr, table, old) != "bool":
+        raise ValueError("Field {!r} of model {!r} is not a stored boolean field".format(old, model))
+
+    def _adapter(leaf, _or, _neg):
+        return ["!", leaf]
+
+    if old == new:
+        # same name but inverted value, just adapt domains
+        adapt_domains(cr, model, old, new, adapter=_adapter, skip_inherit=skip_inherit, force_adapt=True)
+    else:
+        rename_field(cr, model, old, new, update_references=True, domain_adapter=_adapter, skip_inherit=skip_inherit)
+
+    query = format_query(cr, "UPDATE {t} SET {c} = {c} IS NOT TRUE", t=table, c=new)
+    explode_execute(cr, query, table=table)
 
 
 def convert_field_to_html(cr, model, field, skip_inherit=()):
