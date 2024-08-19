@@ -86,6 +86,15 @@ def get_admin_channel(cr):
         admin_channel = e.ref("mail.channel_admin", raise_if_not_found=False)
         if admin_channel:
             return admin_channel
+        # search for old name
+        admin_channel = e.ref("__upgrade__.channel_administrators", raise_if_not_found=False)
+        if admin_channel:
+            # rename it.
+            from .records import rename_xmlid  # imported here to avoid import cycles
+
+            rename_xmlid(cr, "__upgrade__.channel_administrators", "mail.channel_admin", noupdate=True)
+            return admin_channel
+
         admin_group = e.ref("base.group_system", raise_if_not_found=False)
         if admin_group:
             search_rules = [
