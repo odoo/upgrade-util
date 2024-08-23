@@ -5,11 +5,12 @@ from textwrap import dedent
 
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
+from psycopg2.sql import SQL
 
 from .helpers import _validate_model, table_of_model
 from .misc import chunks, str2bool
-from .pg import get_value_or_en_translation
-from .report import add_to_migration_reports
+from .pg import format_query, get_value_or_en_translation, target_of
+from .report import add_to_migration_reports, get_anchor_link_to_record, html_escape
 
 _logger = logging.getLogger(__name__)
 
@@ -20,6 +21,99 @@ INCLUDE_ARCHIVED_PRODUCTS = str2bool(
 FIX_PRODUCT_UOM = str2bool(os.environ.get("ODOO_MIG_FIX_ALL_UOM_INCONSISTENCIES"), default=False)
 
 FROM_ENV = object()
+
+
+def break_recursive_loops(cr, model, field, name_field="name"):
+    # TODO add a variant to verify loops on m2m
+    _validate_model(model)
+
+    table = table_of_model(cr, model)
+    trgt = target_of(cr, table, field)
+    if not trgt or trgt[:2] != (table, "id"):
+        raise ValueError("The column `{}` is not FK on itself".format(field))
+
+    query = format_query(
+        cr,
+        """
+        WITH RECURSIVE __loop AS (
+         SELECT array[{field}] AS path,
+                False AS cycle
+           FROM {table}
+          WHERE {field} IS NOT NULL
+       GROUP BY {field}
+          UNION ALL
+         SELECT child.{field} || curr.path AS path,
+                child.{field} = any(curr.path) AS cycle
+           FROM __loop AS curr
+           JOIN {table} AS child
+             ON child.id = curr.path[1]
+          WHERE child.{field} IS NOT NULL
+            AND NOT curr.cycle
+         )
+         SELECT path FROM __loop WHERE cycle
+        """,
+        table=table,
+        field=field,
+    )
+    cr.execute(query)
+    if not cr.rowcount:
+        return
+
+    ids = []
+    done = set()
+    for (cycle,) in cr.fetchall():
+        to_break = min(cycle[: cycle.index(cycle[0], 1)])
+        if to_break not in done:
+            ids.append(to_break)
+        done.update(cycle)
+
+    update_query = format_query(
+        cr,
+        """
+        UPDATE {table}
+           SET {field} = NULL
+         WHERE id IN %s
+     RETURNING id, {name}
+        """,
+        table=table,
+        field=field,
+        name=SQL(get_value_or_en_translation(cr, table, name_field)),
+    )
+    cr.execute(update_query, [tuple(ids)])
+    bad_data = cr.fetchall()
+
+    query = format_query(
+        cr,
+        """
+        SELECT m.{}, f.{}
+          FROM ir_model_fields f
+          JOIN ir_model m
+            ON m.id = f.model_id
+         WHERE m.model = %s
+           AND f.name = %s
+        """,
+        SQL(get_value_or_en_translation(cr, "ir_model", "name")),
+        SQL(get_value_or_en_translation(cr, "ir_model_fields", "field_description")),
+    )
+    cr.execute(query, [model, field])
+    model_label, field_label = cr.fetchone()
+
+    add_to_migration_reports(
+        """
+            <details>
+            <summary>
+                The following {model} were found to be recursive. Their "{field}" field has been reset.
+            </summary>
+              <ul>{li}</ul>
+            </details>
+        """.format(
+            model=html_escape(model_label),
+            field=html_escape(field_label),
+            li="".join("<li>{}</li>".format(get_anchor_link_to_record(model, id_, name)) for id_, name in bad_data),
+        ),
+        format="html",
+        category="Inconsistencies",
+    )
 
 
 def verify_companies(
