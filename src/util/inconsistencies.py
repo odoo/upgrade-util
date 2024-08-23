@@ -6,10 +6,8 @@ from textwrap import dedent
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
-from odoo.tools.misc import str2bool
-
 from .helpers import _validate_model, table_of_model
-from .misc import chunks
+from .misc import chunks, str2bool
 from .pg import get_value_or_en_translation
 from .report import add_to_migration_reports
 
