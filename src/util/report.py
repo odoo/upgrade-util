@@ -231,12 +231,13 @@ def announce(
 
 def get_anchor_link_to_record(model, id, name, action_id=None):
     _validate_model(model)
-    anchor_tag = '<a target="_blank" href="/web?debug=1#view_type=form&amp;model=%s&amp;action=%s&amp;id=%s">%s</a>' % (
-        model,
-        action_id or "",
-        id,
-        html_escape(name),
-    )
+    if version_gte("saas~17.2"):
+        part1 = "action-{}".format(action_id) if action_id else model
+        url = "/odoo/{}/{}?debug=1".format(part1, id)
+    else:
+        url = "/web?debug=1#view_type=form&amp;model={}&amp;action={}&amp;id={}".format(model, action_id or "", id)
+
+    anchor_tag = '<a target="_blank" href="{}">{}</a>'.format(url, html_escape(name))
     if Markup:
         anchor_tag = Markup(anchor_tag)
     return anchor_tag
