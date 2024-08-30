@@ -7,6 +7,7 @@ import re
 
 import odoo
 from odoo import api, release
+from odoo.modules.registry import Registry
 from odoo.tests.common import BaseCase, MetaCase, TransactionCase, get_db_name
 from odoo.tools import config
 from odoo.tools.parse_version import parse_version
@@ -143,7 +144,7 @@ class UpgradeCommon(BaseCase):
             UpgradeCommon.__initialized = True
 
     def _setup_registry(self):
-        self.registry = odoo.registry(get_db_name())
+        self.registry = Registry(get_db_name())
         self._data_table_cr = (
             self.registry.cursor()
         )  # use to commit in upgrade_test_data, dont use it for anything else
