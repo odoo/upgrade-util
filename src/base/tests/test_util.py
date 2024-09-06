@@ -422,6 +422,7 @@ class TestIrExports(UnitTestCase):
                         (0, 0, {"name": "rate_ids/company_id/user_ids/name"}),
                         (0, 0, {"name": "rate_ids/company_id/user_ids/partner_id/user_ids/name"}),
                         (0, 0, {"name": "rate_ids/name"}),
+                        (0, 0, {"name": "rate_ids/company_id/user_ids/partner_id/user_ids/.id"}),
                     ],
                 }
             ]
@@ -437,6 +438,9 @@ class TestIrExports(UnitTestCase):
         self._invalidate()
         self.assertEqual(
             self.export.export_fields[2].name, "rate_ids/company_id/user_ids/partner_id/renamed_user_ids/name"
+        )
+        self.assertEqual(
+            self.export.export_fields[4].name, "rate_ids/company_id/user_ids/partner_id/renamed_user_ids/.id"
         )
 
         util.rename_field(self.cr, "res.users", "name", "new_name")
