@@ -1088,6 +1088,10 @@ def _update_impex_renamed_fields_paths(cr, old_field_name, new_field_name, only_
             continue
         fixed_paths = {}
         for record_id, related_model, path in cr.fetchall():
+            has_id = path[-1] == ".id"
+            if has_id:
+                path = path[:-1]  # noqa: PLW2901
+
             new_path = [
                 new_field_name
                 if field.field_name == old_field_name and field.field_model in only_models
@@ -1095,6 +1099,8 @@ def _update_impex_renamed_fields_paths(cr, old_field_name, new_field_name, only_
                 for field in resolve_model_fields_path(cr, related_model, path)
             ]
             if len(new_path) == len(path) and new_path != path:
+                if has_id:
+                    new_path.append(".id")
                 fixed_paths[record_id] = "/".join(new_path)
         if fixed_paths:
             cr.execute(
