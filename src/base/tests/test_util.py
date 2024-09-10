@@ -310,17 +310,18 @@ class TestAdaptOneDomain(UnitTestCase):
 
 class TestAdaptDomainView(UnitTestCase):
     def test_adapt_domain_view(self):
+        tag = "list" if util.version_gte("saas~17.5") else "tree"
         view_form = self.env["ir.ui.view"].create(
             {
                 "name": "test_adapt_domain_view_form",
                 "model": "res.currency",
-                "arch": """\
+                "arch": f"""\
                 <form>
                   <field name="rate_ids">
-                    <tree>
+                    <{tag}>
                       <field name="company_id" domain="[('email', '!=', False)]"/>
                       <field name="company_id" domain="[('email', 'not like', 'odoo.com')]"/>
-                    </tree>
+                    </{tag}>
                   </field>
                 </form>
             """,
