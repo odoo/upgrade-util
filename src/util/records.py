@@ -1599,6 +1599,7 @@ def ensure_mail_alias_mapping(cr, model, record_xmlid, alias_xmlid, alias_name):
 
 
 def remove_act_window_view_mode(cr, model, view_mode):
+    default = "list,form" if version_gte("saas~17.5") else "tree,form"
     cr.execute(
         """
         WITH upd AS (
@@ -1608,7 +1609,7 @@ def remove_act_window_view_mode(cr, model, view_mode):
                           ARRAY_TO_STRING(ARRAY_REMOVE(STRING_TO_ARRAY(view_mode, ','), %s), ','),
                           '' -- invalid value
                       ),
-                      'tree,form' -- default value
+                      %s -- default value
                    )
              WHERE act.res_model = %s
                AND %s = ANY(STRING_TO_ARRAY(act.view_mode, ','))
@@ -1620,5 +1621,5 @@ def remove_act_window_view_mode(cr, model, view_mode):
               WHERE upd.id = av.act_window_id
                 AND av.view_mode=%s
         """,
-        [view_mode, model, view_mode, view_mode],
+        [view_mode, default, model, view_mode, view_mode],
     )
