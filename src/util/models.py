@@ -9,6 +9,7 @@ import json
 import logging
 import re
 
+from . import spreadsheet
 from .const import ENVIRON
 from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
@@ -214,6 +215,8 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
             category="Removed Models",
         )
 
+    spreadsheet.remove_model_in_all_spreadsheets(cr, model)
+
 
 # compat layer...
 delete_model = remove_model
@@ -343,6 +346,8 @@ def rename_model(cr, old, new, rename_table=True):
                code=regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g')
     """.format(col_prefix=col_prefix, old=old.replace(".", r"\."), new=new)
     )
+
+    spreadsheet.rename_model_in_all_spreadsheets(cr, model, new)
 
 
 def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore_m2m=()):
