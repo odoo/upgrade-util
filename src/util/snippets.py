@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import concurrent
+import contextlib
+import functools
 import logging
 import multiprocessing
 import re
@@ -9,6 +12,9 @@ from lxml import etree, html
 from psycopg2 import sql
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
+
+with contextlib.suppress(ImportError):
+    from odoo import sql_db
 
 from .const import NEARLYWARN
 from .helpers import table_of_model
@@ -219,11 +225,26 @@ class QWebConverter(BaseConverter):
 
 
 class Convertor:
-    def __init__(self, converters, callback):
+    def __init__(self, converters, callback, dbname=None, update_query=None):
         self.converters = converters
         self.callback = callback
+        self.dbname = dbname
+        self.update_query = update_query
+        # when db_name is set update_query must be set also
+        assert not (self.dbname is None) ^ (self.update_query is None)
 
-    def __call__(self, row):
+    def __call__(self, row_or_query):
+        # backwards compatibility: caller passes rows and expects us to return them converted
+        if not self.dbname:
+            return self._convert_row(row_or_query)
+        # improved interface: caller passes a query for us to fetch input rows, convert and update them
+        with sql_db.db_connect(self.dbname).cursor() as cr:
+            cr.execute(row_or_query)
+            for changes in filter(None, map(self._convert_row, cr.fetchall())):
+                cr.execute(self.update_query, changes)
+        return None
+
+    def _convert_row(self, row):
         converters = self.converters
         columns = self.converters.keys()
         converter_callback = self.callback
@@ -243,7 +264,7 @@ class Convertor:
             changes[column] = new_content
             if has_changed:
                 changes["id"] = res_id
-        return changes
+        return changes if "id" in changes else None
 
 
 def convert_html_columns(cr, table, columns, converter_callback, where_column="IS NOT NULL", extra_where="true"):
@@ -281,18 +302,38 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
 
-    extrakwargs = {"mp_context": multiprocessing.get_context("fork")} if sys.version_info >= (3, 7) else {}
-    with ProcessPoolExecutor(max_workers=get_max_workers(), **extrakwargs) as executor:
-        convert = Convertor(converters, converter_callback)
-        for query in log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
-            cr.execute(query)
-            for data in executor.map(convert, cr.fetchall(), chunksize=1000):
-                if "id" in data:
-                    cr.execute(update_query, data)
+    # children cannot borrow from copies of the same pool, it will cause protocol error
+    def init_worker_process():
+        sql_db._Pool = None
+
+    cr.commit()
+    with ProcessPoolExecutor(
+        max_workers=get_max_workers(), initializer=init_worker_process, mp_context=multiprocessing.get_context("fork")
+    ) as executor:
+        convert = Convertor(converters, converter_callback, cr.dbname, update_query)
+        futures = [executor.submit(convert, query) for query in split_queries]
+        for future in log_progress(
+            concurrent.futures.as_completed(futures),
+            logger=_logger,
+            qualifier=f"{table} updates",
+            size=len(split_queries),
+            estimate=False,
+            log_hundred_percent=True,
+        ):
+            # just for raising any worker exception
+            future.result()
+    cr.commit()
+
+
+if sys.version_info < (3, 7):
+
+    @functools.wraps(convert_html_columns)
+    def convert_html_columns(*args, **kwargs):
+        raise RuntimeError("This function only works on python >= 3.7 (Odoo 15 minimum)")
 
 
 def determine_chunk_limit_ids(cr, table, column_arr, where):
-    bytes_per_chunk = 100 * 1024 * 1024
+    bytes_per_chunk = 10 * 1024 * 1024
     columns = ", ".join(quote_ident(column, cr._cnx) for column in column_arr if column != "id")
     cr.execute(
         f"""
