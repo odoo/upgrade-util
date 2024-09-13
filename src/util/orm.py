@@ -612,7 +612,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
         WITH custom_rules AS (
                 SELECT r.id
                   FROM ir_rule r
-             LEFT JOIN ir_model_data d ON d.model = 'ir.rule' AND d.res_id = r.id
+                  JOIN ir_model_data d ON d.model = 'ir.rule' AND d.res_id = r.id
                  WHERE COALESCE(d.module, '') NOT IN %s
                    AND r.active
                  )
