@@ -280,7 +280,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active="a
             )
 
 
-def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=16, key=None):
+def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=16, key=None, website_id=None):
     inherit_id = None
     if inherit_xml_id:
         inherit_id = ref(cr, inherit_xml_id)
@@ -311,6 +311,7 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
             "priority": priority,
             "key": key,
             "arch_db": arch_column_value,
+            "website_id": website_id,
         },
     )
     return cr.fetchone()[0]
