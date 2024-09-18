@@ -4,7 +4,8 @@ import logging
 from .helpers import _validate_table
 from .misc import _cached
 from .models import rename_model
-from .modules import rename_module
+from .modules import odoo, rename_module
+from .orm import env, iter_browse
 from .pg import column_exists, rename_table, table_exists
 from .report import add_to_migration_reports
 
@@ -137,3 +138,66 @@ def reset_cowed_views(cr, xmlid, key=None):
         [key, module, name],
     )
     return set(sum(cr.fetchall(), ()))
+
+
+def translation2jsonb_unofficial_fields(cr):
+    """Convert all translated unofficial fields to jsonb.
+
+    This helper function is designed to run only in an on-premise Odoo instance
+    where any unofficial modules you use are installed, after going through the
+    upgrade to version 16.0.
+
+    It will find all those fields and convert translations from the
+    ``_ir_translation`` table into the new JSONB format.
+
+    Any fields not loaded will be skipped.
+    """
+    cr.execute(
+        """
+        SELECT ARRAY_AGG(name)
+        FROM ir_module_module
+        WHERE author LIKE 'Odoo S.A.'
+        """
+    )
+    official_modules = set(cr.fetchone()[0])
+    cr.execute(
+        """
+        SELECT ARRAY_AGG(id)
+        FROM ir_model_fields
+        WHERE store = TRUE AND translate = TRUE
+        """
+    )
+    env = env(cr)
+    all_migrate_queries, all_cleanup_queries = [], []
+    for ir_field in iter_browse(env["ir.model.fields"], cr.fetchall()[0][0]):
+        # Skip official fields, which were translated already
+        if ir_field.modules and official_modules.intersection(ir_field.modules.split(", ")):
+            continue
+        try:
+            model = env[ir_field.model_id.model]
+            field = model._fields[ir_field.name]
+        except KeyError:
+            _logger.warning(
+                "Field %s in model %s is not loaded; skipping",
+                ir_field.name,
+                ir_field.model_id.model,
+            )
+            continue
+        # Skip DB views or other kind of non-table fields
+        if not table_exists(cr, model._table):
+            continue
+        _logger.info(
+            "Migrating translations for field %s in model %s",
+            ir_field.name,
+            ir_field.model_id.model,
+        )
+        (
+            migrate_queries,
+            cleanup_queries,
+        ) = odoo.tools.translate._get_translation_upgrade_queries(cr, field)
+        all_migrate_queries.extend(migrate_queries)
+        all_cleanup_queries.extend(cleanup_queries)
+    for query in all_migrate_queries:
+        cr.execute(query)
+    for query in all_cleanup_queries:
+        cr.execute(query)
