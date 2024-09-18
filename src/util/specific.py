@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from psycopg2 import sql
+
 from .helpers import _validate_table
 from .misc import _cached
 from .models import rename_model
-from .modules import rename_module
-from .pg import column_exists, rename_table, table_exists
+from .modules import odoo, rename_module
+from .orm import env
+from .pg import column_exists, parallel_execute, rename_table, table_exists
 from .report import add_to_migration_reports
 
 _logger = logging.getLogger(__name__)
@@ -137,3 +140,79 @@ def reset_cowed_views(cr, xmlid, key=None):
         [key, module, name],
     )
     return set(sum(cr.fetchall(), ()))
+
+
+def translation2jsonb_all_missing(cr):
+    """Convert all missing translated fields to jsonb.
+
+    This helper function is designed to run only in an on-premise Odoo instance
+    where any unofficial modules you use are installed, after going through the
+    upgrade to version 16.0.
+
+    It will find all unofficial fields and convert translations from the
+    ``_ir_translation`` table into the new JSONB format.
+
+    Modules must be available in the environment to be loaded.
+
+    :return: Converted fields.
+    """
+    _env = env(cr)
+    fields = []
+    cr.execute(
+        """
+        SELECT STRING_TO_ARRAY(name, ','), ARRAY_AGG(DISTINCT lang)
+        FROM _ir_translation
+        WHERE
+            type IN ('model', 'model_terms')
+            AND name LIKE '%,%'
+            AND lang != 'en_US'
+        GROUP BY name
+        """
+    )
+    for (mname, fname), langs in cr.fetchall():
+        try:
+            model = _env[mname]
+            field = model._fields[fname]
+        except KeyError:
+            continue
+        if (
+            not model._auto
+            or model._abstract
+            or model._transient
+            or not field.store
+            or not field.translate
+            or field.manual
+        ):
+            continue
+        # Check if the field is already converted
+        cr.execute(
+            sql.SQL("SELECT 1 FROM {} WHERE {} ?| %s LIMIT 1").format(
+                sql.Identifier(model._table), sql.Identifier(fname)
+            ),
+            (langs,),
+        )
+        if not cr.rowcount:
+            fields.append(field)
+    return translation2jsonb(cr, *fields)
+
+
+def translation2jsonb(cr, *fields):
+    """Convert selected translated fields to jsonb.
+
+    Migrates translations for chosen fields, from the ``_ir_translation`` table
+    into the new JSONB format.
+
+    :param odoo.fields.Field fields: Fields to convert.
+    :return: Converted fields.
+    """
+    all_cleanup_queries = []
+    for field in fields:
+        _logger.info("Migrating translations for field %s in model %s", field.name, field.model_name)
+        (
+            migrate_queries,
+            cleanup_queries,
+        ) = odoo.tools.translate._get_translation_upgrade_queries(cr, field)
+        all_cleanup_queries.extend(cleanup_queries)
+        parallel_execute(cr, migrate_queries)
+    parallel_execute(cr, all_cleanup_queries)
+    return fields
