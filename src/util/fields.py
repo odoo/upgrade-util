@@ -19,6 +19,11 @@ from psycopg2 import sql
 from psycopg2.extras import Json
 
 try:
+    from odoo import modules
+except ImportError:
+    from openerp import modules
+
+try:
     from odoo import release
     from odoo.osv import expression
     from odoo.tools.misc import mute_logger
@@ -1149,17 +1154,23 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
     col_prefix = ""
     if not column_exists(cr, "ir_act_server", "condition"):
         col_prefix = "--"  # sql comment the line
-
+    standard_modules = set(modules.get_modules()) | {"__upgrade__"}
     q = """
-        SELECT id, {name}
-          FROM ir_act_server
-         WHERE state = 'code'
-           AND (code ~ %(old_pattern)s
-                {col_prefix} OR condition ~ %(old)s
+        SELECT a.id, a.{name}
+          FROM ir_act_server a
+     LEFT JOIN ir_model_data d
+            ON d.res_id = a.id
+           AND d.model = 'ir.actions.server'
+         WHERE a.state = 'code'
+           AND (a.code ~ %(old_pattern)s
+                {col_prefix} OR a.condition ~ %(old)s
                )
-    """
-
-    cr.execute(q.format(col_prefix=col_prefix, name=get_value_or_en_translation(cr, "ir_act_server", "name")), p)
+           AND (  d.module IS NULL -- custom action
+               OR d.module NOT IN %(standard_modules)s
+               OR (d.module IN %(standard_modules)s AND d.noupdate)
+               )
+    """.format(col_prefix=col_prefix, name=get_value_or_en_translation(cr, "ir_act_server", "name"))
+    cr.execute(q, {"old_pattern": p["old_pattern"], "old": p["old"], "standard_modules": tuple(standard_modules)})
     if cr.rowcount:
         li = "".join(
             "<li>{}</li>".format(get_anchor_link_to_record("ir.actions.server", aid, aname))
@@ -1173,6 +1184,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
 <details>
   <summary>
     {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions may need update.
+    If the server action is a standard one and you haven't made any modifications, you may ignore them.
   </summary>
   <ul>{li}</ul>
 </details>
