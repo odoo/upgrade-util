@@ -122,8 +122,8 @@ def indirect_references(cr, bound_only=False):
                AND ttype = 'many2one'
             """,
         )
-        for table_name, column_name, comodel_name in cr.fetchall():
-            yield IR(table_name, None, column_name, company_dependent_comodel=comodel_name)
+        for model_name, column_name, comodel_name in cr.fetchall():
+            yield IR(table_of_model(cr, model_name), None, column_name, company_dependent_comodel=comodel_name)
 
     # XXX Once we will get the model field of `many2one_reference` fields in the database, we should get them also
     # (and filter the one already hardcoded)
