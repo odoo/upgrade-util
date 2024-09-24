@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from operator import itemgetter
 
 import lxml
+from psycopg2 import sql
 from psycopg2.extras import Json, execute_values
 
 try:
@@ -414,28 +415,33 @@ def remove_records(cr, model, ids):
             query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
             cr.execute(query, [model, ids])
         elif ir.company_dependent_comodel == model:
+            json_path = cr.mogrify(
+                "$.* ? ({})".format(" || ".join(["@ == %s"] * len(ids))),
+                ids,
+            ).decode()
+
             query = cr.mogrify(
                 format_query(
                     cr,
                     """
                     UPDATE {table}
-                    SET {column} = (
-                        SELECT jsonb_object_agg(
-                            key,
-                            CASE
-                                WHEN value::int4 IN %s THEN NULL
-                                ELSE value::int4
-                            END)
-                        FROM jsonb_each_text({column})
-                    )
-                    WHERE {column} IS NOT NULL
-                    AND {column} @? %s
-                    AND {{parallel_filter}}
+                       SET {column} = (
+                            SELECT jsonb_object_agg(
+                                key,
+                                CASE
+                                    WHEN value::int4 IN %s THEN NULL
+                                    ELSE value::int4
+                                END)
+                              FROM jsonb_each_text({column})
+                           )
+                     WHERE {column} IS NOT NULL
+                       AND {column} @? {json_path}
                     """,
                     table=ir.table,
                     column=ir.res_id,
+                    json_path=sql.Literal(json_path),
                 ),
-                [ids, "$.* ? ({})".format(" || ".join(map("@ == {}".format, ids)))],
+                [ids],
             ).decode()
             explode_execute(cr, query, table=ir.table)
     _rm_refs(cr, model, ids)
@@ -1469,23 +1475,28 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         if ir.company_dependent_comodel:
             if ir.company_dependent_comodel == model_src:
                 assert model_src == model_dst
+                json_path = cr.mogrify(
+                    "$.* ? ({})".format(" || ".join(["@ == %s"] * len(id_mapping))),
+                    list(id_mapping),
+                ).decode()
+
                 query = cr.mogrify(
                     format_query(
                         cr,
                         """
                         UPDATE {table}
                            SET {column} = (
-                                   SELECT jsonb_object_agg(key, COALESCE((%s::jsonb->>value)::int, value::int))
+                                   SELECT jsonb_object_agg(key, COALESCE(((jsonb_object(%s::text[]))->>value)::int, value::int))
                                    FROM jsonb_each_text({column})
                                )
                          WHERE {column} IS NOT NULL
-                           AND {column} @? %s
-                           AND {{parallel_filter}}
+                           AND {column} @? {json_path}
                         """,
                         table=ir.table,
                         column=ir.res_id,
+                        json_path=sql.Literal(json_path),
                     ),
-                    [Json(id_mapping), "$.* ? ({})".format(" || ".join(map("@ == {}".format, id_mapping)))],
+                    [list(map(list, id_mapping.items()))],
                 ).decode()
                 explode_execute(cr, query, table=ir.table)
             continue
