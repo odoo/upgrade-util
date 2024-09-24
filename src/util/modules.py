@@ -506,7 +506,7 @@ def merge_module(cr, old, into, update_dependers=True):
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", [old])
     cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_ids[old]])
     if state in INSTALLED_MODULE_STATES:
-        force_install_module(cr, into, reason="installed {!r} module has been merged into it".format(old))
+        _force_install_module(cr, into, reason="installed {!r} module has been merged into it".format(old))
 
 
 def force_install_module(cr, module, if_installed=None, reason="it has been explicitly asked for"):
@@ -516,8 +516,19 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
     :param str module: name of the module to install
     :param list(str) or None if_installed: only force the install when these modules are
                                            already installed
-    :return str: the *new* state of the module
     """
+    if version_gte("saas~14.5"):
+        # We must delay until the modules actually exists. They are added by the auto discovery process.
+        if not if_installed or modules_installed(cr, *if_installed):
+            ENVIRON["__modules_auto_discovery_force_installs"].add((module, reason))
+    else:
+        _force_install_module(cr, module, if_installed, reason)
+
+
+def _force_install_module(cr, module, if_installed=None, reason="it has been explicitly asked for"):
+    # Low level implementation
+    # Needs the module to exist in the database
+    _assert_modules_exists(cr, module, *if_installed or ())
     subquery = ""
     params = [module]
     if if_installed:
@@ -622,7 +633,7 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
         for (mod,) in cr.fetchall():
-            force_install_module(
+            _force_install_module(
                 cr,
                 mod,
                 reason=(
@@ -669,7 +680,7 @@ def new_module_dep(cr, module, new_dep):
     if mod_state in INSTALLED_MODULE_STATES:
         # Module was installed, need to install all its deps, recursively,
         # to make sure the new dep is installed
-        force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
+        _force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
 
 
 def remove_module_deps(cr, module, old_deps):
@@ -776,7 +787,7 @@ def trigger_auto_install(cr, module):
 
     cr.execute(query, [module, INSTALLED_MODULE_STATES])
     if cr.rowcount:
-        force_install_module(cr, module, reason="it's an auto install module and all its dependencies are installed")
+        _force_install_module(cr, module, reason="it's an auto install module and all its dependencies are installed")
         return True
     return False
 
@@ -902,6 +913,7 @@ def _force_upgrade_of_fresh_module(cr, module, init, version):
     # Low level implementation
     # Force module state to be in `to upgrade`.
     # Needed for migration script execution. See http://git.io/vnF7f
+    _assert_modules_exists(cr, module)
     state = "to install" if init and version_gte("saas~18.2") else "to upgrade"
     cr.execute(
         """
@@ -972,8 +984,9 @@ def _trigger_auto_discovery(cr):
             _set_module_countries(cr, module, countries)
             module_auto_install(cr, module, auto_install)
 
-        if module in force_installs:
-            force_install_module(cr, module)
+    for module, reason in force_installs:
+        reason_kw = {"reason": reason} if reason else {}
+        _force_install_module(cr, module, **reason_kw)
 
     for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
         _force_upgrade_of_fresh_module(cr, module, init, version)
@@ -986,7 +999,7 @@ def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
     # The actual auto discovery is delayed in `base/0.0.0/post-modules-auto-discovery.py`
 
     if force_installs:
-        ENVIRON["__modules_auto_discovery_force_installs"].update(force_installs)
+        ENVIRON["__modules_auto_discovery_force_installs"].update([(module, None) for module in force_installs])
     if force_upgrades:
         version = _caller_version()
         ENVIRON["__modules_auto_discovery_force_upgrades"].update(dict.fromkeys(force_upgrades, (False, version)))
