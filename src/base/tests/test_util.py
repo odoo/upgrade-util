@@ -773,6 +773,34 @@ class TestPG(UnitTestCase):
         self.addCleanup(cr.close)
         return cr
 
+    def test_explode_format_parallel_filter(self):
+        cr = self._get_cr()
+
+        cr.execute("SELECT MIN(id) FROM res_users")
+        min_id = cr.fetchone()[0]
+
+        q1 = "SELECT '{} {0} {x} {x:*^30d} {x.a.b} {x[0]}, {x[1]!s:*^30} {{x}}' FROM res_users"
+        q2 = "SELECT '{} {0} {x} {x:*^30d} {x.a.b} {x[0]}, {x[1]!s:*^30} {{x}}' FROM res_users WHERE {parallel_filter}"
+        expected_out = q1 + f" WHERE res_users.id BETWEEN {min_id} AND {min_id}"
+
+        out1 = util.explode_query_range(
+            cr,
+            q1,
+            table="res_users",
+            bucket_size=1,
+            format=False,
+        )[0]
+        self.assertEqual(out1, expected_out)
+
+        out2 = util.explode_query_range(
+            cr,
+            q2,
+            table="res_users",
+            bucket_size=1,
+            format=False,
+        )[0]
+        self.assertEqual(out2, expected_out)
+
     def test_explode_mult_filters(self):
         cr = self._get_cr()
         queries = util.explode_query_range(
