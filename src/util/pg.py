@@ -260,7 +260,7 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
-def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, prefix=None):
+def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, prefix=None, format=True):
     """
     Explode a query to multiple queries that can be executed in parallel.
 
@@ -335,16 +335,27 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         # Still, since the query may only be valid if there is no split, we force the usage of `prefix` in the query to
         # validate its correctness and avoid scripts that pass the CI but fail in production.
         parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
-        return [query.format(parallel_filter=parallel_filter)]
+        return [
+            (
+                query.format(parallel_filter=parallel_filter)
+                if format
+                else query.replace("{parallel_filter}", parallel_filter)
+            )
+        ]
 
     parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
-    query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
+
+    query = query.replace("%", "%%")
+    query = (
+        query.format(parallel_filter=parallel_filter) if format else query.replace("{parallel_filter}", parallel_filter)
+    )
+
     return [
         cr.mogrify(query, {"lower-bound": ids[i], "upper-bound": ids[i + 1] - 1}).decode() for i in range(len(ids) - 1)
     ]
 
 
-def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, logger=_logger):
+def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, logger=_logger, format=True):
     """
     Execute a query in parallel.
 
@@ -376,6 +387,8 @@ def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZ
     :param int bucket_size: size of the buckets of ids to split the processing
     :param logger: logger used to report the progress
     :type logger: :class:`logging.Logger`
+    :param bool format: whether to use `.format` (instead of `.replace`) to replace the parallel filter,
+                        setting it to `False` can prevent issues with hard-coded curly braces.
     :return: the sum of `cr.rowcount` for each query run
     :rtype: int
 
@@ -387,7 +400,7 @@ def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZ
     """
     return parallel_execute(
         cr,
-        explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size),
+        explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size, format=format),
         logger=logger,
     )
 
