@@ -815,28 +815,31 @@ class TestField(UnitTestCase):
         with self.assertRaises(ValueError):
             util.invert_boolean_field(cr, "res.partner", "name", "nom")
 
+        model, old_name, new_name = "ir.model.access", "perm_unlink", "perm_delete"
+        table = util.table_of_model(cr, model)
+
         fltr = self.env["ir.filters"].create(
-            {"name": "test", "model_id": "ir.model.data", "domain": "[('noupdate', '=', True)]"}
+            {"name": "test", "model_id": model, "domain": str([(old_name, "=", True)])}
         )
 
         query = """
-            SELECT {0}, count(*)
-              FROM ir_model_data
-          GROUP BY {0}
+            SELECT {1}, count(*)
+              FROM {0}
+          GROUP BY {1}
         """
 
-        cr.execute(util.format_query(cr, query, "noupdate"))
+        cr.execute(util.format_query(cr, query, table, old_name))
         initial_repartition = dict(cr.fetchall())
 
         # util.parallel_execute will `commit` the cursor and create new ones
         # as we are in a test, we should not commit as we are in a subtransaction
         with mock.patch.object(cr, "commit", lambda: ...):
-            util.invert_boolean_field(cr, "ir.model.data", "noupdate", "yesupdate")
+            util.invert_boolean_field(cr, model, old_name, new_name)
 
         util.invalidate(fltr)
-        self.assertEqual(literal_eval(fltr.domain), ["!", ("yesupdate", "=", True)])
+        self.assertEqual(literal_eval(fltr.domain), ["!", (new_name, "=", True)])
 
-        cr.execute(util.format_query(cr, query, "yesupdate"))
+        cr.execute(util.format_query(cr, query, table, new_name))
         inverted_repartition = dict(cr.fetchall())
 
         self.assertEqual(inverted_repartition[False], initial_repartition[True])
@@ -845,19 +848,19 @@ class TestField(UnitTestCase):
 
         # rename back
         with mock.patch.object(cr, "commit", lambda: ...):
-            util.rename_field(cr, "ir.model.data", "yesupdate", "noupdate")
+            util.rename_field(cr, model, new_name, old_name)
 
         util.invalidate(fltr)
-        self.assertEqual(literal_eval(fltr.domain), ["!", ("noupdate", "=", True)])
+        self.assertEqual(literal_eval(fltr.domain), ["!", (old_name, "=", True)])
 
         # invert with same name; will invert domains and data
         with mock.patch.object(cr, "commit", lambda: ...):
-            util.invert_boolean_field(cr, "ir.model.data", "noupdate", "noupdate")
+            util.invert_boolean_field(cr, model, old_name, old_name)
 
         util.invalidate(fltr)
-        self.assertEqual(literal_eval(fltr.domain), ["!", "!", ("noupdate", "=", True)])
+        self.assertEqual(literal_eval(fltr.domain), ["!", "!", (old_name, "=", True)])
 
-        cr.execute(util.format_query(cr, query, "noupdate"))
+        cr.execute(util.format_query(cr, query, table, old_name))
         back_repartition = dict(cr.fetchall())
 
         # merge None into False in the initial repartition
