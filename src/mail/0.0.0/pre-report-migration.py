@@ -8,8 +8,10 @@ except ImportError:
     def model_cr(f):
         return f
 
-
-from odoo.addons.mail.models.mail_message import Message  # noqa
+try:
+    from odoo.addons.mail.models.mail_message import Message  # noqa
+except ImportError:
+    from odoo.addons.mail.models.mail_message import MailMessage  # noqa
 
 from odoo.addons.base.maintenance.migrations import util
 
@@ -19,7 +21,7 @@ def migrate(cr, version):
 
 
 class MailMessage(models.Model):
-    _inherit = "mail.message"
+    _inherit = ["mail.message"]
     _module = "mail"
 
     @model_cr
