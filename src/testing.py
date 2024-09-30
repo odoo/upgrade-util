@@ -15,6 +15,12 @@ try:
     from odoo.tests.common import MetaCase
 except ImportError:
     MetaCase = None
+
+try:
+    from odoo.api import SUPERUSER_ID
+except ImportError:
+    from odoo import SUPERUSER_ID
+
 try:
     from unittest.mock import patch
 except ImportError:
@@ -177,7 +183,7 @@ class UpgradeCommon(BaseCase):
         super().setUp()
         self._setup_registry()
         self.cr = self.registry.cursor()
-        self.env = api.Environment(self.cr, odoo.SUPERUSER_ID, {})
+        self.env = api.Environment(self.cr, SUPERUSER_ID, {})
         self.addCleanup(self.env.clear)
         self.addCleanup(self.cr.close)
 

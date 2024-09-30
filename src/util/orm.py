@@ -22,8 +22,12 @@ except ImportError:
     from mock import patch
 
 try:
-    from odoo import SUPERUSER_ID, modules, release
+    try:
+        from odoo.api import SUPERUSER_ID
+    except ImportError:
+        from odoo import SUPERUSER_ID
     from odoo import fields as ofields
+    from odoo import modules, release
 except ImportError:
     from openerp import SUPERUSER_ID, modules, release
 
