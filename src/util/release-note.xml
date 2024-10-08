@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<t t-name="mail.release_note">
+  <span>Hello,</span>
+  <span>Your database has successfully been upgraded to the latest version 🥳.</span>
+  <br/>
+  <t t-if="odoo_showcase_video_id">
+    <br/>
+    <a t-attf-href="https://www.youtube.com/watch?v={{ odoo_showcase_video_id }}" target="_blank">
+      <b>Meet Odoo <t t-esc="major_version"/>.<t t-esc="minor_version"/> now !</b>
+      <div class="card shadow-sm yt-container" style="max-height: 360px; max-width: 640px">
+          <img t-attf-src="https://img.youtube.com/vi/{{ odoo_showcase_video_id }}/maxresdefault.jpg"/>
+      </div>
+    </a>
+  </t>
+  <br/>
+  <p t-if="int(minor_version) == 0">Want to know more? Check out the full <a t-attf-href="https://www.odoo.com/odoo-{{ major_version }}-release-notes">release note</a>.</p>
+  <p t-elif="int(minor_version) >= 0">Want to know more? Check out the full <a t-attf-href="https://www.odoo.com/odoo-{{ major_version }}-{{ minor_version }}-release-notes">release note</a>.</p>
+  <p t-else=""></p>
+</t>

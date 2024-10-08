@@ -24,6 +24,7 @@ class MailMessage(models.Model):
 
     @model_cr
     def _register_hook(self):
+        util.announce_release_note(self.env.cr)
         if len(util.migration_reports):
             util.announce_migration_report(self.env.cr)
         return super(MailMessage, self)._register_hook()
