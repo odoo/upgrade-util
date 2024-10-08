@@ -66,6 +66,14 @@ from .orm import env, get_admin_channel, guess_admin_id
 migration_reports = {}
 _logger = logging.getLogger(__name__)
 
+ODOO_SHOWCASE_VIDEOS = {
+    "18.0": "gbE3azm_Io0",
+    "saas~17.4": "8F4-uDwom8A",
+    "saas~17.2": "ivjgo_2-wkE",
+    "17.0": "qxb74CMR748",
+    "16.0": "RVFZL3D9plg",
+}
+
 
 def add_to_migration_reports(message, category="Other", format="text"):
     assert format in {"text", "html", "md", "rst"}
@@ -82,6 +90,25 @@ def add_to_migration_reports(message, category="Other", format="text"):
     migration_reports.setdefault(category, []).append((message, raw))
 
 
+def announce_release_note(cr):
+    filepath = os.path.join(os.path.dirname(__file__), "release-note.xml")
+    with open(filepath, "rb") as fp:
+        contents = fp.read()
+        report = lxml.etree.fromstring(contents)
+    e = env(cr)
+    major_version, minor_version = re.findall(r"\d+", release.major_version)
+    values = {
+        "version": release.major_version,
+        "major_version": major_version,
+        "minor_version": minor_version,
+        "odoo_showcase_video_id": ODOO_SHOWCASE_VIDEOS.get(release.major_version, ""),
+    }
+    _logger.info("Rendering release note for version %s", release.version)
+    render = e["ir.qweb"].render if hasattr(e["ir.qweb"], "render") else e["ir.qweb"]._render
+    message = render(report, values=values)
+    _announce_to_db(cr, message, to_admin_only=False)
+
+
 def announce_migration_report(cr):
     filepath = os.path.join(os.path.dirname(__file__), "report-migration.xml")
     with open(filepath, "rb") as fp:
@@ -90,27 +117,35 @@ def announce_migration_report(cr):
             contents = contents.replace(b"t-raw", b"t-out")
         report = lxml.etree.fromstring(contents)
     e = env(cr)
+    major_version, minor_version = re.findall(r"\d+", release.major_version)
     values = {
         "action_view_id": e.ref("base.action_ui_view").id,
-        "major_version": release.major_version,
+        "version": release.major_version,
+        "major_version": major_version,
+        "minor_version": minor_version,
         "messages": migration_reports,
         "get_anchor_link_to_record": get_anchor_link_to_record,
     }
     _logger.info(migration_reports)
     render = e["ir.qweb"].render if hasattr(e["ir.qweb"], "render") else e["ir.qweb"]._render
     message = render(report, values=values)
+    _announce_to_db(cr, message)
+    # To avoid posting multiple time the same messages in case this method is called multiple times.
+    migration_reports.clear()
+
+
+def _announce_to_db(cr, message, to_admin_only=True):
+    """Send a rendered message to the database via mail channel."""
     if not isinstance(message, basestring):
         message = message.decode("utf-8")
     if message.strip():
         message = message.replace("{", "{{").replace("}", "}}")
         kw = {}
         # If possible, post the migration report message to administrators only.
-        admin_channel = get_admin_channel(cr)
-        if admin_channel:
-            kw["recipient"] = admin_channel
+        recipient = get_admin_channel(cr) if to_admin_only else None
+        if recipient:
+            kw["recipient"] = recipient
         announce(cr, release.major_version, message, format="html", header=None, footer=None, **kw)
-    # To avoid posting multiple time the same messages in case this method is called multiple times.
-    migration_reports.clear()
 
 
 def rst2html(rst):
