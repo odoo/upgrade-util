@@ -143,7 +143,12 @@ def uninstall_module(cr, module):
     )
 
     # delete data
-    model_ids, field_ids, menu_ids, server_action_ids = [], [], [], []
+    model_ids, field_ids, menu_ids = [], [], []
+
+    # some models' data needs to be remove before or after others.
+    firsts = ["ir.rule"]
+    lasts = ["ir.actions.server"]
+
     cr.execute(
         """
             SELECT model, res_id
@@ -156,9 +161,11 @@ def uninstall_module(cr, module):
                                   AND module != d.module)
                AND module = %s
                AND model != 'ir.module.module'
-          ORDER BY id DESC
+          ORDER BY array_position(%s::text[], model::text) NULLS LAST,
+                   array_position(%s::text[], model::text) NULLS FIRST,
+                   id DESC
     """,
-        [module],
+        [module, firsts, lasts],
     )
     to_group = []
     for model, res_id in cr.fetchall():
@@ -168,8 +175,6 @@ def uninstall_module(cr, module):
             field_ids.append(res_id)
         elif model == "ir.ui.menu":
             menu_ids.append(res_id)
-        elif model == "ir.actions.server":
-            server_action_ids.append(res_id)
         else:
             to_group.append((model, res_id))
 
@@ -179,8 +184,6 @@ def uninstall_module(cr, module):
                 remove_view(cr, view_id=res_id, silent=True)
         else:
             remove_records(cr, model, [it[1] for it in group])
-    if server_action_ids:
-        remove_records(cr, "ir.actions.server", server_action_ids)
 
     if menu_ids:
         remove_menus(cr, menu_ids)
