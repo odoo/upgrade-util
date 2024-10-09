@@ -177,6 +177,11 @@ def uninstall_module(cr, module):
         if model == "ir.ui.view":
             for _, res_id in group:
                 remove_view(cr, view_id=res_id, silent=True)
+        elif model == "res.groups":
+            group_ids = [it[1] for it in group]
+            if group_ids:
+                cr.execute("DELETE FROM rule_group_rel WHERE group_id in %s", group_ids)
+            remove_records(cr, model, group_ids)
         else:
             remove_records(cr, model, [it[1] for it in group])
     if server_action_ids:
