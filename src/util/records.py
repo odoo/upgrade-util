@@ -639,17 +639,22 @@ def remove_menus(cr, menu_ids):
             SELECT m.id
               FROM ir_ui_menu m
               JOIN tree t ON (m.parent_id = t.id)
+        ),
+        removed_menus AS (
+            DELETE
+              FROM ir_ui_menu m
+             USING tree t
+             WHERE m.id = t.id
+         RETURNING m.id
         )
-        DELETE FROM ir_ui_menu m
-              USING tree t
-              WHERE m.id = t.id
-          RETURNING m.id
-    """,
+        DELETE
+          FROM ir_model_data imd
+         USING removed_menus m
+         WHERE imd.res_id = m.id
+           AND imd.model = 'ir.ui.menu'
+        """,
         [tuple(menu_ids)],
     )
-    ids = tuple(x[0] for x in cr.fetchall())
-    if ids:
-        cr.execute("DELETE FROM ir_model_data WHERE model='ir.ui.menu' AND res_id IN %s", [ids])
 
 
 def remove_group(cr, xml_id=None, group_id=None):
