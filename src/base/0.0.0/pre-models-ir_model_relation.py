@@ -15,7 +15,8 @@ def migrate(cr, version):
 
 
 class ModelRelation(models.Model):
-    _inherit = "ir.model.relation"
+    _name = "ir.model.relation"
+    _inherit = ["ir.model.relation"]
     _module = "base"
 
     @api.model
