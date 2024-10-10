@@ -23,7 +23,7 @@ except ImportError:
     from openerp.tools.misc import file_open
 
 from .const import NEARLYWARN
-from .exceptions import MigrationError
+from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import (
     _get_theme_models,
     _ir_values_value,
@@ -372,6 +372,49 @@ def remove_record(cr, name):
         return remove_group(cr, group_id=res_id)
 
     return remove_records(cr, model, [res_id])
+
+
+def remove_records_batch(cr, module, names):
+    """
+    Remove records and their references in batches.
+
+    The records to remove are those corresponding to the
+    :term:`xml_id <external identifier>` formed by the given `module` and one of
+    the provided `names`.
+
+    :param str module: name of the module, whose records must be removed
+    :param list(str) names: identifiers of the records to be removed
+    """
+    if isinstance(names, str):
+        names = [names]
+    elif isinstance(names, tuple):
+        names = list(names)
+
+    if not isinstance(names, list):
+        raise SleepyDeveloperError("The provided value for `names` is not in a supported format: {}".format(names))
+
+    cr.execute(
+        """
+        SELECT ARRAY_AGG(res_id), model
+          FROM ir_model_data
+         WHERE module = %s
+           AND name = ANY(%s)
+         GROUP BY model
+        """,
+        [module, names],
+    )
+
+    for ids, model in cr.fetchall():
+        if model == "ir.ui.view":
+            for id in ids:
+                remove_view(cr, view_id=id)
+        elif model == "ir.ui.menu":
+            remove_menus(cr, ids)
+        elif model == "res.groups":
+            for id in ids:
+                remove_group(cr, group_id=id)
+        else:
+            remove_records(cr, model, ids)
 
 
 def remove_records(cr, model, ids):
