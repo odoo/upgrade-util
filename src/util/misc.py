@@ -435,5 +435,8 @@ class SelfPrintEvalContext(collections.defaultdict):
     def __init__(self, *args, **kwargs):
         super(SelfPrintEvalContext, self).__init__(None, *args, **kwargs)
 
+    def copy(self):
+        return self
+
     def __missing__(self, key):
         return SelfPrint(key)
