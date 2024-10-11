@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import concurrent
+import contextlib
 import inspect
 import logging
 import re
@@ -10,6 +12,9 @@ from lxml import etree, html
 from psycopg2 import sql
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
+
+with contextlib.suppress(ImportError):
+    from odoo.sql_db import db_connect
 
 from .const import NEARLYWARN
 from .exceptions import MigrationError
@@ -243,11 +248,19 @@ class QWebConverter(BaseConverter):
 
 
 class Convertor:
-    def __init__(self, converters, callback):
+    def __init__(self, converters, callback, dbname, update_query):
         self.converters = converters
         self.callback = callback
+        self.dbname = dbname
+        self.update_query = update_query
 
-    def __call__(self, row):
+    def __call__(self, query):
+        with db_connect(self.dbname).cursor() as cr:
+            cr.execute(query)
+            for changes in filter(None, map(self._convert_row, cr.fetchall())):
+                cr.execute(self.update_query, changes)
+
+    def _convert_row(self, row):
         converters = self.converters
         columns = self.converters.keys()
         converter_callback = self.callback
@@ -267,7 +280,7 @@ class Convertor:
             changes[column] = new_content
             if has_changed:
                 changes["id"] = res_id
-        return changes
+        return changes if "id" in changes else None
 
 
 def convert_html_columns(cr, table, columns, converter_callback, where_column="IS NOT NULL", extra_where="true"):
@@ -305,17 +318,25 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
 
+    cr.commit()
     with ProcessPoolExecutor(max_workers=get_max_workers()) as executor:
-        convert = Convertor(converters, converter_callback)
-        for query in log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
-            cr.execute(query)
-            for data in executor.map(convert, cr.fetchall(), chunksize=1000):
-                if "id" in data:
-                    cr.execute(update_query, data)
+        convert = Convertor(converters, converter_callback, cr.dbname, update_query)
+        futures = [executor.submit(convert, query) for query in split_queries]
+        for future in log_progress(
+            concurrent.futures.as_completed(futures),
+            logger=_logger,
+            qualifier=f"{table} updates",
+            size=len(split_queries),
+            estimate=False,
+            log_hundred_percent=True,
+        ):
+            # just for raising any worker exception
+            future.result()
+    cr.commit()
 
 
 def determine_chunk_limit_ids(cr, table, column_arr, where):
-    bytes_per_chunk = 100 * 1024 * 1024
+    bytes_per_chunk = 10 * 1024 * 1024
     columns = ", ".join(quote_ident(column, cr._cnx) for column in column_arr if column != "id")
     cr.execute(
         f"""
