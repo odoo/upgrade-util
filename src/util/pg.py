@@ -223,6 +223,10 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
         prefix = ""
 
     if "{parallel_filter}" not in query:
+        if re.search(r"\bOR\b", query, re.I):
+            _logger.getChild("explode_query").warning(
+                "`OR` found in the query. Please explicitly include the `{parallel_filter}` placeholder in the query."
+            )
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
 
@@ -253,6 +257,10 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
     alias = alias or table
 
     if "{parallel_filter}" not in query:
+        if re.search(r"\bOR\b", query, re.I):
+            _logger.getChild("explode_query_range").warning(
+                "`OR` found in the query. Please explicitly include the `{parallel_filter}` placeholder in the query."
+            )
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
 
