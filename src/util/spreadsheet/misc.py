@@ -1,4 +1,4 @@
-import json
+from .. import json
 
 
 def iter_commands(cr, like_all=(), like_any=()):

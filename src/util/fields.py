@@ -9,7 +9,6 @@ dropped.
 """
 
 import base64
-import json
 import logging
 import re
 import warnings
@@ -42,6 +41,7 @@ except ImportError:
         return "%s_%s_index" % (table_name, column_name)
 
 
+from . import json
 from .const import ENVIRON
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
 from .exceptions import SleepyDeveloperError

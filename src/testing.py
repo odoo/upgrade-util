@@ -1,6 +1,5 @@
 import functools
 import inspect
-import json
 import logging
 import os
 import re
@@ -18,6 +17,7 @@ except ImportError:
     from mock import patch
 
 from . import util
+from .util import json
 
 _logger = logging.getLogger(__name__)
 

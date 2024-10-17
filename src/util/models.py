@@ -5,10 +5,10 @@ Utility functions for modifying models.
 Model operations are best done in `pre-` script of the involved modules.
 """
 
-import json
 import logging
 import re
 
+from . import json
 from .const import ENVIRON
 from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
