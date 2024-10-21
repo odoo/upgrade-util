@@ -636,7 +636,10 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     # For Odoo <= 12.0.
     # From 13.0, there is a model `ir.model.fields.selection` holding the values,
     # and `ir.model.fields.selection` becomes a computed field.
-    if not env.registry["ir.model.fields"]._fields["selection"].compute:
+    if (
+        "selection" in env.registry["ir.model.fields"]._fields
+        and not env.registry["ir.model.fields"]._fields["selection"].compute
+    ):
         env.cr.execute(
             """
                UPDATE ir_model_fields
