@@ -13,6 +13,11 @@ from odoo.tools import config
 from odoo.tools.parse_version import parse_version
 
 try:
+    from odoo.api import SUPERUSER_ID
+except ImportError:
+    from odoo import SUPERUSER_ID
+
+try:
     from unittest.mock import patch
 except ImportError:
     from mock import patch
@@ -154,7 +159,7 @@ class UpgradeCommon(BaseCase):
         super().setUp()
         self._setup_registry()
         self.cr = self.registry.cursor()
-        self.env = api.Environment(self.cr, odoo.SUPERUSER_ID, {})
+        self.env = api.Environment(self.cr, SUPERUSER_ID, {})
         self.addCleanup(self.env.clear)
         self.addCleanup(self.cr.close)
 
