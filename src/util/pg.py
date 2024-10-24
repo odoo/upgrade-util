@@ -398,14 +398,17 @@ def pg_text2html(s, wrap="p"):
         CASE WHEN TRIM(COALESCE({src}, '')) ~ '^<.+</\w+>$' THEN {src}
              ELSE CONCAT(
                 '{opening_tag}',
-                replace(REGEXP_REPLACE({esc},
-                                       -- regex from https://blog.codinghorror.com/the-problem-with-urls/
-                                       -- double the %% to allow this code chunk to be used in parameterized queries
-                                       'https?://[-A-Za-z0-9+&@#/%%?=~_()|!:,.;]*[-A-Za-z0-9+&@#/%%=~_()|]',
-                                       '<a href="\&" target="_blank" rel="noreferrer noopener">\&</a>',
-                                       'g'),
-                        E'\n',
-                        '<br>'),
+                replace(
+                    replace(REGEXP_REPLACE({esc},
+                                           -- regex from https://blog.codinghorror.com/the-problem-with-urls/
+                                           -- double the %% to allow this code chunk to be used in parameterized queries
+                                           'https?://[-A-Za-z0-9+&@#/%%?=~_()|!:,.;]*[-A-Za-z0-9+&@#/%%=~_()|]',
+                                           '<a href="\&" target="_blank" rel="noreferrer noopener">\&</a>',
+                                           'g'),
+                            E'\\n',
+                            '<br>'),
+                    E'\\t',
+                    '&Tab;'),
                 '{closing_tag}')
          END
     """.format(
