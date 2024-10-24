@@ -654,6 +654,23 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
         """,
         [field, model],
     )
+
+    # Update ir.default
+    if table_exists(cr, "ir_default"):
+        cr.execute(
+            r"""
+            UPDATE ir_default AS d
+               SET json_value = REPLACE(
+                                    REPLACE(json_value, '\n', '<br/>'),
+                                    '\t', '&nbsp;&nbsp;&nbsp;&nbsp;'
+                                )
+              FROM ir_model_fields AS imf
+             WHERE imf.name = %s
+               AND imf.model = %s
+               AND imf.id = d.field_id
+            """,
+            [field, model],
+        )
     for inh in for_each_inherit(cr, model, skip_inherit):
         convert_field_to_html(cr, inh.model, field, skip_inherit=skip_inherit)
 
