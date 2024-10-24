@@ -654,6 +654,19 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
         """,
         [field, model],
     )
+
+    # Update ir.default
+    if table_exists(cr, "ir_default"):
+        json_value_html = pg_text2html("json_value")
+        query = """
+                UPDATE ir_default AS d
+                   SET json_value = {}
+                  FROM ir_model_fields AS imf
+                 WHERE imf.name = %s
+                   AND imf.model = %s
+                   AND imf.id = d.field_id
+                """
+        cr.execute(format_query(cr, query, sql.SQL(json_value_html)), [field, model])
     for inh in for_each_inherit(cr, model, skip_inherit):
         convert_field_to_html(cr, inh.model, field, skip_inherit=skip_inherit)
 
