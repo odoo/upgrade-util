@@ -476,7 +476,7 @@ def merge_module(cr, old, into, update_dependers=True):
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", [old])
     cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_ids[old]])
     if state in INSTALLED_MODULE_STATES:
-        force_install_module(cr, into)
+        _force_install_module(cr, into)
 
 
 def force_install_module(cr, module, if_installed=None):
@@ -486,8 +486,19 @@ def force_install_module(cr, module, if_installed=None):
     :param str module: name of the module to install
     :param list(str) or None if_installed: only force the install when these modules are
                                            already installed
-    :return str: the *original* state of the module
     """
+    if version_gte("saas~14.5"):
+        # We must delay until the modules actually exists. They are added by the auto discovery process.
+        if not if_installed or modules_installed(cr, *if_installed):
+            ENVIRON["__modules_auto_discovery_force_installs"].add(module)
+    else:
+        _force_install_module(cr, module, if_installed)
+
+
+def _force_install_module(cr, module, if_installed=None):
+    # Low level implementation
+    # Needs the module to exist in the database
+    _assert_modules_exists(cr, module, *if_installed or ())
     subquery = ""
     subparams = ()
     if if_installed:
@@ -582,7 +593,7 @@ def force_install_module(cr, module, if_installed=None):
         )
         for (mod,) in cr.fetchall():
             _logger.debug("auto install module %r due to module %r being force installed", mod, module)
-            force_install_module(cr, mod)
+            _force_install_module(cr, mod)
 
     # TODO handle module exclusions
 
@@ -622,7 +633,7 @@ def new_module_dep(cr, module, new_dep):
     if mod_state in INSTALLED_MODULE_STATES:
         # Module was installed, need to install all its deps, recursively,
         # to make sure the new dep is installed
-        force_install_module(cr, module)
+        _force_install_module(cr, module)
 
 
 def remove_module_deps(cr, module, old_deps):
@@ -726,7 +737,7 @@ def trigger_auto_install(cr, module):
 
     cr.execute(query, [module, INSTALLED_MODULE_STATES])
     if cr.rowcount:
-        force_install_module(cr, module)
+        _force_install_module(cr, module)
         return True
     return False
 
@@ -852,6 +863,7 @@ def _force_upgrade_of_fresh_module(cr, module, init, version):
     # Low level implementation
     # Force module state to be in `to upgrade`.
     # Needed for migration script execution. See http://git.io/vnF7f
+    _assert_modules_exists(cr, module)
     cr.execute(
         """
             UPDATE ir_module_module
@@ -917,8 +929,8 @@ def _trigger_auto_discovery(cr):
             _set_module_countries(cr, module, countries)
             module_auto_install(cr, module, auto_install)
 
-        if module in force_installs:
-            force_install_module(cr, module)
+    for module in force_installs:
+        _force_install_module(cr, module)
 
     for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
         _force_upgrade_of_fresh_module(cr, module, init, version)
