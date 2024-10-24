@@ -16,7 +16,9 @@ except ImportError:
 else:
 
     def dumps(value, sort_keys=False):
-        option = orjson.OPT_SORT_KEYS if sort_keys else None
+        option = orjson.OPT_NON_STR_KEYS
+        if sort_keys:
+            option |= orjson.OPT_SORT_KEYS
         return orjson.dumps(value, option=option).decode()
 
     def loads(value):
