@@ -6,7 +6,7 @@ except ImportError:
     import json
 
     def dumps(value, sort_keys=False):
-        return json.dumps(value, sort_keys=sort_keys)
+        return json.dumps(value, sort_keys=sort_keys, separators=(",", ":"))
 
     def loads(value):
         return json.loads(value)
