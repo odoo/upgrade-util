@@ -16,6 +16,10 @@ except ImportError:
 else:
 
     def dumps(value, sort_keys=False):
+        if isinstance(value, tuple):
+            # downcast namedtuples
+            value = tuple(value)
+
         option = orjson.OPT_NON_STR_KEYS
         if sort_keys:
             option |= orjson.OPT_SORT_KEYS
