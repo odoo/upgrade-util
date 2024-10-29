@@ -156,8 +156,8 @@ def expand_braces(s):
     return [head + x + tail for x in matches.split(",")]
 
 
-def split_osenv(name):
-    return re.split(r"\W+", os.getenv(name, "").strip())
+def split_osenv(name, default=""):
+    return re.split(r"\W+", os.getenv(name, default).strip())
 
 
 try:
