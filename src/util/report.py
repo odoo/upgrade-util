@@ -60,11 +60,24 @@ except ImportError:
         from openerp.addons.base.module.module import MyWriter
 
 from .exceptions import MigrationError
-from .misc import has_enterprise, version_gte
+from .misc import has_enterprise, split_osenv, version_gte
 from .orm import env, get_admin_channel, guess_admin_id
 
 migration_reports = {}
 _logger = logging.getLogger(__name__)
+
+
+_ENV_AM = set(split_osenv("UPG_ANNOUNCE_MEDIA", default="discuss"))
+ANNOUNCE_MEDIA = _ENV_AM & {"", "discuss", "logger"}
+if _ENV_AM - ANNOUNCE_MEDIA:
+    raise ValueError(
+        "Invalid value for the environment variable `UPG_ANNOUNCE_MEDIA`: {!r}. "
+        "Authorized values are a combination of 'discuss', 'logger', or an empty string.".format(
+            os.getenv("UPG_ANNOUNCE_MEDIA")
+        )
+    )
+ANNOUNCE_MEDIA -= {""}
+
 
 ODOO_SHOWCASE_VIDEOS = {
     "18.0": "gbE3azm_Io0",
@@ -193,6 +206,8 @@ def announce(
     footer=_DEFAULT_FOOTER,
     pluses_for_enterprise=None,
 ):
+    if not ANNOUNCE_MEDIA:
+        return
     if pluses_for_enterprise is None:
         # default value depend on format and version
         major = version[0]
@@ -202,6 +217,18 @@ def announce(
         plus_re = r"^(\s*)\+ (.+)\n"
         replacement = r"\1- \2\n" if has_enterprise() else ""
         msg = re.sub(plus_re, replacement, msg, flags=re.M)
+
+    if format == "rst":
+        msg = rst2html(msg)
+    elif format == "md":
+        msg = md2html(msg)
+
+    message = ((header or "") + msg + (footer or "")).format(version=version)
+    if "logger" in ANNOUNCE_MEDIA:
+        _logger.info(message)
+
+    if "discuss" not in ANNOUNCE_MEDIA:
+        return
 
     # do not notify early, in case the migration fails halfway through
     ctx = {"mail_notify_force_send": False, "mail_notify_author": True}
@@ -239,14 +266,6 @@ def announce(
         except (ValueError, AttributeError):
             # Cannot find record, post the message on the wall of the admin
             pass
-
-    if format == "rst":
-        msg = rst2html(msg)
-    elif format == "md":
-        msg = md2html(msg)
-
-    message = ((header or "") + msg + (footer or "")).format(version=version)
-    _logger.debug(message)
 
     type_field = ["type", "message_type"][version_gte("9.0")]
     # From 12.0, system notificatications are sent by email,
