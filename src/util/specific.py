@@ -1,12 +1,20 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from .exceptions import UpgradeError
 from .helpers import _validate_table
-from .misc import _cached
+from .misc import _cached, version_gte
 from .models import rename_model
 from .modules import rename_module
-from .pg import column_exists, rename_table, table_exists
+from .orm import env
+from .pg import column_exists, format_query, parallel_execute, rename_table, table_exists
 from .report import add_to_migration_reports
+
+try:
+    from odoo.tools.translate import _get_translation_upgrade_queries
+except ImportError:
+    if version_gte("16.0"):
+        raise
 
 _logger = logging.getLogger(__name__)
 
@@ -156,3 +164,81 @@ def reset_cowed_views(cr, xmlid, key=None):
         [key, module, name],
     )
     return set(sum(cr.fetchall(), ()))
+
+
+def translation2jsonb_all_missing(cr):
+    """Convert all missing translated fields to jsonb.
+
+    This helper function is designed to run only in an on-premise Odoo instance
+    where any unofficial modules you use are installed, after going through the
+    upgrade to version 16.0.
+
+    It will find all unofficial fields and convert translations from the
+    ``_ir_translation`` table into the new JSONB format.
+
+    Modules must be available in the environment to be loaded.
+
+    :return: Converted fields.
+    """
+    if not version_gte("16.0"):
+        raise UpgradeError("JSONB translations are only available from Odoo 16")
+    if not table_exists(cr, "_ir_translation"):
+        _logger.getChild("translation2jsonb_all_missing").info("Missing `_ir_translation` table; skip.")
+        return None
+    _env = env(cr)
+    fields = []
+    cr.execute(
+        """
+        SELECT STRING_TO_ARRAY(name, ','),
+               ARRAY_AGG(DISTINCT lang)
+          FROM _ir_translation
+         WHERE type IN ('model', 'model_terms')
+           AND name LIKE '%,%'
+           AND lang != 'en_US'
+         GROUP BY name
+        """
+    )
+    for (mname, fname), langs in cr.fetchall():
+        try:
+            model = _env[mname]
+            field = model._fields[fname]
+        except KeyError:
+            continue
+        if (
+            not model._auto
+            or model._abstract
+            or model._transient
+            or not field.store
+            or not field.translate
+            or field.manual
+        ):
+            continue
+        # Check if the field is already converted
+        cr.execute(
+            format_query(cr, "SELECT 1 FROM {} WHERE {} ?| %s LIMIT 1", model._table, fname),
+            [langs],
+        )
+        if not cr.rowcount:
+            fields.append(field)
+    return translation2jsonb(cr, *fields)
+
+
+def translation2jsonb(cr, *fields):
+    """Convert selected translated fields to jsonb.
+
+    Migrates translations for chosen fields, from the ``_ir_translation`` table
+    into the new JSONB format.
+
+    :param odoo.fields.Field fields: Fields to convert.
+    :return: Converted fields.
+    """
+    if not version_gte("16.0"):
+        raise UpgradeError("JSONB translations are only available from Odoo 16")
+    all_cleanup_queries = []
+    _logger.info("Migrating translations for fields %r", fields)
+    for field in fields:
+        migrate_queries, cleanup_queries = _get_translation_upgrade_queries(cr, field)
+        all_cleanup_queries.extend(cleanup_queries)
+        parallel_execute(cr, migrate_queries)
+    parallel_execute(cr, all_cleanup_queries)
+    return fields
