@@ -1479,7 +1479,15 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             continue
         if ir.company_dependent_comodel:
             if ir.company_dependent_comodel == model_src:
-                assert model_src == model_dst
+                if model_src != model_dst:
+                    cr.execute(
+                        "UPDATE ir_model_fields SET relation = %s WHERE model = %s AND name = %s",
+                        [
+                            model_dst,
+                            model_of_table(cr, ir.table),
+                            ir.res_id,
+                        ],
+                    )
                 json_path = cr.mogrify(
                     "$.* ? ({})".format(" || ".join(["@ == %s"] * len(id_mapping))),
                     list(id_mapping),
@@ -1504,6 +1512,33 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                     [list(map(list, id_mapping.items()))],
                 ).decode()
                 explode_execute(cr, query, table=ir.table)
+                # ensure all new ids exist
+                cr.execute(
+                    format_query(
+                        cr,
+                        """
+                        Select t.id AS id,
+                               j.key AS c_id,
+                               j.value AS ref
+                          FROM {table} t
+                          JOIN JSONB_EACH(t.{column}) j
+                            ON True
+                         WHERE NOT EXISTS (
+                                    SELECT 1 FROM {dest_table} WHERE id = j.value::int
+                               )
+                        """,
+                        table=ir.table,
+                        column=ir.res_id,
+                        dest_table=table_of_model(cr, model_dst),
+                    )
+                )
+                invalid_ref = cr.dictfetchall()
+                if invalid_ref:
+                    raise RuntimeError(
+                        "Invalid company dependent values for {}.{} referencing model {}: {}".format(
+                            model_of_table(cr, ir.table), ir.res_id, model_dst, invalid_ref
+                        )
+                    )
             continue
         res_model_upd = []
         if ir.res_model:
