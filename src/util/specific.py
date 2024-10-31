@@ -12,22 +12,21 @@ _logger = logging.getLogger(__name__)
 
 
 @_cached
-def dbuuid(cr):
+def dbuuid(cr, ancestor=True):
     cr.execute(
         """
-        SELECT value
+        SELECT key, value
           FROM ir_config_parameter
-         WHERE key IN ('database.uuid', 'origin.database.uuid')
-      ORDER BY key DESC
-         LIMIT 1
-    """
+         WHERE key IN ('database.uuid', 'origin.database.uuid', 'neuter.database.uuid')
+        """
     )
-    return cr.fetchone()[0]
+    uuids = dict(cr.fetchall())
+    return uuids.get("origin.database.uuid" if ancestor else "neuter.database.uuid", uuids.get("database.uuid"))
 
 
-def dispatch_by_dbuuid(cr, version, callbacks):
+def dispatch_by_dbuuid(cr, version, callbacks, match_duplicates=True):
     """
-    Allow to execute a migration script for a specific database only, base on its dbuuid.
+    Allow to execute a migration script for a specific database only, based on its dbuuid.
 
     Example:
     -------
@@ -39,7 +38,7 @@ def dispatch_by_dbuuid(cr, version, callbacks):
         })
 
     """
-    uuid = dbuuid(cr)
+    uuid = dbuuid(cr, ancestor=match_duplicates)
     if uuid in callbacks:
         func = callbacks[uuid]
         _logger.info("calling dbuuid-specific function `%s`", func.__name__)
