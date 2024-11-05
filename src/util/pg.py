@@ -33,9 +33,12 @@ import psycopg2
 from psycopg2 import errorcodes, sql
 
 try:
+    from odoo.modules import module as odoo_module
     from odoo.sql_db import db_connect
 except ImportError:
     from openerp.sql_db import db_connect
+
+    odoo_module = None
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
@@ -178,6 +181,7 @@ def parallel_execute(cr, queries, logger=_logger):
     parallel_execute_impl = (
         _parallel_execute_serial
         if getattr(threading.current_thread(), "testing", False)
+        or (odoo_module is not None and getattr(odoo_module, "current_test", False))
         else _parallel_execute_threaded
     )
     return parallel_execute_impl(cr, queries, logger=_logger)
