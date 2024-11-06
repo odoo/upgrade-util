@@ -489,7 +489,7 @@ def force_install_module(cr, module, if_installed=None):
     :param str module: name of the module to install
     :param list(str) or None if_installed: only force the install when these modules are
                                            already installed
-    :return str: the *original* state of the module
+    :return str: the *new* state of the module
     """
     subquery = ""
     subparams = ()
