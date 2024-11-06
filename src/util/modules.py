@@ -51,8 +51,30 @@ from .pg import column_exists, table_exists, target_of
 from .records import ref, remove_menus, remove_records, remove_view, replace_record_references_batch
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
-NO_AUTOINSTALL = str2bool(os.getenv("UPG_NO_AUTOINSTALL", "0")) if version_gte("15.0") else False
 _logger = logging.getLogger(__name__)
+
+if version_gte("15.0"):
+    AUTO_INSTALL = os.getenv("UPG_AUTOINSTALL")
+    _NO_AUTOINSTALL = os.getenv("UPG_NO_AUTOINSTALL")
+    if AUTO_INSTALL:
+        if _NO_AUTOINSTALL:
+            _logger.info("Ignoring the deprecated `UPG_NO_AUTOINSTALL` env variable as `UPG_AUTOINSTALL` is also set.")
+    elif _NO_AUTOINSTALL:
+        AUTO_INSTALL = "only_link_modules" if str2bool(_NO_AUTOINSTALL) else "all"
+        # TODO add link to doc
+        _logger.warning(
+            "Usage of the `UPG_NO_AUTOINSTALL` environment variable is deprecated. Please use `UPG_AUTOINSTALL=%s`.",
+            AUTO_INSTALL,
+        )
+    else:
+        AUTO_INSTALL = "all"
+else:
+    AUTO_INSTALL = "all"
+
+if AUTO_INSTALL not in ("all", "only_link_modules", "none"):
+    raise ValueError("Invalid value for the `UPG_AUTOINSTALL` environment variable: {!r}".format(AUTO_INSTALL))
+
+_logger.info("module auto-install strategy: %s", AUTO_INSTALL)
 
 # python3 shims
 try:
@@ -525,9 +547,10 @@ def force_install_module(cr, module, if_installed=None):
     )
 
     states = dict(cr.fetchall())
-    # auto_install modules...
     toinstall = [m for m in states if states[m] == "to install"]
-    if toinstall:
+
+    # auto_install modules...
+    if AUTO_INSTALL in ("all", "only_link_modules") and toinstall:
         # Same algo as ir.module.module.button_install(): https://git.io/fhCKd
         dep_match = ""
         if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
@@ -555,7 +578,7 @@ def force_install_module(cr, module, if_installed=None):
             """
 
         cat_match = ""
-        if NO_AUTOINSTALL:
+        if AUTO_INSTALL == "only_link_modules":
             # even if we skip auto installs, we still need to auto install the real link-modules.
             # those are in the "Hidden" category
             hidden = ref(cr, "base.module_category_hidden")
@@ -679,6 +702,9 @@ def module_auto_install(cr, module, auto_install):
 
 def trigger_auto_install(cr, module):
     _assert_modules_exists(cr, module)
+    if AUTO_INSTALL == "none":
+        return False
+
     dep_match = "true"
     if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
         dep_match = "d.auto_install_required = true"
@@ -705,7 +731,7 @@ def trigger_auto_install(cr, module):
         """
 
     cat_match = "true"
-    if NO_AUTOINSTALL:
+    if AUTO_INSTALL == "only_link_modules":
         # even if we skip auto installs, we still need to auto install the real link-modules.
         # those are in the "Hidden" category
         hidden = ref(cr, "base.module_category_hidden")
