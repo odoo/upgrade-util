@@ -501,10 +501,10 @@ def merge_module(cr, old, into, update_dependers=True):
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", [old])
     cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_ids[old]])
     if state in INSTALLED_MODULE_STATES:
-        force_install_module(cr, into)
+        force_install_module(cr, into, reason="installed {!r} module has been merged into it".format(old))
 
 
-def force_install_module(cr, module, if_installed=None):
+def force_install_module(cr, module, if_installed=None, reason="it has been explicitly asked for"):
     """
     Force the ORM to install a module.
 
@@ -548,6 +548,14 @@ def force_install_module(cr, module, if_installed=None):
 
     states = dict(cr.fetchall())
     toinstall = [m for m in states if states[m] == "to install"]
+
+    if module in toinstall:
+        _logger.info(
+            "force install of module %r (and its dependencies) because %s%s",
+            module,
+            reason,
+            " and modules {!r} are already installed".format(if_installed) if if_installed else "",
+        )
 
     # auto_install modules...
     if AUTO_INSTALL in ("all", "only_link_modules") and toinstall:
@@ -607,8 +615,11 @@ def force_install_module(cr, module, if_installed=None):
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
         for (mod,) in cr.fetchall():
-            _logger.debug("auto install module %r due to module %r being force installed", mod, module)
-            force_install_module(cr, mod)
+            force_install_module(
+                cr,
+                mod,
+                reason="it is an auto install module and its dependency {!r} has been force installed".format(module),
+            )
 
     # TODO handle module exclusions
 
@@ -648,7 +659,7 @@ def new_module_dep(cr, module, new_dep):
     if mod_state in INSTALLED_MODULE_STATES:
         # Module was installed, need to install all its deps, recursively,
         # to make sure the new dep is installed
-        force_install_module(cr, module)
+        force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
 
 
 def remove_module_deps(cr, module, old_deps):
@@ -755,7 +766,7 @@ def trigger_auto_install(cr, module):
 
     cr.execute(query, [module, INSTALLED_MODULE_STATES])
     if cr.rowcount:
-        force_install_module(cr, module)
+        force_install_module(cr, module, reason="it's an auto install module and all its dependencies are installed")
         return True
     return False
 
