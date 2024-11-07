@@ -20,6 +20,7 @@ class TestTablesHavePK(IntegrityCase):
               JOIN pg_namespace ns on ns.oid = c.relnamespace
          LEFT JOIN pg_constraint p on p.conrelid = c.oid and p.contype = 'p'
              WHERE c.relkind IN ('r', 'p')
+               AND c.relpersistence = 'p'
                AND ns.nspname = current_schema
                AND p.oid IS NULL
           ORDER BY c.relname
@@ -28,7 +29,7 @@ class TestTablesHavePK(IntegrityCase):
         cr.execute(query)
         if cr.rowcount:
             tables = "\n".join(" - %s" % t for (t,) in cr.fetchall())
-            msg = "Some tables doesn't have any primary key:\n{}".format(tables)
+            msg = "Some tables don't have any primary key:\n{}".format(tables)
             _logger.critical(msg)
             if util.on_CI():
                 raise AssertionError(msg)
