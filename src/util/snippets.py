@@ -248,17 +248,22 @@ class QWebConverter(BaseConverter):
 
 
 class Convertor:
-    def __init__(self, converters, callback, dbname, update_query):
+    def __init__(self, converters, callback, dbname=None, update_query=None):
         self.converters = converters
         self.callback = callback
         self.dbname = dbname
         self.update_query = update_query
 
     def __call__(self, query):
+        # backwards compatibility
+        if not (self.dbname and self.update_query and isinstance(query, str)):
+            return self._convert_row(query)
+        # called with a query to fetch a number of rows
         with db_connect(self.dbname).cursor() as cr:
             cr.execute(query)
             for changes in filter(None, map(self._convert_row, cr.fetchall())):
                 cr.execute(self.update_query, changes)
+        return None
 
     def _convert_row(self, row):
         converters = self.converters
