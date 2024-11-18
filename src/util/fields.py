@@ -957,17 +957,18 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
         ]
         parallel_execute(cr, queries)
 
-    cr.execute(
-        """
-        DELETE FROM ir_model_fields_selection s
-              USING ir_model_fields f
-              WHERE f.id = s.field_id
-                AND f.model = %s
-                AND f.name = %s
-                AND s.value = ANY(%s)
-        """,
-        [model, field, [k for k in mapping if k not in mapping.values()]],
-    )
+    if table_exists(cr, "ir_model_fields_selection"):
+        cr.execute(
+            """
+            DELETE FROM ir_model_fields_selection s
+                  USING ir_model_fields f
+                  WHERE f.id = s.field_id
+                    AND f.model = %s
+                    AND f.name = %s
+                    AND s.value = ANY(%s)
+            """,
+            [model, field, [k for k in mapping if k not in mapping.values()]],
+        )
 
     def adapter(leaf, _or, _neg):
         left, op, right = leaf
