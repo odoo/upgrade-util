@@ -402,7 +402,7 @@ def upgrade_jinja_fields(
 
 def verify_upgraded_jinja_fields(cr):
     env = get_env(cr)
-    for table_name in templates_to_check:
+    for table_name, template_data in templates_to_check.items():
         field_errors = {}
         missing_records = []
         for (
@@ -412,7 +412,7 @@ def verify_upgraded_jinja_fields(cr):
             inline_template_fields,
             qweb_fields,
             templates_converted,
-        ) in templates_to_check[table_name]:
+        ) in template_data:
             if model_name not in env:
                 # custom model not loaded yet. Ignore
                 continue
