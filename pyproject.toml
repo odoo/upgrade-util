@@ -28,6 +28,7 @@ fix = true
 show-fixes = true
 output-format = "full"
 line-length = 120
+target-version = "py37"
 
 [tool.ruff.lint]
 ignore = [
