@@ -120,16 +120,49 @@ def module_installed(cr, module):
     return modules_installed(cr, module)
 
 
-def uninstall_module(cr, module):
+def module_dependencies(cr, module):
+    """Get dependencies of given module.
+
+    :param str module: name of the module
+    :return: list names of the dependencies
+    :rtype: list(str)
+    """
+    found = []
+    while True:
+        cr.execute(
+            """
+            SELECT ARRAY_AGG(DISTINCT m.name ORDER BY m.name)
+            FROM ir_module_module m
+            INNER JOIN ir_module_module_dependency d ON d.module_id = m.id
+            WHERE d.name = ANY(%s)
+            """,
+            (found + [module],),
+        )
+        new = cr.fetchone()[0]
+        if new == found:
+            return found
+        found = new
+
+
+def uninstall_module(cr, module, with_dependencies=False):
     """
     Uninstall and remove all records owned by a module.
 
     :param str module: name of the module to uninstall
+    :param bool with_dependencies: whether to also remove dependencies of the module
+    :return: set of uninstalled module names
+    :rtype: set(str)
     """
+    result = set()
     cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (module,))
     (mod_id,) = cr.fetchone() or [None]
     if not mod_id:
-        return
+        return result
+
+    if with_dependencies:
+        dependencies = module_dependencies(cr, module)
+        for dep in dependencies:
+            result.union(uninstall_module(cr, dep, with_dependencies=with_dependencies))
 
     # delete constraints only owned by this module
     cr.execute(
@@ -244,14 +277,18 @@ def uninstall_module(cr, module):
     if table_exists(cr, "ir_translation"):
         cr.execute("DELETE FROM ir_translation WHERE module=%s", [module])
     cr.execute("UPDATE ir_module_module SET state='uninstalled' WHERE name=%s", (module,))
+    return result | {module}
 
 
-def uninstall_theme(cr, theme, base_theme=None):
+def uninstall_theme(cr, theme, base_theme=None, with_dependencies=False):
     """
     Uninstall a theme module and remove it from websites.
 
     :param str theme: name of the theme module to uninstall
     :param str or None base_theme: if not `None`, unload first this base theme
+    :param bool with_dependencies: whether to also remove dependencies of the theme
+    :return: set of uninstalled module names
+    :rtype: set(str)
 
     .. warning::
 
@@ -263,7 +300,7 @@ def uninstall_theme(cr, theme, base_theme=None):
     cr.execute("SELECT id FROM ir_module_module WHERE name=%s AND state in %s", [theme, INSTALLED_MODULE_STATES])
     (theme_id,) = cr.fetchone() or [None]
     if not theme_id:
-        return
+        return None
 
     env_ = env(cr)
     IrModuleModule = env_["ir.module.module"]
@@ -278,10 +315,10 @@ def uninstall_theme(cr, theme, base_theme=None):
         for website in websites:
             IrModuleModule._theme_remove(website)
     flush(env_["base"])
-    uninstall_module(cr, theme)
+    return uninstall_module(cr, theme, with_dependencies=with_dependencies)
 
 
-def remove_module(cr, module):
+def remove_module(cr, module, with_dependencies=False):
     """
     Completely remove a module.
 
@@ -289,6 +326,9 @@ def remove_module(cr, module):
     the module - no trace of it is left in the database.
 
     :param str module: name of the module to remove
+    :param bool with_dependencies: whether to also remove dependencies of the module
+    :return: set of uninstalled module names
+    :rtype: set(str)
 
     .. warning::
        Since this function removes *all* data associated to the module. Ensure to
@@ -298,15 +338,17 @@ def remove_module(cr, module):
     # module need to be currently installed and running as deletions
     # are made using orm.
 
-    uninstall_module(cr, module)
-    cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
-    cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING id", (module,))
+    result = uninstall_module(cr, module, with_dependencies=with_dependencies)
+    names = list(result)
+    cr.execute("DELETE FROM ir_module_module_dependency WHERE name = ANY(%s)", (names,))
+    cr.execute("DELETE FROM ir_module_module WHERE name = ANY(%s) RETURNING id", (names,))
     if cr.rowcount:
-        [mod_id] = cr.fetchone()
-        cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
+        ids = [id_ for (id_,) in cr.fetchall()]
+        cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id = ANY(%s)", (ids,))
+    return result
 
 
-def remove_theme(cr, theme, base_theme=None):
+def remove_theme(cr, theme, base_theme=None, with_dependencies=False):
     """
     Uninstall a theme module.
 
@@ -315,12 +357,14 @@ def remove_theme(cr, theme, base_theme=None):
 
     See :func:`remove_module` and :func:`uninstall_theme`.
     """
-    uninstall_theme(cr, theme, base_theme=base_theme)
-    cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (theme,))
-    cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING id", (theme,))
+    result = uninstall_theme(cr, theme, base_theme=base_theme, with_dependencies=with_dependencies)
+    themes = list(result)
+    cr.execute("DELETE FROM ir_module_module_dependency WHERE name = ANY(%s)", (themes,))
+    cr.execute("DELETE FROM ir_module_module WHERE name = ANY(%s) RETURNING id", (themes,))
     if cr.rowcount:
-        [mod_id] = cr.fetchone()
-        cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
+        ids = [id_ for (id_,) in cr.fetchall()]
+        cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id = ANY(%s)", (ids,))
+    return result
 
 
 def _update_view_key(cr, old, new):
