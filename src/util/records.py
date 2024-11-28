@@ -804,6 +804,34 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
                 # Don't change the view keys unconditionally to avoid changing unrelated views.
                 cr.execute("UPDATE ir_ui_view SET key = %s WHERE key = %s", [new, old])
 
+                # Adapting t-call and t-name references in views
+                search_pattern = r"""\yt-(call|name)=(["']){}\2""".format(re.escape(old))
+                replace_pattern = r"t-\1=\2{}\2".format(new)
+                if version_gte("16.0"):
+                    arch_col = get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
+                    replace_in_all_jsonb_values(
+                        cr,
+                        "ir_ui_view",
+                        "arch_db",
+                        PGRegexp(search_pattern),
+                        replace_pattern,
+                        extra_filter=cr.mogrify("{} ~ %s".format(arch_col), [search_pattern]).decode(),
+                    )
+                else:
+                    arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+                    cr.execute(
+                        format_query(
+                            cr,
+                            """
+                            UPDATE ir_ui_view
+                               SET {arch} = regexp_replace({arch}, %s, %s, 'g')
+                             WHERE {arch} ~ %s
+                            """,
+                            arch=arch_col,
+                        ),
+                        [search_pattern, replace_pattern, search_pattern],
+                    )
+
         if model == "ir.ui.menu" and column_exists(cr, "res_users_settings", "homemenu_config"):
             query = """
                 UPDATE res_users_settings
