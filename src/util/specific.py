@@ -157,6 +157,9 @@ def translation2jsonb_all_missing(cr):
     """
     if not version_gte("16.0"):
         raise UpgradeError("JSONB translations are only available from Odoo 16")
+    if not table_exists(cr, "_ir_translation"):
+        _logger.getChild("translation2jsonb_all_missing").info("Missing `_ir_translation` table; skip.")
+        return
     _env = env(cr)
     fields = []
     cr.execute(
@@ -207,8 +210,8 @@ def translation2jsonb(cr, *fields):
     if not version_gte("16.0"):
         raise UpgradeError("JSONB translations are only available from Odoo 16")
     all_cleanup_queries = []
+    _logger.info("Migrating translations for fields %r, fields)
     for field in fields:
-        _logger.info("Migrating translations for field %s in model %s", field.name, field.model_name)
         (
             migrate_queries,
             cleanup_queries,
