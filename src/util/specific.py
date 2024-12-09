@@ -5,10 +5,16 @@ from .exceptions import UpgradeError
 from .helpers import _validate_table
 from .misc import _cached, version_gte
 from .models import rename_model
-from .modules import odoo, rename_module
+from .modules import rename_module
 from .orm import env
 from .pg import column_exists, format_query, parallel_execute, rename_table, table_exists
 from .report import add_to_migration_reports
+
+try:
+    from odoo.tools.translate import _get_translation_upgrade_queries
+except ImportError:
+    if version_gte("16.0"):
+        raise
 
 _logger = logging.getLogger(__name__)
 
@@ -215,7 +221,7 @@ def translation2jsonb(cr, *fields):
         (
             migrate_queries,
             cleanup_queries,
-        ) = odoo.tools.translate._get_translation_upgrade_queries(cr, field)
+        ) = _get_translation_upgrade_queries(cr, field)
         all_cleanup_queries.extend(cleanup_queries)
         parallel_execute(cr, migrate_queries)
     parallel_execute(cr, all_cleanup_queries)
