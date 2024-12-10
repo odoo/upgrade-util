@@ -5,6 +5,7 @@ import threading
 import unittest
 import uuid
 from ast import literal_eval
+from contextlib import contextmanager
 
 from lxml import etree
 
@@ -13,6 +14,7 @@ try:
 except ImportError:
     import mock
 
+from odoo import modules
 from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
 from odoo.tools import mute_logger
 from odoo.tools.safe_eval import safe_eval
@@ -22,6 +24,19 @@ from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parame
 from odoo.addons.base.maintenance.migrations.util import snippets
 from odoo.addons.base.maintenance.migrations.util.domains import _adapt_one_domain, _model_of_path
 from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
+
+
+@contextmanager
+def without_testing():
+    thread = threading.current_thread()
+    testing = getattr(modules.module, "current_test", False) or getattr(thread, "testing", False)
+    try:
+        modules.module.current_test = False
+        thread.testing = False
+        yield
+    finally:
+        thread.testing = testing
+        modules.module.current_test = testing
 
 
 class TestAdaptOneDomain(UnitTestCase):
@@ -727,9 +742,8 @@ class TestPG(UnitTestCase):
         self.assertEqual(rowcount, expected)
 
     def test_parallel_rowcount_threaded(self):
-        threading.current_thread().testing = False
-        self.test_parallel_rowcount()
-        threading.current_thread().testing = True
+        with without_testing():
+            self.test_parallel_rowcount()
 
     def test_parallel_execute_retry_on_serialization_failure(self):
         TEST_TABLE_NAME = "_upgrade_serialization_failure_test_table"
@@ -759,13 +773,11 @@ class TestPG(UnitTestCase):
             )
         )
 
-        threading.current_thread().testing = False
         # exploded queries will generate a SerializationFailed error, causing some of the queries to be retried
-        with mute_logger(util.pg._logger.name, "odoo.sql_db"):
+        with without_testing(), mute_logger(util.pg._logger.name, "odoo.sql_db"):
             util.explode_execute(
                 cr, util.format_query(cr, "DELETE FROM {}", TEST_TABLE_NAME), TEST_TABLE_NAME, bucket_size=1
             )
-        threading.current_thread().testing = True
 
         if hasattr(self, "_savepoint_id"):
             # `explode_execute` causes the cursor to be committed, losing the automatic checkpoint
