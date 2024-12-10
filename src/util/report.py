@@ -27,7 +27,11 @@ except ImportError:
     Markup = None
 
 try:
-    from odoo import SUPERUSER_ID, release
+    try:
+        from odoo.api import SUPERUSER_ID
+    except ImportError:
+        from odoo import SUPERUSER_ID
+    from odoo import release
     from odoo.tools import html_escape
     from odoo.tools.mail import html_sanitize
 except ImportError:
