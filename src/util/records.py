@@ -1521,9 +1521,10 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                                j.key AS c_id,
                                j.value AS ref
                           FROM {table} t
-                          JOIN JSONB_EACH(t.{column}) j
+                          JOIN JSONB_EACH_TEXT(t.{column}) j
                             ON True
-                         WHERE NOT EXISTS (
+                         WHERE j.value IS NOT NULL
+                           AND NOT EXISTS (
                                     SELECT 1 FROM {dest_table} WHERE id = j.value::int
                                )
                         """,
