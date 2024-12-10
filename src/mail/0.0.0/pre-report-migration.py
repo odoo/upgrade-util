@@ -22,6 +22,7 @@ def migrate(cr, version):
 
 
 class MailMessage(models.Model):
+    _name = "mail.message"
     _inherit = ["mail.message"]
     _module = "mail"
 
