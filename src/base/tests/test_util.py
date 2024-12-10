@@ -13,6 +13,7 @@ try:
 except ImportError:
     import mock
 
+from odoo import SUPERUSER_ID, api
 from odoo.osv.expression import FALSE_LEAF, TRUE_LEAF
 from odoo.tools import mute_logger
 from odoo.tools.safe_eval import safe_eval
@@ -1464,33 +1465,37 @@ def not_doing_anything_converter(el):
 
 class TestHTMLFormat(UnitTestCase):
     def testsnip(self):
-        view_arch = """
-            <html>
-                <div class="fake_class_not_doing_anything"><br/></div>
-                <script>
-                (event) =&gt; {
-                };
-                </script>
-            </html>
-        """
-        view_id = self.env["ir.ui.view"].create(
-            {
-                "name": "not_for_anything",
-                "type": "qweb",
-                "mode": "primary",
-                "key": "test.htmlconvert",
-                "arch_db": view_arch,
-            }
-        )
-        cr = self.env.cr
-        snippets.convert_html_content(
-            cr,
-            snippets.html_converter(
-                not_doing_anything_converter, selector="//*[hasclass('fake_class_not_doing_anything')]"
-            ),
-        )
-        util.invalidate(view_id)
-        res = self.env["ir.ui.view"].search_read([("id", "=", view_id.id)], ["arch_db"])
+        # util.convert_html_columns() commits the cursor, use a new transaction to not mess up the test_cr
+        with self.registry.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            view_arch = """
+                <html>
+                    <div class="fake_class_not_doing_anything"><br/></div>
+                    <script>
+                    (event) =&gt; {
+                    };
+                    </script>
+                </html>
+            """
+            view_id = env["ir.ui.view"].create(
+                {
+                    "name": "not_for_anything",
+                    "type": "qweb",
+                    "mode": "primary",
+                    "key": "test.htmlconvert",
+                    "arch_db": view_arch,
+                }
+            )
+            snippets.convert_html_content(
+                cr,
+                snippets.html_converter(
+                    not_doing_anything_converter, selector="//*[hasclass('fake_class_not_doing_anything')]"
+                ),
+            )
+            util.invalidate(view_id)
+            res = env["ir.ui.view"].search_read([("id", "=", view_id.id)], ["arch_db"])
+            # clean up committed data
+            view_id.unlink()
         self.assertEqual(len(res), 1)
         oneline = lambda s: re.sub(r"\s+", " ", s.strip())
         self.assertEqual(oneline(res[0]["arch_db"]), oneline(view_arch))
