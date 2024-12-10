@@ -1,11 +1,12 @@
-# -*- coding: utf-8 -*-
 """Miscellaneous standalone functions."""
 
+import ast
 import collections
 import datetime
 import functools
 import os
 import re
+import uuid
 from contextlib import contextmanager
 from itertools import chain, islice
 
@@ -25,6 +26,14 @@ try:
     unicode  # noqa: B018
 except NameError:
     unicode = str
+
+try:
+    from ast import unparse as ast_unparse
+except ImportError:
+    try:
+        from astunparse import unparse as ast_unparse
+    except ImportError:
+        ast_unparse = None
 
 
 def _cached(func):
@@ -437,3 +446,40 @@ class SelfPrintEvalContext(collections.defaultdict):
 
     def __missing__(self, key):
         return SelfPrint(key)
+
+    @classmethod
+    def preprocess(klass, expr):
+        """
+        Prepare `expr` to be evaluated in a self printed context.
+
+        This is necessary to avoid skipping domains that `SelfPrint` cannot print.
+        Example: [('company_id', 'in', [*company_ids, False])
+
+        Returns a pair with the new expression and an evaluation context that should
+        be used in `safe_eval`.
+
+        ```
+        >>> prepared_domain, context = util.SelfPrintEvalContext.preprocess(domain)
+        >>> safe_eval(prepared_domain, context, nocopy=True)
+        ```
+
+        :meta private: exclude from online docs
+        """
+        if not ast_unparse:
+            return expr, SelfPrintEvalContext()
+
+        class RewriteName(ast.NodeTransformer):
+            def __init__(self):
+                self.replaces = {}
+                super(RewriteName, self).__init__()
+
+            def visit_Starred(self, node):
+                uniq_id = "_upg_Starred" + uuid.uuid4().hex[:12]
+                unparsed = ast_unparse(node).strip()
+                self.replaces[uniq_id] = SelfPrint(unparsed)
+                return ast.Name(id=uniq_id, ctx=ast.Load())
+
+        replacer = RewriteName()
+        root = ast.parse(expr.strip(), mode="eval").body
+        visited = replacer.visit(root)
+        return (ast_unparse(visited).strip(), SelfPrintEvalContext(replacer.replaces))
