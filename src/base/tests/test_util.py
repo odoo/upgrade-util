@@ -1426,6 +1426,8 @@ class TestMisc(UnitTestCase):
                     "a",
                     "a.b" "a.b()",
                     "a.b(c)",
+                    "[('company_id', 'in', company_ids)]",
+                    "[]",
                 ]
                 + ["a {} 4".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
                 + ["4 {} b".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
@@ -1434,6 +1436,25 @@ class TestMisc(UnitTestCase):
     )
     def test_SelfPrint(self, value):
         evaluated = safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
+        self.assertEqual(str(evaluated), value, "Self printed result differs")
+
+        replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
+        evaluated = safe_eval(replaced_value, ctx, nocopy=True)
+        self.assertEqual(str(evaluated), value, "Prepared self printed result differs")
+
+    @parametrize(
+        [
+            (value,)
+            for value in [
+                "[('company_id', 'in', [*company_ids, False])]",
+                "[('company_id', 'in', [False, *company_ids])]",
+            ]
+        ]
+    )
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_SelfPrint_prepare(self, value):
+        replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
+        evaluated = safe_eval(replaced_value, ctx, nocopy=True)
         self.assertEqual(str(evaluated), value)
 
 

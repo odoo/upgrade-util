@@ -196,12 +196,11 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
     if not adapter:
         adapter = lambda leaf, _, __: [leaf]
 
-    evaluation_context = SelfPrintEvalContext()
-
     # pre-check domain
     if isinstance(domain, basestring):
         try:
-            eval_dom = expression.normalize_domain(safe_eval(domain, evaluation_context, nocopy=True))
+            replaced_domain, ctx = SelfPrintEvalContext.preprocess(domain)
+            eval_dom = expression.normalize_domain(safe_eval(replaced_domain, ctx, nocopy=True))
         except Exception as e:
             oops = exception_to_unicode(e)
             _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
