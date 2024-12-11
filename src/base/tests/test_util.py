@@ -1424,28 +1424,31 @@ class TestMisc(UnitTestCase):
 
     @parametrize(
         [
-            (value,)
-            for value in (
-                [
-                    "a",
-                    "a.b",
-                    "a.b()",
-                    "a.b(c)",
-                    "[('company_id', 'in', company_ids)]",
-                    "[]",
-                ]
-                + ["a {} 4".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
-                + ["4 {} b".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
-            )
+            (value, value)
+            for value in [
+                "a",
+                "a.b",
+                "a.b()",
+                "a.b(c)",
+                "[('company_id', 'in', company_ids)]",
+                "[]",
+            ]
+        ]
+        + [(f"a {op} 4", f"(a {op} 4)") for op in ["+", "-", "*", "/", "//", "%"]]
+        + [(f"4 {op} b", f"(4 {op} b)") for op in ["+", "-", "*", "/", "//", "%"]]
+        + [
+            ("a+b*c", "(a + (b * c))"),
+            ("a+b/c-d", "((a + (b / c)) - d)"),
+            ("(a+b) * c", "((a + b) * c)"),
         ]
     )
-    def test_SelfPrint(self, value):
+    def test_SelfPrint(self, value, expected):
         evaluated = safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
-        self.assertEqual(str(evaluated), value, "Self printed result differs")
+        self.assertEqual(str(evaluated), expected, "Self printed result differs")
 
         replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
         evaluated = safe_eval(replaced_value, ctx, nocopy=True)
-        self.assertEqual(str(evaluated), value, "Prepared self printed result differs")
+        self.assertEqual(str(evaluated), expected, "Prepared self printed result differs")
 
     @parametrize(
         [
