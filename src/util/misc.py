@@ -448,6 +448,9 @@ class SelfPrint(object):
 
     __str__ = __repr__
 
+    def __iter__(self):
+        raise RuntimeError("Cannot self-print iterations")
+
 
 class SelfPrintEvalContext(collections.defaultdict):
     """
@@ -488,11 +491,20 @@ class SelfPrintEvalContext(collections.defaultdict):
                 self.replaces = {}
                 super(RewriteName, self).__init__()
 
-            def visit_Starred(self, node):
-                uniq_id = "_upg_Starred" + uuid.uuid4().hex[:12]
+            def _replace_node(self, prefix, node):
+                uniq_id = prefix + uuid.uuid4().hex[:12]
                 unparsed = ast_unparse(node).strip()
                 self.replaces[uniq_id] = SelfPrint(unparsed)
                 return ast.Name(id=uniq_id, ctx=ast.Load())
+
+            def visit_Starred(self, node):
+                return self._replace_node("_upg_Starred", node)
+
+            def visit_BoolOp(self, node):
+                return self._replace_node("_upg_BoolOp", node)
+
+            def visit_UnaryOp(self, node):
+                return self._replace_node("_upg_UnaryOp_Not", node) if isinstance(node.op, ast.Not) else node
 
         replacer = RewriteName()
         root = ast.parse(expr.strip(), mode="eval").body
