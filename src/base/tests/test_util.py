@@ -1430,16 +1430,21 @@ class TestMisc(UnitTestCase):
                 "a.b",
                 "a.b()",
                 "a.b(c)",
+                "a[b]",
+                "context['company_id']",
                 "[('company_id', 'in', company_ids)]",
                 "[]",
             ]
         ]
-        + [(f"a {op} 4", f"(a {op} 4)") for op in ["+", "-", "*", "/", "//", "%"]]
-        + [(f"4 {op} b", f"(4 {op} b)") for op in ["+", "-", "*", "/", "//", "%"]]
+        + [(f"a {op} 4", f"(a {op} 4)") for op in ["+", "-", "*", "/", "//", "%", "**"]]
+        + [(f"4 {op} b", f"(4 {op} b)") for op in ["+", "-", "*", "/", "//", "%", "**"]]
         + [
             ("a+b*c", "(a + (b * c))"),
             ("a+b/c-d", "((a + (b / c)) - d)"),
             ("(a+b) * c", "((a + b) * c)"),
+            ("+a", "+(a)"),
+            ("-a", "-(a)"),
+            ("-(a+b)", "-((a + b))"),
         ]
     )
     def test_SelfPrint(self, value, expected):
