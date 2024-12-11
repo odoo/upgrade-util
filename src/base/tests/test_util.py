@@ -1428,7 +1428,8 @@ class TestMisc(UnitTestCase):
             for value in (
                 [
                     "a",
-                    "a.b" "a.b()",
+                    "a.b",
+                    "a.b()",
                     "a.b(c)",
                     "[('company_id', 'in', company_ids)]",
                     "[]",
