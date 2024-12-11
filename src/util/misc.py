@@ -448,6 +448,12 @@ class SelfPrint(object):
 
     __str__ = __repr__
 
+    def __iter__(self):
+        raise RuntimeError("Cannot self-print iterations")
+
+    def __bool__(self):
+        raise RuntimeError("Cannot self-print boolean expressions")
+
 
 class SelfPrintEvalContext(collections.defaultdict):
     """

@@ -1466,6 +1466,25 @@ class TestMisc(UnitTestCase):
         evaluated = safe_eval(replaced_value, ctx, nocopy=True)
         self.assertEqual(str(evaluated), value)
 
+    @parametrize(
+        [
+            (value,)
+            for value in [
+                # iterators
+                "[a.b for a in b]",
+                "4 in b",
+                # bool conversions
+                "not a",
+                "a and b",
+                "a or b",
+            ]
+        ]
+    )
+    def test_SelfPrint_failure(self, value):
+        # note: `safe_eval` will re-raise a ValueError
+        with self.assertRaises(ValueError):
+            safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
+
 
 def not_doing_anything_converter(el):
     return True
