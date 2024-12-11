@@ -387,46 +387,46 @@ class SelfPrint(object):
         return SelfPrint("%r(%s)" % (self, ", ".join(s)))
 
     def __add__(self, other):
-        return SelfPrint("%r + %r" % (self, other))
+        return SelfPrint("(%r + %r)" % (self, other))
 
     def __radd__(self, other):
-        return SelfPrint("%r + %r" % (other, self))
+        return SelfPrint("(%r + %r)" % (other, self))
 
     def __sub__(self, other):
-        return SelfPrint("%r - %r" % (self, other))
+        return SelfPrint("(%r - %r)" % (self, other))
 
     def __rsub__(self, other):
-        return SelfPrint("%r - %r" % (other, self))
+        return SelfPrint("(%r - %r)" % (other, self))
 
     def __mul__(self, other):
-        return SelfPrint("%r * %r" % (self, other))
+        return SelfPrint("(%r * %r)" % (self, other))
 
     def __rmul__(self, other):
-        return SelfPrint("%r * %r" % (other, self))
+        return SelfPrint("(%r * %r)" % (other, self))
 
     def __div__(self, other):
-        return SelfPrint("%r / %r" % (self, other))
+        return SelfPrint("(%r / %r)" % (self, other))
 
     def __rdiv__(self, other):
-        return SelfPrint("%r / %r" % (other, self))
+        return SelfPrint("(%r / %r)" % (other, self))
 
     def __truediv__(self, other):
-        return SelfPrint("%r / %r" % (self, other))
+        return SelfPrint("(%r / %r)" % (self, other))
 
     def __rtruediv__(self, other):
-        return SelfPrint("%r / %r" % (other, self))
+        return SelfPrint("(%r / %r)" % (other, self))
 
     def __floordiv__(self, other):
-        return SelfPrint("%r // %r" % (self, other))
+        return SelfPrint("(%r // %r)" % (self, other))
 
     def __rfloordiv__(self, other):
-        return SelfPrint("%r // %r" % (other, self))
+        return SelfPrint("(%r // %r)" % (other, self))
 
     def __mod__(self, other):
-        return SelfPrint("%r %% %r" % (self, other))
+        return SelfPrint("(%r %% %r)" % (self, other))
 
     def __rmod__(self, other):
-        return SelfPrint("%r %% %r" % (other, self))
+        return SelfPrint("(%r %% %r)" % (other, self))
 
     def __repr__(self):
         return self.__name
