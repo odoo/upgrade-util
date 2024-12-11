@@ -380,6 +380,9 @@ class SelfPrint(object):
     def __getattr__(self, attr):
         return SelfPrint("%r.%s" % (self, attr))
 
+    def __getitem__(self, key):
+        return SelfPrint("%r[%r]" % (self, key))
+
     def __call__(self, *args, **kwargs):
         s = [repr(a) for a in args]
         for k, v in kwargs.items():
@@ -427,6 +430,18 @@ class SelfPrint(object):
 
     def __rmod__(self, other):
         return SelfPrint("(%r %% %r)" % (other, self))
+
+    def __pow__(self, other):
+        return SelfPrint("(%r ** %r)" % (self, other))
+
+    def __rpow__(self, other):
+        return SelfPrint("(%r ** %r)" % (other, self))
+
+    def __pos__(self):
+        return SelfPrint("+(%r)" % (self,))
+
+    def __neg__(self):
+        return SelfPrint("-(%r)" % (self,))
 
     def __repr__(self):
         return self.__name
