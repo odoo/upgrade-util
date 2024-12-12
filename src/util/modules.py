@@ -48,7 +48,7 @@ from .misc import on_CI, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import column_exists, table_exists, target_of
-from .records import ref, remove_menus, remove_records, remove_view, replace_record_references_batch
+from .records import ref, remove_group, remove_menus, remove_records, remove_view, replace_record_references_batch
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
@@ -204,6 +204,9 @@ def uninstall_module(cr, module):
         if model == "ir.ui.view":
             for _, res_id in group:
                 remove_view(cr, view_id=res_id, silent=True)
+        elif model == "res.groups":
+            for _, res_id in group:
+                remove_group(cr, group_id=res_id)
         else:
             remove_records(cr, model, [it[1] for it in group])
 
