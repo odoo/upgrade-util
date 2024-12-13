@@ -895,6 +895,11 @@ def _force_upgrade_of_fresh_module(cr, module, init, version):
     # Low level implementation
     # Force module state to be in `to upgrade`.
     # Needed for migration script execution. See http://git.io/vnF7f
+    if version_gte("saas~18.2") and init:
+        env_ = env(cr)
+        env_.registry._force_upgrade_scripts.add(module)
+        return
+
     cr.execute(
         """
             UPDATE ir_module_module
