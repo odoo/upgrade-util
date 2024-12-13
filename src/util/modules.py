@@ -907,9 +907,12 @@ def _force_upgrade_of_fresh_module(cr, module, init, version):
         [version, module],
     )
     if init and cr.rowcount:
-        # Force module in `init` mode beside its state is forced to `to upgrade`
-        # See http://git.io/vnF7O
-        odoo.tools.config["init"][module] = "oh yeah!"
+        if version_gte("saas~18.1"):
+            odoo.tools.config["load_data_init"][module] = "oh yeah!"
+        else:
+            # Force module in `init` mode beside its state is forced to `to upgrade`
+            # See http://git.io/vnF7O
+            odoo.tools.config["init"][module] = "oh yeah!"
 
 
 # for compatibility
