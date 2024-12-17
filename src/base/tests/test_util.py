@@ -1453,18 +1453,24 @@ class TestMisc(UnitTestCase):
 
     @parametrize(
         [
-            (value,)
+            (value, value)
             for value in [
                 "[('company_id', 'in', [*company_ids, False])]",
                 "[('company_id', 'in', [False, *company_ids])]",
             ]
         ]
+        + [
+            # bool conversions
+            ("not a", "(not a)"),
+            ("a and b", "(a and b)"),
+            ("a or b", "(a or b)"),
+        ]
     )
     @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
-    def test_SelfPrint_prepare(self, value):
+    def test_SelfPrint_prepare(self, value, expected):
         replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
         evaluated = safe_eval(replaced_value, ctx, nocopy=True)
-        self.assertEqual(str(evaluated), value)
+        self.assertEqual(str(evaluated), expected)
 
     @parametrize(
         [
@@ -1473,10 +1479,6 @@ class TestMisc(UnitTestCase):
                 # iterators
                 "[a.b for a in b]",
                 "4 in b",
-                # bool conversions
-                "not a",
-                "a and b",
-                "a or b",
             ]
         ]
     )
