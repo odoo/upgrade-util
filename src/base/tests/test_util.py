@@ -305,10 +305,10 @@ class TestAdaptOneDomain(UnitTestCase):
         self.assertEqual(new_domain, expected)
 
         # test it also works recursively
-        domain = [("partner_id", "any", [("title", "not any", [("shortcut", "like", "S.A.")])])]
-        expected = [("partner_id", "any", [("title", "not any", [("abbr", "like", "S.A.")])])]
+        domain = [("partner_id", "any", [("bank_ids", "not any", [("acc_number", "like", "S.A.")])])]
+        expected = [("partner_id", "any", [("bank_ids", "not any", [("acc_nbr", "like", "S.A.")])])]
 
-        new_domain = _adapt_one_domain(self.cr, "res.partner.title", "shortcut", "abbr", "res.company", domain)
+        new_domain = _adapt_one_domain(self.cr, "res.partner.bank", "acc_number", "acc_nbr", "res.company", domain)
         self.assertEqual(new_domain, expected)
 
 
@@ -570,17 +570,17 @@ class TestIterBrowse(UnitTestCase):
         self.assertEqual(write.call_count, expected)
 
     def test_iter_browse_create_non_empty(self):
-        RPT = self.env["res.partner.title"]
+        RP = self.env["res.partner"]
         with self.assertRaises(ValueError):
-            util.iter_browse(RPT, [42]).create([{}])
+            util.iter_browse(RP, [42]).create([{}])
 
     @parametrize([(True,), (False,)])
     def test_iter_browse_create(self, multi):
         chunk_size = 2
-        RPT = self.env["res.partner.title"]
+        RP = self.env["res.partner"]
 
-        names = [f"Title {i}" for i in range(7)]
-        ib = util.iter_browse(RPT, [], chunk_size=chunk_size)
+        names = [f"Name {i}" for i in range(7)]
+        ib = util.iter_browse(RP, [], chunk_size=chunk_size)
         records = ib.create([{"name": name} for name in names], multi=multi)
         self.assertEqual([t.name for t in records], names)
 
@@ -616,9 +616,9 @@ class TestPG(UnitTestCase):
         cr = self.env.cr
         cr.execute(
             """
-            ALTER TABLE res_partner_title ADD COLUMN x bool;
+            ALTER TABLE res_partner_bank ADD COLUMN x bool;
 
-            UPDATE res_partner_title
+            UPDATE res_partner_bank
                SET x = CASE id % 3
                            WHEN 1 THEN NULL
                            WHEN 2 THEN True
@@ -626,10 +626,10 @@ class TestPG(UnitTestCase):
                        END
             """
         )
-        self.assertEqual(util.column_type(cr, "res_partner_title", "x"), "bool")
-        util.alter_column_type(cr, "res_partner_title", "x", "int", using="CASE {0} WHEN True THEN 2 ELSE 1 END")
-        self.assertEqual(util.column_type(cr, "res_partner_title", "x"), "int4")
-        cr.execute("SELECT id, x FROM res_partner_title")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "x"), "bool")
+        util.alter_column_type(cr, "res_partner_bank", "x", "int", using="CASE {0} WHEN True THEN 2 ELSE 1 END")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "x"), "int4")
+        cr.execute("SELECT id, x FROM res_partner_bank")
         data = cr.fetchall()
         self.assertTrue(
             all(x == 1 or (x == 2 and id_ % 3 == 2) for id_, x in data),
@@ -700,22 +700,22 @@ class TestPG(UnitTestCase):
     def test_explode_query_range(self):
         cr = self.env.cr
 
-        cr.execute("SELECT count(id) FROM res_partner_title")
+        cr.execute("SELECT count(id) FROM res_partner_category")
         count = cr.fetchone()[0]
         # ensure there start with at least 10 records
         for _ in range(10 - count):
             count += 1
-            self.env["res.partner.title"].create({"name": "x"})
+            self.env["res.partner.category"].create({"name": "x"})
 
         # set one record with very high id
-        tid = self.env["res.partner.title"].create({"name": "x"}).id
+        tid = self.env["res.partner.category"].create({"name": "x"}).id
         count += 1
-        cr.execute("UPDATE res_partner_title SET id = 10000000 WHERE id = %s", [tid])
+        cr.execute("UPDATE res_partner_category SET id = 10000000 WHERE id = %s", [tid])
 
-        qs = util.explode_query_range(cr, "SELECT 1", table="res_partner_title", bucket_size=count)
+        qs = util.explode_query_range(cr, "SELECT 1", table="res_partner_category", bucket_size=count)
         self.assertEqual(len(qs), 1)  # one bucket should be enough for all records
 
-        qs = util.explode_query_range(cr, "SELECT 1", table="res_partner_title", bucket_size=count - 1)
+        qs = util.explode_query_range(cr, "SELECT 1", table="res_partner_category", bucket_size=count - 1)
         self.assertEqual(len(qs), 1)  # 10% rule for second bucket, 1 <= 0.1(count - 1) since count >= 11
 
     def test_parallel_rowcount(self):
@@ -1060,8 +1060,8 @@ class TestRecords(UnitTestCase):
 
     def test_update_record_from_xml(self):
         # reset all fields on a <record>
-        xmlid = "base.res_partner_title_mister"
-        data_after = {"name": "Fortytwo", "shortcut": "42"}
+        xmlid = "base.res_partner_industry_A"
+        data_after = {"name": "42", "full_name": "Fortytwo"}
         record = self.env.ref(xmlid)
         data_before = {key: record[key] for key in data_after}
         for key, value in data_after.items():
@@ -1158,14 +1158,14 @@ class TestRecords(UnitTestCase):
         be_lang = self.env["res.lang"].with_context(active_test=False).search([("code", "=", "fr_BE")])
         be_lang.write({"active": True})
 
-        xmlid = "base.res_partner_title_mister"
+        xmlid = "base.res_partner_industry_A"
         util.update_record_from_xml(self.env.cr, xmlid, reset_translations=True)
 
         # change the translations to something arbitrary for all installed languages
         langs = self.env["res.lang"].get_installed()
         filter_lang = [code for code, _ in langs]
         self.assertIn(be_lang.code, filter_lang)
-        data_after = {"name": "Fortytwo", "shortcut": "42"}
+        data_after = {"name": "42", "full_name": "Fortytwo"}
         fieldnames = list(data_after.keys())
         template_record = self.env.ref(xmlid)
 
@@ -1268,7 +1268,7 @@ class TestRecords(UnitTestCase):
 
     @unittest.skipUnless(util.version_gte("16.0"), "Only work on Odoo >= 16")
     def test_replace_in_all_jsonb_values(self):
-        test_partner_title = self.env["res.partner.title"].create(
+        test_partner_category = self.env["res.partner.category"].create(
             {"name": r"""object.number '<"x">\y object.numbercombined"""}
         )
 
@@ -1276,23 +1276,23 @@ class TestRecords(UnitTestCase):
         pattern_new = re.compile(r"\b\.name\b")
         pattern_notouch = re.compile(r"\b\.numbercombined\b")
 
-        self.assertNotRegex(test_partner_title.name, pattern_new)
-        self.assertRegex(test_partner_title.name, pattern_notouch)
-        self.assertRegex(test_partner_title.name, pattern_old)
+        self.assertNotRegex(test_partner_category.name, pattern_new)
+        self.assertRegex(test_partner_category.name, pattern_notouch)
+        self.assertRegex(test_partner_category.name, pattern_old)
 
-        extra_filter = self.env.cr.mogrify("t.id = %s", (test_partner_title.id,)).decode()
-        util.replace_in_all_jsonb_values(self.env.cr, "res_partner_title", "name", ".number", ".name", extra_filter)
+        extra_filter = self.env.cr.mogrify("t.id = %s", (test_partner_category.id,)).decode()
+        util.replace_in_all_jsonb_values(self.env.cr, "res_partner_category", "name", ".number", ".name", extra_filter)
         util.replace_in_all_jsonb_values(
-            self.env.cr, "res_partner_title", "name", r"""'<"x">\y""", "GONE", extra_filter
+            self.env.cr, "res_partner_category", "name", r"""'<"x">\y""", "GONE", extra_filter
         )
-        test_partner_title.invalidate_recordset(["name"])
+        test_partner_category.invalidate_recordset(["name"])
 
-        self.assertRegex(test_partner_title.name, pattern_new)
-        self.assertRegex(test_partner_title.name, pattern_notouch)
-        self.assertNotRegex(test_partner_title.name, pattern_old)
+        self.assertRegex(test_partner_category.name, pattern_new)
+        self.assertRegex(test_partner_category.name, pattern_notouch)
+        self.assertNotRegex(test_partner_category.name, pattern_old)
         # ensure replacing works for patterns that do not start with a valid word start \w
         # also ensure the replace works for multiple embedded quotes
-        self.assertEqual(test_partner_title.name, "object.name GONE object.numbercombined")
+        self.assertEqual(test_partner_category.name, "object.name GONE object.numbercombined")
 
     def test_replace_record_references_batch__uniqueness(self):
         c1 = self.env["res.country"].create(
