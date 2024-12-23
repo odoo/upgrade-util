@@ -33,7 +33,7 @@ except ImportError:
 from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path
 from .inherit import for_each_inherit
-from .misc import SelfPrintEvalContext
+from .misc import SelfPrintEvalContext, version_gte
 from .pg import column_exists, get_value_or_en_translation, table_exists
 from .records import edit_view
 
@@ -45,7 +45,9 @@ except NameError:
 
 # import from domains/expression
 try:
-    import odoo.domains as _dom
+    if not version_gte("saas~18.2"):
+        raise ImportError("Use osv.expression to migrate")  # noqa: TRY301
+    import odoo.orm.domains as _dom
 
     FALSE_LEAF = _dom._FALSE_LEAF
     TRUE_LEAF = _dom._TRUE_LEAF
@@ -54,8 +56,7 @@ try:
     OR_OPERATOR = _dom.DomainOr.OPERATOR
     DOMAIN_OPERATORS = {NOT_OPERATOR, AND_OPERATOR, OR_OPERATOR}
 
-    # normalization functions are redefined here because they will be deprecated
-    # the Domain factory normalized but also distributes operators during creation of domains
+    # normalization functions based on odoo.orm.domains
 
     def normalize_domain(domain):
         """Return a normalized version of the domain.
@@ -64,49 +65,14 @@ try:
         One property of normalized domain expressions is that they
         can be easily combined together as if they were single domain components.
         """
-        assert isinstance(
-            domain, (list, tuple)
-        ), "Domains to normalize must have a 'domain' form: a list or tuple of domain components"
-        if not domain:
-            return [TRUE_LEAF]
-        result = []
-        expected = 1
-        op_arity = {NOT_OPERATOR: 1, AND_OPERATOR: 2, OR_OPERATOR: 2}
-        for token in domain:
-            if expected == 0:  # more than expected, like in [A, B]
-                result[0:0] = [AND_OPERATOR]  # put an extra '&' in front
-                expected = 1
-            if isinstance(token, (list, tuple)):  # domain term
-                expected -= 1
-                if len(token) == 3 and token[1] in ("any", "not any"):
-                    new_token = (token[0], token[1], normalize_domain(token[2]))
-                    result.append(new_token)
-                else:
-                    result.append(normalize_leaf(token))
-            else:
-                expected += op_arity.get(token, 0) - 1
-                result.append(token)
-        if expected:
-            raise ValueError("Domain {!r} is syntactically not correct.".format(domain))
-        return result
+        return list(_dom.Domain(domain))
 
     def normalize_leaf(leaf):
         if not is_leaf(leaf):
             raise TypeError("Leaf must be a tuple or list of 3 values")
-        left, operator, right = leaf
-        original = operator
-        operator = operator.lower()
-        if operator == "<>":
-            operator = "!="
-        if isinstance(right, bool) and operator in ("in", "not in"):
-            _logger.warning("The domain term '%s' should use the '=' or '!=' operator.", ((left, original, right),))
-            operator = "=" if operator == "in" else "!="
-        if isinstance(right, (list, tuple)) and operator in ("=", "!="):
-            _logger.warning(
-                "The domain term '%s' should use the 'in' or 'not in' operator.", ((left, original, right),)
-            )
-            operator = "in" if operator == "=" else "not in"
-        return left, operator, right
+        domain = _dom.Domain(*leaf)
+        assert isinstance(domain, _dom.DomainCondition)
+        return next(iter(domain))
 
     def is_leaf(leaf):
         return (

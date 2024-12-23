@@ -27,6 +27,9 @@ from odoo.addons.base.maintenance.migrations.util.domains import (
 )
 from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
 
+USE_ORM_DOMAIN = util.misc.version_gte("saas~18.2")
+NOTNOT = () if USE_ORM_DOMAIN else ("!", "!")
+
 
 class TestAdaptOneDomain(UnitTestCase):
     def setUp(self):
@@ -176,7 +179,7 @@ class TestAdaptOneDomain(UnitTestCase):
         # double '!'
         self.mock_adapter.reset_mock()
         domain = ["!", "!", ("partner_id.user_id", "=", 1)]
-        match_domain = ["!", "!", ("partner_id.friend_id", "=", 2)]
+        match_domain = [*NOTNOT, ("partner_id.friend_id", "=", 2)]
         new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
@@ -186,7 +189,7 @@ class TestAdaptOneDomain(UnitTestCase):
         # triple '!'
         self.mock_adapter.reset_mock()
         domain = ["!", "!", "!", ("partner_id.user_id", "=", 1)]
-        match_domain = ["!", "!", "!", ("partner_id.friend_id", "=", 2)]
+        match_domain = [*NOTNOT, "!", ("partner_id.friend_id", "=", 2)]
         new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
@@ -196,7 +199,7 @@ class TestAdaptOneDomain(UnitTestCase):
         # '|' double '!'
         self.mock_adapter.reset_mock()
         domain = ["|", "!", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
-        match_domain = ["|", "!", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
+        match_domain = ["|", *NOTNOT, ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
@@ -206,7 +209,7 @@ class TestAdaptOneDomain(UnitTestCase):
         # '&' double '!'
         self.mock_adapter.reset_mock()
         domain = ["&", "!", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
-        match_domain = ["&", "!", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
+        match_domain = ["&", *NOTNOT, ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
             self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
@@ -378,9 +381,9 @@ class TestRemoveFieldDomains(UnitTestCase):
             # operator is not relevant
             ([("updated", "!=", 0)], [TRUE_LEAF]),
             # if negate we should end with "not false"
-            (["!", ("updated", "!=", 0)], ["!", FALSE_LEAF]),
+            (["!", ("updated", "!=", 0)], [TRUE_LEAF] if USE_ORM_DOMAIN else ["!", FALSE_LEAF]),
             # multiple !, we should still end with a true leaf
-            (["!", "!", ("updated", ">", 0)], ["!", "!", TRUE_LEAF]),
+            (["!", "!", ("updated", ">", 0)], [*NOTNOT, TRUE_LEAF]),
             # with operator
             ([("updated", "=", 0), ("state", "=", "done")], ["&", TRUE_LEAF, ("state", "=", "done")]),
             (["&", ("updated", "=", 0), ("state", "=", "done")], ["&", TRUE_LEAF, ("state", "=", "done")]),
@@ -389,11 +392,31 @@ class TestRemoveFieldDomains(UnitTestCase):
             (["&", ("state", "=", "done"), ("updated", "=", 0)], ["&", ("state", "=", "done"), TRUE_LEAF]),
             (["|", ("state", "=", "done"), ("updated", "=", 0)], ["|", ("state", "=", "done"), FALSE_LEAF]),
             # combination with !
-            (["&", "!", ("updated", "=", 0), ("state", "=", "done")], ["&", "!", FALSE_LEAF, ("state", "=", "done")]),
-            (["|", "!", ("updated", "=", 0), ("state", "=", "done")], ["|", "!", TRUE_LEAF, ("state", "=", "done")]),
+            (
+                ["&", "!", ("updated", "=", 0), ("state", "=", "done")],
+                ["&", TRUE_LEAF, ("state", "=", "done")]
+                if USE_ORM_DOMAIN
+                else ["&", "!", FALSE_LEAF, ("state", "=", "done")],
+            ),
+            (
+                ["|", "!", ("updated", "=", 0), ("state", "=", "done")],
+                ["|", FALSE_LEAF, ("state", "=", "done")]
+                if USE_ORM_DOMAIN
+                else ["|", "!", TRUE_LEAF, ("state", "=", "done")],
+            ),
             # here, the ! apply on the whole &/| and should not invert the replaced leaf
-            (["!", "&", ("updated", "=", 0), ("state", "=", "done")], ["!", "&", TRUE_LEAF, ("state", "=", "done")]),
-            (["!", "|", ("updated", "=", 0), ("state", "=", "done")], ["!", "|", FALSE_LEAF, ("state", "=", "done")]),
+            (
+                ["!", "&", ("updated", "=", 0), ("state", "=", "done")],
+                ["|", FALSE_LEAF, ("state", "!=", "done")]
+                if USE_ORM_DOMAIN
+                else ["!", "&", TRUE_LEAF, ("state", "=", "done")],
+            ),
+            (
+                ["!", "|", ("updated", "=", 0), ("state", "=", "done")],
+                ["&", TRUE_LEAF, ("state", "!=", "done")]
+                if USE_ORM_DOMAIN
+                else ["!", "|", FALSE_LEAF, ("state", "=", "done")],
+            ),
         ]
     )
     def test_remove_field(self, domain, expected):
@@ -845,7 +868,8 @@ class TestField(UnitTestCase):
             util.invert_boolean_field(cr, model, old_name, new_name)
 
         util.invalidate(fltr)
-        self.assertEqual(literal_eval(fltr.domain), ["!", (new_name, "=", True)])
+        expected = ["!", (new_name, "=", True)]
+        self.assertEqual(literal_eval(fltr.domain), expected)
 
         cr.execute(util.format_query(cr, query, table, new_name))
         inverted_repartition = dict(cr.fetchall())
@@ -859,14 +883,16 @@ class TestField(UnitTestCase):
             util.rename_field(cr, model, new_name, old_name)
 
         util.invalidate(fltr)
-        self.assertEqual(literal_eval(fltr.domain), ["!", (old_name, "=", True)])
+        expected = [(old_name, "!=", True)] if USE_ORM_DOMAIN else ["!", (old_name, "=", True)]
+        self.assertEqual(literal_eval(fltr.domain), expected)
 
         # invert with same name; will invert domains and data
         with mock.patch.object(cr, "commit", lambda: ...):
             util.invert_boolean_field(cr, model, old_name, old_name)
 
         util.invalidate(fltr)
-        self.assertEqual(literal_eval(fltr.domain), ["!", "!", (old_name, "=", True)])
+        expected = ["!", (old_name, "!=", True)] if USE_ORM_DOMAIN else ["!", "!", (old_name, "=", True)]
+        self.assertEqual(literal_eval(fltr.domain), expected)
 
         cr.execute(util.format_query(cr, query, table, old_name))
         back_repartition = dict(cr.fetchall())
