@@ -518,6 +518,15 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
                 "len_source": len(source) + 1,
             },
         )
+    if column_exists(cr, "base_automation", "model_id"):
+        cr.execute(
+            """
+            UPDATE base_automation
+               SET model_id = %s
+             WHERE model_id = %s
+            """,
+            [model_ids[target], model_ids[source]],
+        )
 
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
