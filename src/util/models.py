@@ -466,7 +466,7 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
             # `replace_record_references_batch`
             wheres = []
             for _, uniqs in _get_unique_indexes_with(cr, ir.table, ir.res_model):
-                sub_where = " AND ".join("o.{0} = t.{0}".format(a) for a in uniqs if a != ir.res_model) or "true"
+                sub_where = " AND ".join("o.{0} = t.{0}".format(a) for a in uniqs if a != ir.res_model) or "false"
                 wheres.append(
                     "NOT EXISTS(SELECT 1 FROM {t} o WHERE {w} AND o.{c}=%(new)s)".format(
                         t=ir.table, c=ir.res_model, w=sub_where
