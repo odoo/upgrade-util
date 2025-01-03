@@ -782,8 +782,8 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
         if model == "ir.ui.view" and column_exists(cr, "ir_ui_view", "key"):
             cr.execute("UPDATE ir_ui_view SET key=%s WHERE id=%s AND key=%s", [new, new_id, old])
             if cr.rowcount:
-                # iif the key has been updated for this view, also update it for all other cowed views.
-                # Don't change the view keys inconditionally to avoid changing unrelated views.
+                # iff the key has been updated for this view, also update it for all other cowed views.
+                # Don't change the view keys unconditionally to avoid changing unrelated views.
                 cr.execute("UPDATE ir_ui_view SET key = %s WHERE key = %s", [new, old])
 
         if model == "ir.ui.menu" and column_exists(cr, "res_users_settings", "homemenu_config"):
@@ -1375,12 +1375,12 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 conditions = [""]
                 for _, uniq_cols in unique_indexes:
                     uniq_cols = set(uniq_cols) - {fk}  # noqa: PLW2901
-                    ands = (
+                    where_clause = (
                         " AND ".join(format_query(cr, "u.{col} = t.{col}", col=col) for col in uniq_cols)
                         if uniq_cols
                         else "true"
                     )
-                    conditions.append("NOT EXISTS(SELECT 1 FROM {table} u WHERE u.{fk} = r.new AND %s)" % ands)
+                    conditions.append("NOT EXISTS(SELECT 1 FROM {table} u WHERE u.{fk} = r.new AND %s)" % where_clause)
 
                 query += " AND ".join(conditions)
 
@@ -1577,9 +1577,13 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                 uniq_cols = set(uniq_cols) - {ir.res_id, ir.res_model, ir.res_model_id}  # noqa: PLW2901
                 conditions.append(
                     """
-                        NOT EXISTS(SELECT 1 FROM {ir.table} WHERE {res_model_whr} AND {jmap_expr} AND %(ands)s)
+                        NOT EXISTS(SELECT 1 FROM {ir.table} WHERE {res_model_whr} AND {jmap_expr} AND %(where_clause)s)
                     """
-                    % {"ands": "AND".join('"%s"=t."%s"' % (col, col) for col in uniq_cols) if uniq_cols else "True"}
+                    % {
+                        "where_clause": "AND".join('"%s"=t."%s"' % (col, col) for col in uniq_cols)
+                        if uniq_cols
+                        else "True"
+                    }
                 )
             query = """
                     %s

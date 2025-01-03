@@ -491,7 +491,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                         modified = True
 
                 for node in view.xpath("//field[contains(@domain, '{0}')]".format(old)):
-                    # as <fields> can happen in sub-views, we should deternine the actual model the field belongs to
+                    # as <fields> can happen in sub-views, we should determine the actual model the field belongs to
                     path = list(reversed([p.get("name") for p in node.iterancestors("field")])) + [node.get("name")]
                     field_model = _model_of_path(cr, view_model, path)
                     if not field_model:
@@ -542,7 +542,7 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
 
             domain = act.get("domain")
             if any(entity in domain for entity in ("&#27;", "&amp;", "&lt;", "&gt;")):
-                # There is a bug Odoo 16.0 that double escape the domains in dashboad...
+                # There is a bug Odoo 16.0 that double escape the domains in dashboard...
                 # See https://github.com/odoo/odoo/pull/119518
                 domain = unescape(domain)
             domain = _adapt_one_domain(

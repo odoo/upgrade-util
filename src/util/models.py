@@ -464,15 +464,15 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
         if ir.res_model and not ir.res_id and ir.table not in ignores:
             # only update unbound references, other ones have been updated by the call to
             # `replace_record_references_batch`
-            wheres = []
+            where_clauses = []
             for _, uniqs in _get_unique_indexes_with(cr, ir.table, ir.res_model):
                 sub_where = " AND ".join("o.{0} = t.{0}".format(a) for a in uniqs if a != ir.res_model) or "true"
-                wheres.append(
+                where_clauses.append(
                     "NOT EXISTS(SELECT 1 FROM {t} o WHERE {w} AND o.{c}=%(new)s)".format(
                         t=ir.table, c=ir.res_model, w=sub_where
                     )
                 )
-            where = " AND ".join(wheres) or "true"
+            where = " AND ".join(where_clauses) or "true"
             query = "UPDATE {t} t SET {c}=%(new)s WHERE {w} AND {c}=%(old)s".format(t=ir.table, c=ir.res_model, w=where)
             fmt_query = cr.mogrify(query, {"new": target, "old": source}).decode()
             if column_exists(cr, ir.table, "id"):

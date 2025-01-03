@@ -773,7 +773,7 @@ class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstrai
 
 def get_index_on(cr, table, *columns):
     """
-    Return an optional IndexInfo recors.
+    Return an optional IndexInfo records.
 
     NOTE: column order is respected
 
@@ -822,7 +822,7 @@ def get_index_on(cr, table, *columns):
 def _get_unique_indexes_with(cr, table, *columns):
     # (Cursor, str, *str) -> List[Tuple[str, List[str]]
     """
-    Return all unique indexes on at least `columms`.
+    Return all unique indexes on at least `columns`.
 
     return a list of tuple [index_name, list_of_column]
     """
@@ -1281,7 +1281,7 @@ def fixup_m2m_indexes(cr, m2m, col1, col2):
             cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % (m2m, col1, col2))
             cr.execute('CREATE INDEX ON "%s" ("%s", "%s")' % (m2m, col2, col1))
         else:
-            # create a PK (unqiue index)
+            # create a PK (unique index)
             cr.execute('ALTER TABLE "%s" ADD PRIMARY KEY("%s", "%s")' % fmt)
 
     # remove indexes on 1 column only

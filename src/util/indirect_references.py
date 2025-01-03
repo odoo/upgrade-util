@@ -103,7 +103,7 @@ def indirect_references(cr, bound_only=False):
 
         # some `res_model/res_model_id` combination may change between
         # versions (i.e. rating_rating.res_model_id was added in saas~15).
-        # we need to verify existance of columns before using them.
+        # we need to verify existence of columns before using them.
         if ir.res_model and not column_exists(cr, ir.table, ir.res_model):
             ir = ir._replace(res_model=None)  # noqa: PLW2901
         if ir.res_model_id and not column_exists(cr, ir.table, ir.res_model_id):

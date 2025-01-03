@@ -70,7 +70,7 @@ def parametrize(argvalues):
 def _create_meta(sequence, *tags):
     class UpgradeMetaCase(MetaCase):
         def __init__(self, name, bases, attrs, **kwargs):
-            # Setting test_tags in __init_subclass__ could work, but BaseCase will overide them in __init__.
+            # Setting test_tags in __init_subclass__ could work, but BaseCase will override them in __init__.
             # we need to set test_tags after BaseCase __init__
             super().__init__(name, bases, attrs)
             self.test_sequence = sequence

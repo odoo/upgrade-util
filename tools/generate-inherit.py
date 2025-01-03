@@ -71,7 +71,7 @@ class Version:
 
     def __repr__(self):
         # This is hacky.
-        # It will only be used when outputing the generated file.
+        # It will only be used when outputting the generated file.
         return f"parse_version({self.fqn!r})"
 
     @property
@@ -366,7 +366,7 @@ def checkout(wd: Path, repo: Repo, version: Version) -> bool:
 
 
 def bootstrap(from_file: Path):
-    logger.info("📂 Bootstraping from %s", from_file)
+    logger.info("📂 Bootstrapping from %s", from_file)
     visitor = BootstrapVisitor()
 
     code, _ = _read_python_source(from_file)

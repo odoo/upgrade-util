@@ -467,7 +467,7 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
     rf[new] = rf.pop(old, old)
 
     if update_references:
-        # skip all inherit, they will be handled by the resursive call
+        # skip all inherit, they will be handled by the recursive call
         update_field_usage(cr, model, old, new, domain_adapter=domain_adapter, skip_inherit="*")
 
     try:
@@ -770,7 +770,7 @@ def _convert_field_to_property(
     elif type != "many2one":
         value_select = field
     else:
-        # for m2o, the store value is a refrence field, so in format `model,id`
+        # for m2o, the store value is a reference field, so in format `model,id`
         value_select = "CONCAT('{target_model},', {field})".format(**locals())
 
     if is_field_anonymized(cr, model, field):
@@ -978,7 +978,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
             right = mapping.get(right, right)
         return [(left, op, right)]
 
-    # skip all inherit, they will be handled by the resursive call
+    # skip all inherit, they will be handled by the recursive call
     adapt_domains(cr, model, field, field, adapter=adapter, skip_inherit="*")
 
     # rename field on inherits
@@ -1301,7 +1301,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
     # domains, related and inhited models
     if only_models:
         for model in only_models:
-            # skip all inherit, they will be handled by the resursive call
+            # skip all inherit, they will be handled by the recursive call
             adapt_domains(cr, model, old, new, adapter=domain_adapter, skip_inherit="*", force_adapt=True)
             adapt_related(cr, model, old, new, skip_inherit="*")
             adapt_depends(cr, model, old, new, skip_inherit="*")

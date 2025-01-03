@@ -80,7 +80,7 @@ def model_of_table(cr, table):
         line.split()
         for line in splitlines(
             """
-        # can also be act_window_close, but there are chances it wont be usefull for anyone...
+        # can also be act_window_close, but there are chances it wont be useful for anyone...
         ir_actions         ir.actions.actions
         ir_act_url         ir.actions.act_url
         ir_act_window      ir.actions.act_window
