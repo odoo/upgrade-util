@@ -380,6 +380,9 @@ class SelfPrint(object):
     def __getattr__(self, attr):
         return SelfPrint("%r.%s" % (self, attr))
 
+    def __getitem__(self, key):
+        return SelfPrint("%r[%r]" % (self, key))
+
     def __call__(self, *args, **kwargs):
         s = [repr(a) for a in args]
         for k, v in kwargs.items():
@@ -387,51 +390,66 @@ class SelfPrint(object):
         return SelfPrint("%r(%s)" % (self, ", ".join(s)))
 
     def __add__(self, other):
-        return SelfPrint("%r + %r" % (self, other))
+        return SelfPrint("(%r + %r)" % (self, other))
 
     def __radd__(self, other):
-        return SelfPrint("%r + %r" % (other, self))
+        return SelfPrint("(%r + %r)" % (other, self))
 
     def __sub__(self, other):
-        return SelfPrint("%r - %r" % (self, other))
+        return SelfPrint("(%r - %r)" % (self, other))
 
     def __rsub__(self, other):
-        return SelfPrint("%r - %r" % (other, self))
+        return SelfPrint("(%r - %r)" % (other, self))
 
     def __mul__(self, other):
-        return SelfPrint("%r * %r" % (self, other))
+        return SelfPrint("(%r * %r)" % (self, other))
 
     def __rmul__(self, other):
-        return SelfPrint("%r * %r" % (other, self))
+        return SelfPrint("(%r * %r)" % (other, self))
 
     def __div__(self, other):
-        return SelfPrint("%r / %r" % (self, other))
+        return SelfPrint("(%r / %r)" % (self, other))
 
     def __rdiv__(self, other):
-        return SelfPrint("%r / %r" % (other, self))
+        return SelfPrint("(%r / %r)" % (other, self))
 
     def __truediv__(self, other):
-        return SelfPrint("%r / %r" % (self, other))
+        return SelfPrint("(%r / %r)" % (self, other))
 
     def __rtruediv__(self, other):
-        return SelfPrint("%r / %r" % (other, self))
+        return SelfPrint("(%r / %r)" % (other, self))
 
     def __floordiv__(self, other):
-        return SelfPrint("%r // %r" % (self, other))
+        return SelfPrint("(%r // %r)" % (self, other))
 
     def __rfloordiv__(self, other):
-        return SelfPrint("%r // %r" % (other, self))
+        return SelfPrint("(%r // %r)" % (other, self))
 
     def __mod__(self, other):
-        return SelfPrint("%r %% %r" % (self, other))
+        return SelfPrint("(%r %% %r)" % (self, other))
 
     def __rmod__(self, other):
-        return SelfPrint("%r %% %r" % (other, self))
+        return SelfPrint("(%r %% %r)" % (other, self))
+
+    def __pow__(self, other):
+        return SelfPrint("(%r ** %r)" % (self, other))
+
+    def __rpow__(self, other):
+        return SelfPrint("(%r ** %r)" % (other, self))
+
+    def __pos__(self):
+        return SelfPrint("+(%r)" % (self,))
+
+    def __neg__(self):
+        return SelfPrint("-(%r)" % (self,))
 
     def __repr__(self):
         return self.__name
 
     __str__ = __repr__
+
+    def __iter__(self):
+        raise RuntimeError("Cannot self-print iterations")
 
 
 class SelfPrintEvalContext(collections.defaultdict):
@@ -473,11 +491,20 @@ class SelfPrintEvalContext(collections.defaultdict):
                 self.replaces = {}
                 super(RewriteName, self).__init__()
 
-            def visit_Starred(self, node):
-                uniq_id = "_upg_Starred" + uuid.uuid4().hex[:12]
+            def _replace_node(self, prefix, node):
+                uniq_id = prefix + uuid.uuid4().hex[:12]
                 unparsed = ast_unparse(node).strip()
                 self.replaces[uniq_id] = SelfPrint(unparsed)
                 return ast.Name(id=uniq_id, ctx=ast.Load())
+
+            def visit_Starred(self, node):
+                return self._replace_node("_upg_Starred", node)
+
+            def visit_BoolOp(self, node):
+                return self._replace_node("_upg_BoolOp", node)
+
+            def visit_UnaryOp(self, node):
+                return self._replace_node("_upg_UnaryOp_Not", node) if isinstance(node.op, ast.Not) else node
 
         replacer = RewriteName()
         root = ast.parse(expr.strip(), mode="eval").body

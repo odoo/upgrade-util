@@ -1424,42 +1424,71 @@ class TestMisc(UnitTestCase):
 
     @parametrize(
         [
-            (value,)
-            for value in (
-                [
-                    "a",
-                    "a.b" "a.b()",
-                    "a.b(c)",
-                    "[('company_id', 'in', company_ids)]",
-                    "[]",
-                ]
-                + ["a {} 4".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
-                + ["4 {} b".format(op) for op in ["+", "-", "*", "/", "//", "%"]]
-            )
+            (value, value)
+            for value in [
+                "a",
+                "a.b",
+                "a.b()",
+                "a.b(c)",
+                "a[b]",
+                "context['company_id']",
+                "[('company_id', 'in', company_ids)]",
+                "[]",
+            ]
+        ]
+        + [(f"a {op} 4", f"(a {op} 4)") for op in ["+", "-", "*", "/", "//", "%", "**"]]
+        + [(f"4 {op} b", f"(4 {op} b)") for op in ["+", "-", "*", "/", "//", "%", "**"]]
+        + [
+            ("a+b*c", "(a + (b * c))"),
+            ("a+b/c-d", "((a + (b / c)) - d)"),
+            ("(a+b) * c", "((a + b) * c)"),
+            ("+a", "+(a)"),
+            ("-a", "-(a)"),
+            ("-(a+b)", "-((a + b))"),
         ]
     )
-    def test_SelfPrint(self, value):
+    def test_SelfPrint(self, value, expected):
         evaluated = safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
-        self.assertEqual(str(evaluated), value, "Self printed result differs")
+        self.assertEqual(str(evaluated), expected, "Self printed result differs")
 
         replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
         evaluated = safe_eval(replaced_value, ctx, nocopy=True)
-        self.assertEqual(str(evaluated), value, "Prepared self printed result differs")
+        self.assertEqual(str(evaluated), expected, "Prepared self printed result differs")
+
+    @parametrize(
+        [
+            (value, value)
+            for value in [
+                # splat
+                "[('company_id', 'in', [*company_ids, False])]",
+                "[('company_id', 'in', [False, *company_ids])]",
+                # bool conversions
+                "not a",
+                "a and b",
+                "a or b",
+            ]
+        ]
+    )
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_SelfPrint_prepare(self, value, expected):
+        replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
+        evaluated = safe_eval(replaced_value, ctx, nocopy=True)
+        self.assertEqual(str(evaluated), expected)
 
     @parametrize(
         [
             (value,)
             for value in [
-                "[('company_id', 'in', [*company_ids, False])]",
-                "[('company_id', 'in', [False, *company_ids])]",
+                # iterators
+                "[a.b for a in b]",
+                "4 in b",
             ]
         ]
     )
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
-    def test_SelfPrint_prepare(self, value):
-        replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
-        evaluated = safe_eval(replaced_value, ctx, nocopy=True)
-        self.assertEqual(str(evaluated), value)
+    def test_SelfPrint_failure(self, value):
+        # note: `safe_eval` will re-raise a ValueError
+        with self.assertRaises(ValueError):
+            safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
 
 
 def not_doing_anything_converter(el):
