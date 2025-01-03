@@ -3,7 +3,7 @@
   <h2> Congratulations, you have just upgraded to Odoo <t t-esc="version" /> </h2>
   <p> Here are changes that may impact day to day flows in this new version. </p>
   <p t-if="int(minor_version) == 0">Want to know more? Check out the full functional <a t-attf-href="https://www.odoo.com/odoo-{{ major_version }}-release-notes">release note</a>.</p>
-  <p t-elif="int(minor_version) >= 0">Want to know more? Check out the full fonctional <a t-attf-href="https://www.odoo.com/odoo-{{ major_version }}-{{ minor_version }}-release-notes">release note</a>.</p>
+  <p t-elif="int(minor_version) >= 0">Want to know more? Check out the full functional <a t-attf-href="https://www.odoo.com/odoo-{{ major_version }}-{{ minor_version }}-release-notes">release note</a>.</p>
   <p t-else=""></p>
   <br/>
   <t t-foreach="messages" t-as="category">
@@ -11,7 +11,7 @@
     <ul>
       <t t-if="category in ['Disabled views', 'Overridden views']">
         <t t-set="view_message_types" t-value="{
-          'Overridden views': ['The below standard views have been overriden with their original content during the migration because the changes made in them were no longer valid.', '%(xml_id)s'],
+          'Overridden views': ['The below standard views have been overridden with their original content during the migration because the changes made in them were no longer valid.', '%(xml_id)s'],
           'Disabled views': ['The below custom views have been disabled during the migration because they were no longer valid.', '%(name)s'],
         }"/>
         <t t-set="message_type" t-value="view_message_types[category]"/>

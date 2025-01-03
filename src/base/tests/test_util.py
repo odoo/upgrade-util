@@ -877,7 +877,7 @@ class TestField(UnitTestCase):
 
 
 class TestHelpers(UnitTestCase):
-    def test_model_table_convertion(self):
+    def test_model_table_conversion(self):
         cr = self.env.cr
         for model in self.env.registry:
             if model in ("ir.actions.act_window_close",):
@@ -1018,7 +1018,7 @@ class TestRecords(UnitTestCase):
         )
 
         if hasattr(self, "_savepoint_id"):
-            # As the `rename_xmlid` method uses `parallel_execute`, the cursor is commited; which kill
+            # As the `rename_xmlid` method uses `parallel_execute`, the cursor is committed; which kill
             # the savepoint created by the test setup (since saas~14.1 with the merge of SavepointCase
             # into TransactionCase in odoo/odoo@7f2e168c02a7aea666d34510ed2ed8efacd5654b).
             # Force a new one to avoid this issue.

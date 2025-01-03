@@ -316,7 +316,7 @@ def upgrade_jinja_fields(
 
     _logger.info("process translations for model %s", model)
     # NOTE: Not all translations may not be updated.
-    # Differente jinja values can give the same qweb value.
+    # Difference jinja values can give the same qweb value.
     # `${object.company_id.name|safe}` and `${object.company_id.name}` both give `{{ object.company_id.name }}`
     # Which will violates the unique constraint.
     # In this case, we just ignore the update and remove the duplicated row.
@@ -543,7 +543,7 @@ def format_time(env, time, tz=False, time_format="medium", lang_code=False):
 
 def relativedelta_proxy(*args, **kwargs):
     # dateutil.relativedelta is an old-style class and cannot be directly
-    # instanciated wihtin a jinja2 expression, so a lambda "proxy" is
+    # instantiated within a jinja2 expression, so a lambda "proxy" is
     # is needed, apparently
     return relativedelta.relativedelta(*args, **kwargs)
 

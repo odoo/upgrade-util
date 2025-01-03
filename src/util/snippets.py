@@ -63,7 +63,7 @@ def add_snippet_names(cr, table, column, snippets, select_query):
 
 
 def add_snippet_names_on_html_field(cr, table, column, snippets, regex):
-    """Search for all the snippets in the fields mentionned (should be html fields) and add the corresponding data-snippet on them."""
+    """Search for all the snippets in the fields mentioned (should be html fields) and add the corresponding data-snippet on them."""
     query = cr.mogrify(
         sql.SQL(
             """

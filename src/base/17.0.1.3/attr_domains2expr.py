@@ -14,7 +14,7 @@ sequence of the views.
 The script can be imported directly or via `util.import_script`. The model of the view
 should be fully loaded before attempting to convert it -- thus an end- script is the
 best place to use this tool. See adapt_view function in this file for an example usage
-of the utlities in this script.
+of the utilities in this script.
 
 Example usage from another script:
 ```
@@ -200,7 +200,7 @@ def fix_elem(cr, model, elem, comb_arch):
     # Build the dict of attrs attributes:
     # 1. Take the values from the target element if any
     # 2. If current element has attrs, override the values.
-    #    All keys in target not in current element are overriden as empty value.
+    #    All keys in target not in current element are overridden as empty value.
     attrs = {}
     if telem is not None and "attrs" in telem.attrib:
         ast_attrs = ast_parse(telem.get("attrs"))
@@ -590,7 +590,7 @@ def convert_domain_leaf(cr, model, field_path, leaf):
     if op in ("=like", "=ilike") and isinstance(right_ast, ast.Constant) and isinstance(right_ast.value, str):
         # this cannot be handled in Python for all cases with the limited support of what
         # can be evaluated in an inline attribute expression, we try to deal with some cases
-        # a pattern like 'aaa%bbb%ccc' is imposible to deal with
+        # a pattern like 'aaa%bbb%ccc' is impossible to deal with
         pattern = right[1:-1]  # chop the quotes
         lower = ""
         if op == "=ilike":

@@ -105,7 +105,7 @@ def has_enterprise():
     """
     # NOTE should always return True as customers need Enterprise to migrate or
     #      they are on SaaS, which include enterpise addons.
-    #      This act as a sanity check for developpers or in case we release the scripts.
+    #      This act as a sanity check for developers or in case we release the scripts.
     if os.getenv("ODOO_HAS_ENTERPRISE"):
         return True
     # XXX maybe we will need to change this for version > 9

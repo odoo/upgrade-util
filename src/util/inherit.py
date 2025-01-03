@@ -48,7 +48,7 @@ else:
 
 
 def _get_base_version(cr):
-    # base_version is normaly computed in `base/0.0.0/pre-base_version.py` (and symlinks)
+    # base_version is normally computed in `base/0.0.0/pre-base_version.py` (and symlinks)
     # However, if theses scripts are used to upgrade custom modules afterward (like the P.S. do),
     # as the `base` module not being updated, the *base_version* MUST be set as an environment variable.
     bv = ENVIRON.get("__base_version")
