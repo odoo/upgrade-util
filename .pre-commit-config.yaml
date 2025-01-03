@@ -19,6 +19,10 @@ repos:
       args: [ --exit-non-zero-on-fix ]
     - id: ruff-format
       name: Format code with Ruff
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.29.4
+    hooks:
+      - id: typos
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

@@ -112,3 +112,27 @@ convention = "pep257"
 "src/*/tests/*.py" = ["D"]
 # and for upgrade scripts
 "src/*/*/{pre,post,end}-*.py" = ["D"]
+
+
+[tool.typos.files]
+extend-exclude = [
+    # auto-generated file
+    "src/util/_inherit.py",
+
+    # Use weird words. And it's just a test file, typos can be tolerated.
+    "src/spreadsheet/tests/test_spreadsheet_tokenizer.py",
+]
+
+[tool.typos.type.py]
+extend-ignore-re = [
+    "\\brelease\\.serie\\b",
+    # ignore `datas` as the whole string
+    '"datas"',
+]
+
+[tool.typos.default.extend-identifiers]
+inh = "inh"
+_inh = "_inh"
+ressource_type_id = "ressource_type_id"
+# Used as alias in SQL queries.
+fpt = "fpt"
