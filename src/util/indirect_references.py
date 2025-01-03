@@ -69,6 +69,7 @@ def indirect_references(cr, bound_only=False):
         IR("data_merge_record", "res_model_name", "res_id"),
         IR("documents_document", "res_model", "res_id"),
         IR("email_template", "model", None, set_unknown=True),  # stored related
+        IR("iap_extracted_words", "res_model", "res_id"),
         IR("mail_template", "model", None, set_unknown=True),  # model renamed in saas~6
         IR("mail_activity", "res_model", "res_id", "res_model_id"),
         IR("mail_activity_type", "res_model", None),
