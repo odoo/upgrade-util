@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Utility functions for modifying models.
 
@@ -522,11 +521,33 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
 
-def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=()):
+def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with_inherit_parents=True):
+    """
+    Remove ``inherit`` from ``model``.
+
+    This function removes all fields inherited via ``inherit`` from a ``model`` and all
+    its descendant models. All fields from the inherit, including those from its parent
+    models are also removed, unless ``with_inherit_parents`` mode is unset. In such case
+    only fields from ``inherit`` are removed, excluding fields in its parents. Fields
+    listed in ``keep`` are never removed. If some descendants from ``model`` are listed in
+    ``skip_inherit`` they will keep the fields from ``inherit``.
+
+    :param str model: name of the model from which to remove the inherit
+    :param str inherit: name of the inherited model (or mixin) to remove
+    :param tuple(str) keep: tuple with field names to keep
+    :param tuple(str) skip_inherit: list of descendant models of ``model`` to not process
+    :param boolean with_inherit_parents: if unset, remove fields coming from ``inherit``
+                                         only, keeping all fields from its parents
+    """
     _validate_model(model)
     _validate_model(inherit)
 
-    inherit_models = {inherit} | set(inherit_parents(cr, inherit, interval="[]"))
+    parents = set(inherit_parents(cr, inherit, interval="[]"))
+    inherit_models = {inherit} | (parents if with_inherit_parents else set())
+    keep = set(keep)
+    if not with_inherit_parents and parents:
+        cr.execute("SELECT name FROM ir_model_fields WHERE model IN %s GROUP BY name", [tuple(parents)])
+        keep.update(r[0] for r in cr.fetchall())
 
     cr.execute(
         """
@@ -553,7 +574,9 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=()):
 
     # down on inherits of `model`
     for inh in for_each_inherit(cr, model, skip_inherit):
-        remove_inherit_from_model(cr, inh.model, inherit, keep=keep, skip_inherit=skip_inherit)
+        remove_inherit_from_model(
+            cr, inh.model, inherit, keep=keep, skip_inherit=skip_inherit, with_inherit_parents=with_inherit_parents
+        )
 
 
 def convert_model_to_abstract(cr, model, drop_table=True, keep=()):
