@@ -567,11 +567,13 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     updated_field_ids = []
 
     # 2.1 Convert fields not in the registry of models already in the registry.
+    # defuse constraint for manual fields, ref: odoo/odoo@3d2f766
+    env.cr.execute("SELECT 1 FROM pg_constraint WHERE conname = 'ir_model_fields_name_manual_field'")
+    have_constraint = bool(env.cr.rowcount)
+    if have_constraint:
+        env.cr.execute("ALTER TABLE ir_model_fields DROP CONSTRAINT ir_model_fields_name_manual_field")
     # In the past, some models added the reserved word `env` as field (e.g. `payment.acquirer`)
     # if the field was not correctly removed from the database during past upgrades, the field remains in the database.
-    if version_gte("saas~16.4"):
-        # defuse constraint for manual fields, ref: odoo/odoo@3d2f766
-        env.cr.execute("ALTER TABLE ir_model_fields DROP CONSTRAINT IF EXISTS ir_model_fields_name_manual_field")
     reserved_words = ["env"]
     ignores = {"ir.actions.server": ["condition"], "ir.ui.view": ["page"]}
     for model in models:
@@ -731,7 +733,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
 
         if updated_field_ids:
             env.cr.execute("UPDATE ir_model_fields SET state = 'base' WHERE id IN %s", (tuple(updated_field_ids),))
-        if version_gte("saas~16.4"):
+        if have_constraint:
             # restore constraint for manual fields, ref: odoo/odoo@3d2f766
             env.cr.execute(
                 r"""
