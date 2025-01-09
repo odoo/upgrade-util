@@ -457,8 +457,13 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
                 )
 
     if field_ids_mapping:
-        ignores = ["ir_model_fields_group_rel", "ir_model_fields_selection"]
-        replace_record_references_batch(cr, field_ids_mapping, "ir.model.fields", replace_xmlid=False, ignores=ignores)
+        replace_record_references_batch(
+            cr,
+            field_ids_mapping,
+            "ir.model.fields",
+            replace_xmlid=False,
+            ignores=["ir_model_fields_group_rel", "ir_model_fields_selection"],
+        )
 
     for ir in indirect_references(cr):
         if ir.res_model and not ir.res_id and ir.table not in ignores:
