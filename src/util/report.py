@@ -136,7 +136,7 @@ def announce_migration_report(cr):
         "version": release.major_version,
         "major_version": major_version,
         "minor_version": minor_version,
-        "messages": migration_reports,
+        "messages": dict(sorted(migration_reports.items())),
         "get_anchor_link_to_record": get_anchor_link_to_record,
     }
     _logger.info(migration_reports)
