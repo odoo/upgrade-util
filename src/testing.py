@@ -7,10 +7,14 @@ import re
 import odoo
 from odoo import api, release
 from odoo.modules.registry import Registry
-from odoo.tests.common import BaseCase, MetaCase, TransactionCase, get_db_name
+from odoo.tests.common import BaseCase, TransactionCase, get_db_name
 from odoo.tools import config
 from odoo.tools.parse_version import parse_version
 
+try:
+    from odoo.tests.common import MetaCase
+except ImportError:
+    MetaCase = None
 try:
     from unittest.mock import patch
 except ImportError:
@@ -67,22 +71,41 @@ def parametrize(argvalues):
     return decorator
 
 
-def _create_meta(sequence, *tags):
-    class UpgradeMetaCase(MetaCase):
-        def __init__(self, name, bases, attrs, **kwargs):
-            # Setting test_tags in __init_subclass__ could work, but BaseCase will override them in __init__.
-            # we need to set test_tags after BaseCase __init__
-            super().__init__(name, bases, attrs)
-            self.test_sequence = sequence
-            self.test_tags = {"post_install", "upgrade"} | set(tags)
-            self.test_class = name
+def _create_meta(sequence: int, *tags: str) -> type:
+    if MetaCase:
 
-            if self.__module__.startswith("odoo.upgrade."):
-                self.test_module = self.__module__.split(".")[2]
-            elif self.__module__.startswith("odoo.addons.base.maintenance.migrations"):
-                self.test_module = self.__module__.split(".")[5]
+        class UpgradeMetaCase(MetaCase):
+            def __init__(self, name, bases, attrs, **kwargs):
+                # Setting test_tags in __init_subclass__ could work, but BaseCase will override them in __init__.
+                # we need to set test_tags after BaseCase __init__
+                super().__init__(name, bases, attrs)
+                self.test_sequence = sequence
+                self.test_tags = {"post_install", "upgrade"} | set(tags)
+                self.test_class = name
 
-    return UpgradeMetaCase("UpgradeMetaCase", (), {})
+                if self.__module__.startswith("odoo.upgrade."):
+                    self.test_module = self.__module__.split(".")[2]
+                elif self.__module__.startswith("odoo.addons.base.maintenance.migrations"):
+                    self.test_module = self.__module__.split(".")[5]
+
+        return UpgradeMetaCase("UpgradeMetaCase", (), {})
+    else:
+
+        class UpgradeMetaCase(BaseCase):
+            def __init_subclass__(cls):
+                super().__init_subclass__()
+
+                if cls.__module__.startswith("odoo.upgrade."):
+                    cls.test_module = cls.__module__.split(".")[2]
+                elif cls.__module__.startswith("odoo.addons.base.maintenance.migrations"):
+                    cls.test_module = cls.__module__.split(".")[5]
+                else:
+                    return
+
+                cls.test_tags = {"post_install", "upgrade"} | set(tags)
+                cls.test_sequence = sequence
+
+        return UpgradeMetaCase
 
 
 class UnitTestCase(TransactionCase, _create_meta(10, "upgrade_unit")):
