@@ -939,6 +939,8 @@ def _trigger_auto_discovery(cr):
     graph = {}
     for module in odoo.modules.get_modules():
         manifest = get_manifest(module)
+        if not manifest.get("installable", True):
+            continue
         graph[module] = (
             set(manifest["depends"]),
             manifest["auto_install"],
