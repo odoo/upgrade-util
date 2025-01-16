@@ -79,11 +79,12 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
         if ir.company_dependent_comodel:
             if ir.company_dependent_comodel == "ir.model":
                 # clean on delete set null
-                cr.execute("SELECT id FROM ir_model WHERE name = %s", [model])
+                cr.execute("SELECT id FROM ir_model WHERE model = %s", [model])
                 [mod_id] = cr.fetchone() or [None]
                 if mod_id:
                     cr.execute(
                         format_query(
+                            cr,
                             """
                             UPDATE {table}
                                SET {field} = (
