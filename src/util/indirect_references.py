@@ -19,6 +19,10 @@ class IndirectReference(
         else:
             column = self.res_model
 
+        if column is None:
+            # `model` is not set when `company_dependent_comodel` is.
+            return "(false AND {} IS NULL)".format(placeholder)
+
         return '{}"{}"={}'.format(prefix, column, placeholder)
 
 
