@@ -27,7 +27,8 @@ class IndirectReference(
 
 
 # By default, there is no `res_id`, no `res_model_id` and it is deleted when the linked model is removed
-IndirectReference.__new__.__defaults__ = (None, None, False)  # https://stackoverflow.com/a/18348004
+# warning: defaults are from the last fields in the namedtuple
+IndirectReference.__new__.__defaults__ = (None, None, False, None)  # https://stackoverflow.com/a/18348004
 
 
 def indirect_references(cr, bound_only=False):
