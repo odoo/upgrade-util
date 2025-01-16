@@ -7,6 +7,8 @@ Model operations are best done in `pre-` script of the involved modules.
 import logging
 import re
 
+from psycopg2 import sql
+
 from . import json
 from .const import ENVIRON
 from .fields import IMD_FIELD_PATTERN, remove_field
@@ -573,8 +575,9 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
             table = table_of_model(cr, relation)
             irs = [ir for ir in indirect_references(cr) if ir.table == table and ir.res_id is not None]
             for ir in irs:
-                query = 'DELETE FROM "{}" WHERE ({})'.format(ir.table, ir.model_filter())
-                cr.execute(query, [model])  # cannot be executed in parallel. See git blame.
+                if not ir.company_dependent_comodel:
+                    query = format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter()))
+                    cr.execute(query, [model])  # cannot be executed in parallel. See git blame.
         remove_field(cr, model, field, skip_inherit="*")  # inherits will be removed by the recursive call.
 
     # down on inherits of `model`
