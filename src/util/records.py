@@ -591,8 +591,9 @@ def is_changed(cr, xmlid, interval="1 minute"):
            -- Note: use a negative search to handle the case of NULL values in write/create_date
            AND COALESCE(r.write_date < p.value::timestamp, True)
            AND r.write_date - r.create_date > interval %s
+           AND r.write_uid <> %s
         """.format(table),
-        [res_id, interval],
+        [res_id, interval, ref(cr, "base.user_root")],
     )
     return bool(cr.rowcount)
 
