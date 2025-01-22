@@ -299,11 +299,15 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, **kwarg
     else:
         ids = list(range(min_id, max_id + 1, bucket_size))
 
-    assert min_id == ids[0] and max_id + 1 != ids[-1]  # sanity checks
-    ids.append(max_id + 1)  # ensure last bucket covers whole range
     # `ids` holds a list of values marking the interval boundaries for all buckets
+    # ensure it covers the whole range
+    assert min_id == ids[0]
+    if max_id - ids[-1] > 0.1 * bucket_size:
+        ids.append(max_id + 1)
+    else:
+        ids[-1] = max_id + 1
 
-    if (max_id - min_id + 1) <= 1.1 * bucket_size or (len(ids) == 3 and ids[2] - ids[1] <= 0.1 * bucket_size):
+    if (max_id - min_id + 1) <= 1.1 * bucket_size or len(ids) == 2:
         # If we return one query `parallel_execute` skip spawning new threads. Thus we return only one query if we have
         # only two buckets and the second would have at most 10% of bucket_size records.
         # Still, since the query may only be valid if there is no split, we force the usage of `prefix` in the query to
