@@ -55,6 +55,14 @@ class PGRegexp(str):
     """
 
 
+class SQLStr(str):
+    """
+    Wrapper for semantic meaning of parameters: this string is a valid SQL snippet.
+
+    See :func:`~odoo.upgrade.util.pg.format_query`
+    """
+
+
 def get_max_workers():
     force_max_worker = os.getenv("MAX_WORKER")
     if force_max_worker:
@@ -193,9 +201,18 @@ def format_query(cr, query, *args, **kwargs):
 
     :param str query: query to format, can use brackets `{}` as in :func:`str.format`
     """
-    args = tuple(a if isinstance(a, sql.Composable) else sql.Identifier(a) for a in args)
-    kwargs = {k: v if isinstance(v, sql.Composable) else sql.Identifier(v) for k, v in kwargs.items()}
-    return sql.SQL(query).format(*args, **kwargs).as_string(cr._cnx)
+
+    def wrap(arg):
+        if isinstance(arg, sql.Composable):
+            return arg
+        elif isinstance(arg, SQLStr):
+            return sql.SQL(arg)
+        else:
+            return sql.Identifier(arg)
+
+    args = tuple(wrap(a) for a in args)
+    kwargs = {k: wrap(v) for k, v in kwargs.items()}
+    return SQLStr(sql.SQL(query).format(*args, **kwargs).as_string(cr._cnx))
 
 
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
@@ -364,12 +381,12 @@ def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_log
 
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
-    return "ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn)
+    return SQLStr("ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn))
 
 
 def pg_replace(s, replacements):
     q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode("utf-8")
-    return reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s)
+    return SQLStr(reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s))
 
 
 def pg_html_escape(s, quote=True):
@@ -394,7 +411,8 @@ def pg_html_escape(s, quote=True):
 
 
 def pg_text2html(s, wrap="p"):
-    return r"""
+    return SQLStr(
+        r"""
         CASE WHEN TRIM(COALESCE({src}, '')) ~ '^<.+</\w+>$' THEN {src}
              ELSE CONCAT(
                 '{opening_tag}',
@@ -411,11 +429,12 @@ def pg_text2html(s, wrap="p"):
                     '&Tab;'),
                 '{closing_tag}')
          END
-    """.format(
-        opening_tag="<{}>".format(wrap) if wrap else "",
-        closing_tag="</{}>".format(wrap) if wrap else "",
-        src=s,
-        esc=pg_html_escape(s, quote=False),
+        """.format(
+            opening_tag="<{}>".format(wrap) if wrap else "",
+            closing_tag="</{}>".format(wrap) if wrap else "",
+            src=s,
+            esc=pg_html_escape(s, quote=False),
+        )
     )
 
 
@@ -614,13 +633,13 @@ def alter_column_type(cr, table, column, type, using=None, where=None, logger=_l
     cr.execute(format_query(cr, "ALTER TABLE {} RENAME COLUMN {} TO {}", table, column, tmp_column))
     cr.execute(format_query(cr, "ALTER TABLE {} ADD COLUMN {} {}", table, column, sql.SQL(type)))
 
-    using = sql.SQL(format_query(cr, using, tmp_column))
+    using = format_query(cr, using, tmp_column)
     if where is None:
         where_clause = sql.SQL("")
         if column_type(cr, table, tmp_column) != "bool":
-            where_clause = sql.SQL(format_query(cr, "WHERE {} IS NOT NULL", tmp_column))
+            where_clause = format_query(cr, "WHERE {} IS NOT NULL", tmp_column)
     else:
-        where_clause = sql.SQL(format_query(cr, "WHERE " + where, tmp_column))
+        where_clause = format_query(cr, "WHERE " + where, tmp_column)
 
     explode_execute(
         cr,
@@ -1446,4 +1465,4 @@ def create_id_sequence(cr, table, set_as_default=True):
 
 
 def get_value_or_en_translation(cr, table, column):
-    return "{}{}".format(column, "->>'en_US'" if column_type(cr, table, column) == "jsonb" else "")
+    return SQLStr("{}{}".format(column, "->>'en_US'" if column_type(cr, table, column) == "jsonb" else ""))
