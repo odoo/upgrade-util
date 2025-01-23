@@ -438,6 +438,11 @@ def pg_text2html(s, wrap="p"):
     )
 
 
+def get_value_or_en_translation(cr, table, column):
+    fmt = "{}->>'en_US'" if column_type(cr, table, column) == "jsonb" else "{}"
+    return format_query(cr, fmt, column)
+
+
 def _column_info(cr, table, column):
     _validate_table(table)
     cr.execute(
@@ -1462,7 +1467,3 @@ def create_id_sequence(cr, table, set_as_default=True):
                 table=table_sql,
             )
         )
-
-
-def get_value_or_en_translation(cr, table, column):
-    return SQLStr("{}{}".format(column, "->>'en_US'" if column_type(cr, table, column) == "jsonb" else ""))
