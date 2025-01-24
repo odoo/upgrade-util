@@ -238,7 +238,7 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
-def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=None):
+def explode_query_range(cr, query, table, alias=None, bucket_size=10000, **kwargs):
     """
     Explode a query to multiple queries that can be executed in parallel.
 
@@ -246,6 +246,10 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
 
     :meta private: exclude from online docs
     """
+    prefix = kwargs.pop("prefix", None)
+    for key in kwargs:
+        _logger.getChild("explode_query_range").error("The %r argument is not supported and will be ignored.", key)
+
     if prefix is not None:
         if alias is not None:
             raise ValueError("Cannot use both `alias` and deprecated `prefix` arguments.")
