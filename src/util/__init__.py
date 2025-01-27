@@ -16,3 +16,4 @@ from .pg import *
 from .records import *
 from .report import *
 from .specific import *
+from .hr_payroll import *
