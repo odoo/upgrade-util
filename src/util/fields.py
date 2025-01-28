@@ -1191,11 +1191,35 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                )
     """.format(col_prefix=col_prefix, name=get_value_or_en_translation(cr, "ir_act_server", "name"))
     cr.execute(q, {"old_pattern": p["old_pattern"], "old": p["old"], "standard_modules": tuple(standard_modules)})
+    li = ""
     if cr.rowcount:
         li = "".join(
             "<li>{}</li>".format(get_anchor_link_to_record("ir.actions.server", aid, aname))
             for aid, aname in cr.fetchall()
         )
+
+    if column_exists(cr, "ir_model_fields", "compute"):
+        # Modifying compute methods is similarly as dangerous.
+        # Only report potential compute methods that may need an update.
+        q = """
+            SELECT f.id, f.name
+              FROM ir_model_fields f
+         LEFT JOIN ir_model_data d
+                ON d.res_id = f.id
+               AND d.model = 'ir.model.fields'
+             WHERE f.compute ~ %(old_pattern)s
+               AND (  d.module IS NULL -- custom action
+                   OR d.module NOT IN %(standard_modules)s
+                   OR (d.module IN %(standard_modules)s AND d.noupdate)
+                   )
+            """
+        cr.execute(q, {"old_pattern": p["old_pattern"], "standard_modules": tuple(standard_modules)})
+        if cr.rowcount:
+            li += "".join(
+                "<li>{}</li>".format(get_anchor_link_to_record("ir.model.fields", fid, fname))
+                for fid, fname in cr.fetchall()
+            )
+    if li:
         model_text = "All models"
         if only_models:
             model_text = "Models " + ", ".join("<kbd>{}</kbd>".format(m) for m in only_models)
@@ -1203,8 +1227,8 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             """
 <details>
   <summary>
-    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions may need update.
-    If the server action is a standard one and you haven't made any modifications, you may ignore them.
+    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions and compute methods of other fields may need an update:
+    If a server action or a field is a standard one and you haven't made any modifications, you may ignore them.
   </summary>
   <ul>{li}</ul>
 </details>
