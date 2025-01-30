@@ -568,10 +568,12 @@ def is_changed(cr, xmlid, interval="1 minute"):
      * Have been updated in an upgrade preceding the current one
      * Have not been updated in the current upgrade
 
+    If the `xmlid` doesn't exist in the DB this function returns ``None``.
+
     :param str xmlid: `xmlid` of the record to check
     :param str interval: SQL interval, a record is considered as changed if
                          `write_date > create_date + interval`
-    :rtype: bool
+    :rtype: bool or None
     """
     assert "." in xmlid
     module, _, name = xmlid.partition(".")
@@ -620,7 +622,10 @@ def if_unchanged(cr, xmlid, callback, interval="1 minute", **kwargs):
     :param str interval: interval after `create_date` on which a record is considered as
                         _changed_, see :func:`~odoo.upgrade.util.misc.is_changed`
     """
-    if not is_changed(cr, xmlid, interval=interval):
+    changed = is_changed(cr, xmlid, interval=interval)
+    if changed is None:
+        return
+    if changed is False:
         callback(cr, xmlid, **kwargs)
     else:
         force_noupdate(cr, xmlid, noupdate=True)
