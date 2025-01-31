@@ -3,6 +3,7 @@ import collections
 import functools
 import logging
 import re
+import warnings
 
 import lxml
 
@@ -92,6 +93,7 @@ except ImportError:
     AND_OPERATOR = expression.AND_OPERATOR
     OR_OPERATOR = expression.OR_OPERATOR
     DOMAIN_OPERATORS = expression.DOMAIN_OPERATORS
+    warnings.filterwarnings("ignore", message=r"Since 19\.0, use Domain\(\) object", category=DeprecationWarning)
     normalize_domain = expression.normalize_domain
     normalize_leaf = expression.normalize_leaf
     is_leaf = expression.is_leaf
