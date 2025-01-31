@@ -1200,7 +1200,9 @@ def delete_unused(cr, *xmlids, **kwargs):
     Remove unused records.
 
     This function will remove records pointed by `xmlids` only if they are not referenced
-    from any table.
+    from any table. For hierarchical records (like product categories), it verifies
+    if the children marked as cascade removal are also not referenced. In which case
+    the record and its children are all removed.
 
     .. note::
        The records that cannot be removed are set as `noupdate=True`.
@@ -1250,9 +1252,45 @@ def delete_unused(cr, *xmlids, **kwargs):
         table = table_of_model(cr, model)
         res_id_to_xmlid = dict(zip(ids, xids))
 
-        sub = " UNION ".join(
+        cascade_children = [
+            fk_col
+            for fk_tbl, fk_col, _, fk_act in get_fk(cr, table, quote_ident=False)
+            if fk_tbl == table and fk_act == "c"
+        ]
+        if cascade_children:
+            if len(cascade_children) == 1:
+                join = format_query(cr, "t.{}", cascade_children[0])
+            else:
+                join = sql.SQL("ANY(ARRAY[{}])").format(
+                    sql.SQL(", ").join(sql.Composed([sql.SQL("t."), sql.Identifier(cc)]) for cc in cascade_children)
+                )
+
+            kids_query = format_query(
+                cr,
+                """
+                WITH RECURSIVE _child AS (
+                    SELECT id AS root, id AS child
+                      FROM {0}
+                     WHERE id = ANY(%(ids)s)
+                     UNION  -- don't use UNION ALL in case we have a loop
+                    SELECT c.root, t.id as child
+                      FROM {0} t
+                      JOIN _child c
+                        ON c.child = {1}
+                )
+                SELECT root AS id, array_agg(child) AS children
+                  FROM _child
+              GROUP BY root
+                """,
+                table,
+                join,
+            )
+        else:
+            kids_query = format_query(cr, "SELECT id, ARRAY[id] AS children FROM {0} WHERE id = ANY(%(ids)s)", table)
+
+        sub = " UNION ALL ".join(
             [
-                'SELECT 1 FROM "{}" x WHERE x."{}" = t.id'.format(fk_tbl, fk_col)
+                format_query(cr, "SELECT 1 FROM {} x WHERE x.{} = ANY(s.children)", fk_tbl, fk_col)
                 for fk_tbl, fk_col, _, fk_act in get_fk(cr, table, quote_ident=False)
                 # ignore "on delete cascade" fk (they are indirect dependencies (lines or m2m))
                 if fk_act != "c"
@@ -1261,18 +1299,27 @@ def delete_unused(cr, *xmlids, **kwargs):
             ]
         )
         if sub:
-            cr.execute(
-                """
-                SELECT id
-                  FROM "{}" t
-                 WHERE id = ANY(%s)
-                   AND NOT EXISTS({})
-            """.format(table, sub),
-                [list(ids)],
+            query = format_query(
+                cr,
+                r"""
+                WITH _kids AS (
+                    {}
+                )
+                SELECT t.id
+                  FROM {} t
+                  JOIN _kids s
+                    ON s.id = t.id
+                 WHERE NOT EXISTS({})
+                """,
+                kids_query,
+                table,
+                sql.SQL(sub),
             )
-            ids = map(itemgetter(0), cr.fetchall())  # noqa: PLW2901
+            cr.execute(query, {"ids": list(ids)})
+            sub_ids = list(map(itemgetter(0), cr.fetchall()))
+        else:
+            sub_ids = list(ids)
 
-        ids = list(ids)  # noqa: PLW2901
         if model == "res.lang" and table_exists(cr, "ir_translation"):
             cr.execute(
                 """
@@ -1281,16 +1328,16 @@ def delete_unused(cr, *xmlids, **kwargs):
                       WHERE t.lang = l.code
                         AND l.id = ANY(%s)
                  """,
-                [ids],
+                [sub_ids],
             )
-        for tid in ids:
-            remove_record(cr, (model, tid))
-            deleted.append(res_id_to_xmlid[tid])
+
+        remove_records(cr, model, sub_ids)
+        deleted.extend(res_id_to_xmlid[r] for r in sub_ids if r in res_id_to_xmlid)
 
         if deactivate:
-            deactivate_ids = tuple(set(res_id_to_xmlid.keys()) - set(ids))
+            deactivate_ids = tuple(set(sub_ids) - set(ids))
             if deactivate_ids:
-                cr.execute('UPDATE "{}" SET active = false WHERE id IN %s'.format(table), [deactivate_ids])
+                cr.execute(format_query(cr, "UPDATE {} SET active = false WHERE id IN %s", table), [deactivate_ids])
 
     if not keep_xmlids:
         query = """
