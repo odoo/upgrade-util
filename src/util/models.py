@@ -583,8 +583,10 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
                 and not ir.company_dependent_comodel
             ]
             for ir in irs:
-                query = format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter()))
-                cr.execute(query, [model])  # cannot be executed in parallel. See git blame.
+                query = cr.mogrify(
+                    format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter())), [model]
+                ).decode()
+                explode_execute(cr, query, table=table, bucket_size=1000)
         remove_field(cr, model, field, skip_inherit="*")  # inherits will be removed by the recursive call.
 
     # down on inherits of `model`
