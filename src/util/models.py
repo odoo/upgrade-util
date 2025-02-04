@@ -574,11 +574,17 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
         if ftype == "one2many" and store:
             # for mixin, one2many are filtered by their model and res_id.
             table = table_of_model(cr, relation)
-            irs = [ir for ir in indirect_references(cr) if ir.table == table and ir.res_id is not None]
+            irs = [
+                ir
+                for ir in indirect_references(cr)
+                if ir.table == table
+                and ir.table != "ir_attachment"  # delegated to the `remove_field` call
+                and ir.res_id is not None
+                and not ir.company_dependent_comodel
+            ]
             for ir in irs:
-                if not ir.company_dependent_comodel:
-                    query = format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter()))
-                    cr.execute(query, [model])  # cannot be executed in parallel. See git blame.
+                query = format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter()))
+                cr.execute(query, [model])  # cannot be executed in parallel. See git blame.
         remove_field(cr, model, field, skip_inherit="*")  # inherits will be removed by the recursive call.
 
     # down on inherits of `model`
