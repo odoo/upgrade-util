@@ -719,7 +719,10 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
 
     with all_patches():
         # 4. Reload the registry with the models and fields converted to manual.
-        env.registry.setup_models(env.cr)
+        setup_models = (
+            env.registry._setup_models__ if hasattr(env.registry, "_setup_models__") else env.registry.setup_models
+        )
+        setup_models(env.cr)
 
     # 5. Do the operation.
     yield
@@ -759,4 +762,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
 
         # 7. Reload the registry as before
         env.clear()
-        env.registry.setup_models(env.cr)
+        setup_models = (
+            env.registry._setup_models__ if hasattr(env.registry, "_setup_models__") else env.registry.setup_models
+        )
+        setup_models(env.cr)
