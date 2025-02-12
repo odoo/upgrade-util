@@ -1337,6 +1337,99 @@ class TestRecords(UnitTestCase):
         [count] = self.env.cr.fetchone()
         self.assertEqual(count, 1)
 
+    def _prepare_test_delete_unused(self):
+        def create_cat():
+            name = f"test_{uuid.uuid4().hex}"
+            cat = self.env["res.partner.category"].create({"name": name})
+            self.env["ir.model.data"].create(
+                {"name": name, "module": "base", "model": "res.partner.category", "res_id": cat.id}
+            )
+            return cat
+
+        cat_1 = create_cat()
+        cat_2 = create_cat()
+        cat_3 = create_cat()
+
+        # `category_id` is a m2m, so in ON DELETE CASCADE. We need a m2o.
+        self.env.cr.execute(
+            "ALTER TABLE res_partner ADD COLUMN _cat_id integer REFERENCES res_partner_category(id) ON DELETE SET NULL"
+        )
+        p1 = self.env["res.partner"].create({"name": "test delete_unused"})
+
+        # set the `_cat_id` value in SQL as it is not know by the ORM
+        self.env.cr.execute("UPDATE res_partner SET _cat_id=%s WHERE id=%s", [cat_1.id, p1.id])
+
+        if hasattr(self, "_savepoint_id"):
+            self.addCleanup(self.env.cr.execute, f"SAVEPOINT test_{self._savepoint_id}")
+            self.addCleanup(cat_1.unlink)
+            self.addCleanup(cat_2.unlink)
+            self.addCleanup(cat_3.unlink)
+            self.addCleanup(p1.unlink)
+
+        self.addCleanup(self.env.cr.execute, "ALTER TABLE res_partner DROP COLUMN _cat_id")
+
+        return cat_1, cat_2, cat_3
+
+    def test_delete_unused_base(self):
+        tx = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})
+        self.env["ir.model.data"].create({"name": "TX1", "module": "base", "model": "res.currency", "res_id": tx.id})
+
+        deleted = util.delete_unused(self.env.cr, "base.TX1")
+        self.assertEqual(deleted, ["base.TX1"])
+        self.assertFalse(tx.exists())
+
+    def test_delete_unused_cascade(self):
+        cat_1, cat_2, cat_3 = self._prepare_test_delete_unused()
+        deleted = util.delete_unused(self.env.cr, f"base.{cat_1.name}", f"base.{cat_2.name}", f"base.{cat_3.name}")
+
+        self.assertEqual(set(deleted), {f"base.{cat_2.name}", f"base.{cat_3.name}"})
+        self.assertTrue(cat_1.exists())
+        self.assertFalse(cat_2.exists())
+        self.assertFalse(cat_3.exists())
+
+    def test_delete_unused_tree(self):
+        cat_1, cat_2, cat_3 = self._prepare_test_delete_unused()
+
+        cat_1.parent_id = cat_2.id
+        cat_2.parent_id = cat_3.id
+        util.flush(cat_1)
+        util.flush(cat_2)
+
+        deleted = util.delete_unused(self.env.cr, f"base.{cat_3.name}")
+
+        self.assertEqual(deleted, [])
+        self.assertTrue(cat_1.exists())
+        self.assertTrue(cat_2.exists())
+        self.assertTrue(cat_3.exists())
+
+    def test_delete_unused_multi_cascade_fk(self):
+        """
+        When there are multiple children, the hierarchy can be build from different columns
+
+            cat_3
+              | via `_test_id`
+            cat_2
+              | via `parent_id`
+            cat_1
+        """
+        cat_1, cat_2, cat_3 = self._prepare_test_delete_unused()
+
+        self.env.cr.execute(
+            "ALTER TABLE res_partner_category ADD COLUMN _test_id integer REFERENCES res_partner_category(id) ON DELETE CASCADE"
+        )
+        self.addCleanup(self.env.cr.execute, "ALTER TABLE res_partner_category DROP COLUMN _test_id")
+
+        cat_1.parent_id = cat_2.id
+        util.flush(cat_1)
+        self.env.cr.execute("UPDATE res_partner_category SET _test_id = %s WHERE id = %s", [cat_3.id, cat_2.id])
+
+        deleted = util.delete_unused(self.env.cr, f"base.{cat_3.name}")
+
+        self.assertEqual(deleted, [])
+        self.assertTrue(cat_1.exists())
+        self.assertTrue(cat_2.exists())
+        self.assertTrue(cat_3.exists())
+
 
 class TestEditView(UnitTestCase):
     @parametrize(
