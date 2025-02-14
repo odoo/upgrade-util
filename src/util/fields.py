@@ -110,79 +110,14 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
         remove_column(cr, src_table, column, cascade=True)
 
 
-def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
-    """
-    Remove a field and its references from the database.
-
-    This function also removes the field from inheriting models, unless exceptions are
-    specified in `skip_inherit`. When the field is stored we can choose to not drop the
-    column.
-
-    :param str model: model name of the field to remove
-    :param str fieldname: name of the field to remove
-    :param bool cascade: whether the field column(s) are removed in `CASCADE` mode
-    :param bool drop_column: whether the field's column is dropped
-    :param list(str) or str skip_inherit: list of inheriting models to skip the removal
-                                          of the field, use `"*"` to skip all
-    """
-    _validate_model(model)
-
-    ENVIRON["__renamed_fields"][model][fieldname] = None
-
-    def filter_value(key, value):
-        if key == "orderedBy" and isinstance(value, dict):
-            res = {k: (filter_value(None, v) if k == "name" else v) for k, v in value.items()}
-            # return if name didn't match fieldname
-            return res if "name" not in res or res["name"] is not None else None
-        if not isinstance(value, basestring):
-            # if not a string, ignore it
-            return value
-        if value.split(":")[0] != fieldname:
-            # only return if not matching fieldname
-            return value
-        return None  # value filtered out
-
-    def clean_context(context):
-        if not isinstance(context, dict):
-            return False
-
-        changed = False
-        for key in _CONTEXT_KEYS_TO_CLEAN:
-            if context.get(key):
-                context_part = [filter_value(key, e) for e in context[key]]
-                changed |= context_part != context[key]
-                context[key] = [e for e in context_part if e is not None]
-
-        for vt in ["pivot", "graph", "cohort"]:
-            key = "{}_measure".format(vt)
-            if key in context:
-                new_value = filter_value(key, context[key])
-                changed |= context[key] != new_value
-                context[key] = new_value if new_value is not None else "id"
-
-            if vt in context:
-                changed |= clean_context(context[vt])
-
-        return changed
-
-    # clean dashboard's contexts
-    for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
-        context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext(), nocopy=True)
-        changed = clean_context(context)
-        action.set("context", unicode(context))
-        if changed:
-            add_to_migration_reports(
-                ("ir.ui.view.custom", id_, action.get("string", "ir.ui.view.custom")), "Filters/Dashboards"
-            )
-
-    # clean filter's contexts
+def _remove_field_from_filters(cr, model, field):
     cr.execute(
         "SELECT id, name, context FROM ir_filters WHERE model_id = %s AND context ~ %s",
-        [model, r"\y{}\y".format(fieldname)],
+        [model, r"\y{}\y".format(field)],
     )
     for id_, name, context_s in cr.fetchall():
         context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
-        changed = clean_context(context)
+        changed = _remove_field_from_context(context, field)
         cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
         if changed:
             add_to_migration_reports(("ir.filters", id_, name), "Filters/Dashboards")
@@ -206,8 +141,77 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
                  FROM to_update t
                 WHERE f.id = t.id
             """,
-            [(fieldname, fieldname + " desc"), model, r"\y{}\y".format(fieldname)],
+            [(field, field + " desc"), model, r"\y{}\y".format(field)],
         )
+
+
+def _remove_field_from_context(context, fieldname):
+    def filter_value(key, value):
+        if key == "orderedBy" and isinstance(value, dict):
+            res = {k: (filter_value(None, v) if k == "name" else v) for k, v in value.items()}
+            # return if name didn't match fieldname
+            return res if "name" not in res or res["name"] is not None else None
+        if not isinstance(value, basestring):
+            # if not a string, ignore it
+            return value
+        if value.split(":")[0] != fieldname:
+            # only return if not matching fieldname
+            return value
+        return None  # value filtered out
+
+    if not isinstance(context, dict):
+        return False
+
+    changed = False
+    for key in _CONTEXT_KEYS_TO_CLEAN:
+        if context.get(key):
+            context_part = [filter_value(key, e) for e in context[key]]
+            changed |= context_part != context[key]
+            context[key] = [e for e in context_part if e is not None]
+
+    for vt in ["pivot", "graph", "cohort"]:
+        key = "{}_measure".format(vt)
+        if key in context:
+            new_value = filter_value(key, context[key])
+            changed |= context[key] != new_value
+            context[key] = new_value if new_value is not None else "id"
+
+        if vt in context:
+            changed |= _remove_field_from_context(context[vt], fieldname)
+
+    return changed
+
+
+def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
+    """
+    Remove a field and its references from the database.
+
+    This function also removes the field from inheriting models, unless exceptions are
+    specified in `skip_inherit`. When the field is stored we can choose to not drop the
+    column.
+
+    :param str model: model name of the field to remove
+    :param str fieldname: name of the field to remove
+    :param bool cascade: whether the field column(s) are removed in `CASCADE` mode
+    :param bool drop_column: whether the field's column is dropped
+    :param list(str) or str skip_inherit: list of inheriting models to skip the removal
+                                          of the field, use `"*"` to skip all
+    """
+    _validate_model(model)
+
+    ENVIRON["__renamed_fields"][model][fieldname] = None
+
+    # clean dashboard's contexts
+    for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
+        context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext(), nocopy=True)
+        changed = _remove_field_from_context(context, fieldname)
+        action.set("context", unicode(context))
+        if changed:
+            add_to_migration_reports(
+                ("ir.ui.view.custom", id_, action.get("string", "ir.ui.view.custom")), "Filters/Dashboards"
+            )
+
+    _remove_field_from_filters(cr, model, fieldname)
 
     _remove_import_export_paths(cr, model, fieldname)
 
@@ -370,6 +374,21 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     # remove field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
         remove_field(cr, inh.model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
+
+
+def make_field_non_stored(cr, model, field, selectable=False):
+    """
+    Convert field to non-stored.
+
+    :param str model: model name of the field to convert
+    :param str fieldname: name of the field to convert
+    :param bool selectable: whether the field is still selectable, if True custom `ir.filters` are not updated
+    """
+    _validate_model(model)
+
+    remove_column(cr, table_of_model(cr, model), field)
+    if not selectable:
+        _remove_field_from_filters(cr, model, field)
 
 
 def remove_field_metadata(cr, model, fieldname, skip_inherit=()):
