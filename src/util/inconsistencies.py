@@ -7,6 +7,7 @@ from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 from psycopg2.sql import SQL
 
+from .exceptions import UpgradeError
 from .helpers import _validate_model, table_of_model
 from .misc import chunks, str2bool
 from .pg import format_query, get_value_or_en_translation, target_of
@@ -209,6 +210,7 @@ def verify_uoms(
     include_archived_products=FROM_ENV,
     auto_fix=FROM_ENV,
     ids=None,
+    raise_if_inconsistent=False,
 ):
     """
     Check if the category of uom  on `model` is the same as the category of uom on `product.template`.
@@ -323,8 +325,8 @@ def verify_uoms(
         msg = """
         There is a UoM mismatch in some {title}s. The category of the UoM defined on the
         {title} is different from that defined on the Product Template and must be the same to
-        avoid errors. We allowed the upgrade to continue, but these inconsistencies may cause error
-        during the upgrade or issues on the upgraded database.
+        avoid errors. These inconsistencies may cause error during the upgrade or issues on the
+        upgraded database.
 
         To avoid any issue, here are the options to consider:
 
@@ -356,6 +358,9 @@ def verify_uoms(
             ),
         )
         faulty_ids = [r[0] for r in rows]
+
+    if raise_if_inconsistent:
+        raise UpgradeError(msg)
 
     _logger.warning("\n%s\n", msg)
     add_to_migration_reports(category=title + " UoM Inconsistencies", message=msg, format="md")
