@@ -2,7 +2,7 @@
 import collections
 
 from .helpers import model_of_table, table_of_model
-from .pg import column_exists, table_exists
+from .pg import SQLStr, column_exists, table_exists
 
 
 class IndirectReference(
@@ -21,9 +21,9 @@ class IndirectReference(
 
         if column is None:
             # `model` is not set when `company_dependent_comodel` is.
-            return "(false AND {} IS NULL)".format(placeholder)
+            return SQLStr("(false AND {} IS NULL)".format(placeholder))
 
-        return '{}"{}"={}'.format(prefix, column, placeholder)
+        return SQLStr('{}"{}"={}'.format(prefix, column, placeholder))
 
 
 # By default, there is no `res_id`, no `res_model_id` and it is deleted when the linked model is removed
