@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import os
 
 from psycopg2.extras import execute_values
 
@@ -40,10 +41,23 @@ def migrate(cr, version):
     """
     )
 
+    ignored_fields = set()
+
+    for e in os.environ.get("suppress_upgrade_warnings", "").split(","):
+        if e.startswith("field:"):
+            ignored_fields.add(e[6:])
+
     for model, field, transient, store in cr.fetchall():
         qualifier = "field" if store else "non-stored field"
         if transient:
             qualifier = "transient " + qualifier
         lvl = util.NEARLYWARN if transient or not store else logging.CRITICAL
+
+        if "{}.{}".format(model, field) in ignored_fields:
+            ignore_fields |= field
+            util._logger.log(
+                util.NEARLYWARN, "Field respawn %s.%s explicitly ignored, skipping", field.model, field.name
+            )
+            lvl = util.NEARLYWARN
 
         _logger.log(lvl, "%s %s/%s has respawn!", qualifier, model, field)
