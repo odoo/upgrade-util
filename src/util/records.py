@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Utility functions for record-level operations."""
 
 import logging
@@ -34,7 +33,7 @@ from .helpers import (
 )
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import parse_version, version_gte
+from .misc import chunks, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
@@ -409,7 +408,11 @@ def remove_records(cr, model, ids):
                 remove_records(cr, inh.model, [rid for (rid,) in cr.fetchall()])
 
     table = table_of_model(cr, model)
-    cr.execute('DELETE FROM "{}" WHERE id IN %s'.format(table), [ids])
+    base_query = format_query(cr, "DELETE FROM {} WHERE id IN %s", table)
+    parallel_execute(
+        cr,
+        [cr.mogrify(base_query, [chunk_ids]).decode() for chunk_ids in chunks(ids, 1000, fmt=tuple)],
+    )
     for ir in indirect_references(cr, bound_only=True):
         if not ir.company_dependent_comodel:
             query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
