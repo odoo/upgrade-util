@@ -4,6 +4,7 @@ import ast
 import collections
 import datetime
 import functools
+import logging
 import os
 import re
 import uuid
@@ -34,6 +35,8 @@ except ImportError:
         from astunparse import unparse as ast_unparse
     except ImportError:
         ast_unparse = None
+
+_logger = logging.getLogger(__name__)
 
 
 def _cached(func):
@@ -510,3 +513,22 @@ class SelfPrintEvalContext(collections.defaultdict):
         root = ast.parse(expr.strip(), mode="eval").body
         visited = replacer.visit(root)
         return (ast_unparse(visited).strip(), SelfPrintEvalContext(replacer.replaces))
+
+
+class _Replacer(ast.NodeTransformer):
+    """Replace literal nodes in an AST."""
+
+    def __init__(self, mapping):
+        self.mapping = mapping
+
+    def visit_Name(self, node):
+        return ast.Name(id=self.mapping[node.id], ctx=ast.Load()) if node.id in self.mapping else node
+
+
+def literal_replace(expr, mapping):
+    if ast_unparse is None:
+        _logger.critical("AST unparse unavailable")
+        return expr
+    root = ast.parse(expr.strip(), mode="eval").body
+    visited = _Replacer(mapping).visit(root)
+    return ast_unparse(visited).strip()
