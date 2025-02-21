@@ -1609,6 +1609,24 @@ class TestMisc(UnitTestCase):
         with self.assertRaises(ValueError):
             safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
 
+    @parametrize(
+        [
+            ("[('company_id','in',allowed_company_ids)]", "[('company_id', 'in', companies.active_ids)]"),
+            (
+                "[('company_id','in',allowed_company_ids or [False])]",
+                "[('company_id', 'in', companies.active_ids or [False])]",
+            ),
+            (
+                "[('company_id','in', user.other.allowed_company_ids)]",
+                "[('company_id', 'in', user.other.allowed_company_ids)]",
+            ),
+        ]
+    )
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_literal_replace(self, orig, expected):
+        repl = util.literal_replace(orig, {"allowed_company_ids": "companies.active_ids"})
+        self.assertEqual(repl, expected)
+
 
 def not_doing_anything_converter(el):
     return True
