@@ -519,10 +519,70 @@ class _Replacer(ast.NodeTransformer):
     """Replace literal nodes in an AST."""
 
     def __init__(self, mapping):
-        self.mapping = mapping
+        self.mapping = collections.defaultdict(list)
+        for key, value in mapping.items():
+            key_ast = ast.parse(key, mode="eval").body
+            self.mapping[key_ast.__class__.__name__].append((key_ast, value))
 
-    def visit_Name(self, node):
-        return ast.Name(id=self.mapping[node.id], ctx=ast.Load()) if node.id in self.mapping else node
+    def _no_match(self, left, right):
+        return False
+
+    def _match(self, left, right):
+        same_ctx = getattr(left, "ctx", None).__class__ is getattr(right, "ctx", None).__class__
+        cname = left.__class__.__name__
+        same_type = right.__class__.__name__ == cname
+        matcher = getattr(self, "_match_" + cname, self._no_match)
+        return matcher(left, right) if same_type and same_ctx else False
+
+    def _match_Constant(self, left, right):
+        # we don't care about kind for u-strings
+        return type(left.value) is type(right.value) and left.value == right.value
+
+    def _match_Num(self, left, right):
+        # Dreprecated, for Python <3.8
+        return type(left.n) is type(right.n) and left.n == right.n
+
+    def _match_Str(self, left, right):
+        # Deprecated, for Python <3.8
+        return left.s == right.s
+
+    def _match_Name(self, left, right):
+        return left.id == right.id
+
+    def _match_Attribute(self, left, right):
+        return left.attr == right.attr and self._match(left.value, right.value)
+
+    def _match_List(self, left, right):
+        return len(left.elts) == len(right.elts) and all(
+            self._match(left_, right_) for left_, right_ in zip(left.elts, right.elts)
+        )
+
+    def _match_Tuple(self, left, right):
+        return self._match_List(left, right)
+
+    def _match_ListComp(self, left, right):
+        return (
+            self._match(left.elt, right.elt)
+            and len(left.generators) == len(right.generators)
+            and all(self._match(left_, right_) for left_, right_ in zip(left.generators, right.generators))
+        )
+
+    def _match_comprehension(self, left, right):
+        return (
+            # async is not expected in our use cases, just for completeness
+            getattr(left, "is_async", 0) == getattr(right, "is_async", 0)
+            and len(left.ifs) == len(right.ifs)
+            and self._match(left.target, right.target)
+            and self._match(left.iter, right.iter)
+            and all(self._match(left_, right_) for left_, right_ in zip(left.ifs, right.ifs))
+        )
+
+    def visit(self, node):
+        if node.__class__.__name__ in self.mapping:
+            for target_ast, new in self.mapping[node.__class__.__name__]:
+                if self._match(node, target_ast):
+                    return ast.parse(new, mode="eval").body
+        return super(_Replacer, self).visit(node)
 
 
 def literal_replace(expr, mapping):
