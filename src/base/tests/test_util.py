@@ -1632,11 +1632,31 @@ class TestMisc(UnitTestCase):
                 "[('company_id','in', user.other.allowed_company_ids)]",
                 "[('company_id', 'in', user.other.allowed_company_ids)]",
             ),
+            (
+                "[('group_id','in', user.groups_id.ids)]",
+                "[('group_id', 'in', user.all_group_ids.ids)]",
+            ),
+            (
+                "[('group_id','in', [g.id for g in user.groups_id])]",
+                "[('group_id', 'in', user.all_group_ids.ids)]",
+            ),
+            (
+                "[(1, '=', 0), (1, '=', 1)]",
+                "[(0, '=', 1), (1, '=', 1)]",
+            ),
         ]
     )
     @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
     def test_literal_replace(self, orig, expected):
-        repl = util.literal_replace(orig, {"allowed_company_ids": "companies.active_ids"})
+        repl = util.literal_replace(
+            orig,
+            {
+                "allowed_company_ids": "companies.active_ids",
+                "user.groups_id.ids": "user.all_group_ids.ids",
+                "[g.id for g in user.groups_id]": "user.all_group_ids.ids",
+                "(1, '=', 0)": "(0, '=', 1)",
+            },
+        )
         self.assertEqual(repl, expected)
 
 
