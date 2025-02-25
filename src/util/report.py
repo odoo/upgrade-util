@@ -289,6 +289,8 @@ def announce(
 
 def get_anchor_link_to_record(model, id, name, action_id=None):
     _validate_model(model)
+    if not name:
+        name = "{}(id={})".format(model, id)
     if version_gte("saas~17.2"):
         part1 = "action-{}".format(action_id) if action_id else model
         url = "/odoo/{}/{}?debug=1".format(part1, id)
