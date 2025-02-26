@@ -105,6 +105,11 @@ def add_to_migration_reports(message, category="Other", format="text"):
         else:
             raw = True
     migration_reports.setdefault(category, []).append((message, raw))
+    migration_reports_length = sum(len(msg) for reps in migration_reports.values() for msg, _ in reps) + sum(
+        map(len, migration_reports)
+    )
+    if migration_reports_length > 1000000:
+        _logger.warning("Upgrade report is growing suspiciously long: %s characters so far.", migration_reports_length)
 
 
 def announce_release_note(cr):
