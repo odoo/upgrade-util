@@ -40,14 +40,15 @@ _logger = logging.getLogger(__name__)
 
 
 def _cached(func):
-    sentinel = object()
+    func._cache = {}
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        result = getattr(func, "_result", sentinel)
-        if result == sentinel:
-            result = func._result = func(*args, **kwargs)
-        return result
+        key = (args, tuple(sorted(kwargs.items())))
+
+        if key not in func._cache:
+            func._cache[key] = func(*args, **kwargs)
+        return func._cache[key]
 
     return wrapper
 
