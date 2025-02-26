@@ -1214,12 +1214,13 @@ def delete_unused(cr, *xmlids, **kwargs):
     :param bool deactivate: whether to deactivate records that cannot be removed because
                             they are referenced, `False` by default
     :param bool keep_xmlids: whether to keep the xml_ids of records that cannot be
-                             removed, `True` by default
+                             removed. By default `True` for versions up to 18.0,
+                             `False` from `saas~18.1` on.
     :return: list of ids of removed records, if any
     :rtype: list(int)
     """
     deactivate = kwargs.pop("deactivate", False)
-    keep_xmlids = kwargs.pop("keep_xmlids", True)
+    keep_xmlids = kwargs.pop("keep_xmlids", not version_gte("saas~18.1"))
     if kwargs:
         raise TypeError("delete_unused() got an unexpected keyword argument %r" % kwargs.popitem()[0])
 
