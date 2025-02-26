@@ -98,6 +98,7 @@ def indirect_references(cr, bound_only=False):
         IR("spreadsheet_revision", "res_model", "res_id"),
         IR("studio_approval_entry", "model", "res_id"),
         IR("timer_timer", "res_model", "res_id"),
+        IR("timer_timer", "parent_res_model", "parent_res_id"),
         IR("worksheet_template", "res_model", None),
     ]
 
