@@ -80,7 +80,10 @@ def break_recursive_loops(cr, model, field, name_field="name"):
         name=SQL(get_value_or_en_translation(cr, table, name_field)),
     )
     cr.execute(update_query, [tuple(ids)])
-    bad_data = cr.fetchall()
+    n_updates = cr.rowcount
+    _logger.warning("%s records in %s got their %r column unset to break a recursive loop.", n_updates, table, field)
+    N_UPDATES_IN_REPORT = 20
+    bad_data = cr.fetchmany(N_UPDATES_IN_REPORT)
 
     query = format_query(
         cr,
@@ -102,13 +105,18 @@ def break_recursive_loops(cr, model, field, name_field="name"):
         """
             <details>
             <summary>
-                The following {model} were found to be recursive. Their "{field}" field has been reset.
+                The following {model} were found to be recursive. Their "{field}" field has been reset.{disclaimer}
             </summary>
               <ul>{li}</ul>
             </details>
         """.format(
             model=html_escape(model_label),
             field=html_escape(field_label),
+            disclaimer=" Find below a list of the first {} (out of {}) affected records.".format(
+                N_UPDATES_IN_REPORT, n_updates
+            )
+            if n_updates > N_UPDATES_IN_REPORT
+            else "",
             li="".join("<li>{}</li>".format(get_anchor_link_to_record(model, id_, name)) for id_, name in bad_data),
         ),
         format="html",
