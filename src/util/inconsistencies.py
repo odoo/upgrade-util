@@ -7,6 +7,7 @@ from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 from psycopg2.sql import SQL
 
+from .exceptions import UpgradeError
 from .helpers import _validate_model, table_of_model
 from .misc import chunks, str2bool
 from .pg import format_query, get_value_or_en_translation, target_of
@@ -58,6 +59,8 @@ def break_recursive_loops(cr, model, field, name_field="name"):
     cr.execute(query)
     if not cr.rowcount:
         return
+    if cr.rowcount > 100:
+        raise UpgradeError("{} records would be updated to break the loop".format(cr.rowcount))
 
     ids = []
     done = set()
