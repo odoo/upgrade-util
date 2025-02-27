@@ -68,7 +68,7 @@ except ImportError:
         from openerp.addons.base.module.module import MyWriter
 
 from .exceptions import MigrationError
-from .misc import has_enterprise, split_osenv, version_gte
+from .misc import has_enterprise, split_osenv, version_between, version_gte
 from .orm import env, get_admin_channel, guess_admin_id
 
 migration_reports = {}
@@ -294,6 +294,21 @@ def announce(
         poster(body=message, partner_ids=[user.partner_id.id], **kw)
     except Exception:
         _logger.warning("Cannot announce message", exc_info=True)
+    else:
+        # Chat window with the report will be open post-upgrade for the admin user
+        if version_between("9.0", "saas~18.2") and user.partner_id and recipient:
+            channel_member_model = (
+                "discuss.channel.member"
+                if version_gte("saas~16.3")
+                else "mail.channel.member"
+                if version_gte("16.0")
+                else "mail.channel.partner"
+            )
+            domain = [("partner_id", "=", user.partner_id.id), ("channel_id", "=", recipient.id)]
+            try:
+                registry[channel_member_model].search(domain)[:1].with_context(ctx).fold_state = "open"
+            except Exception:
+                _logger.warning("Cannot unfold chat window", exc_info=True)
 
 
 def get_anchor_link_to_record(model, id, name, action_id=None):
