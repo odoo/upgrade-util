@@ -120,7 +120,7 @@ def module_installed(cr, module):
     return modules_installed(cr, module)
 
 
-def uninstall_module(cr, module, remove_model_inherits=False):
+def uninstall_module(cr, module, remove_model_inherits=True):
     """
     Uninstall and remove all records owned by a module.
 
@@ -285,7 +285,7 @@ def uninstall_theme(cr, theme, base_theme=None):
     uninstall_module(cr, theme)
 
 
-def remove_module(cr, module, remove_model_inherits=False):
+def remove_module(cr, module, remove_model_inherits=True):
     """
     Completely remove a module.
 
