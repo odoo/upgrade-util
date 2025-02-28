@@ -1,5 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script --quiet
 # ruff: noqa: RET503
+
+# /// script
+# dependencies = [
+#   "pygal[png]",
+# ]
+# ///
+
 import argparse
 import os
 import re
