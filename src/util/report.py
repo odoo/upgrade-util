@@ -291,6 +291,16 @@ def announce(
     except Exception:
         _logger.warning("Cannot announce message", exc_info=True)
 
+    # Chat window with the report will be open post-upgrade for the admin user
+    if not version_gte("saas~18.2"):
+        channel_member_model = "discuss.channel.member" if version_gte("saas~16.3") else "mail.channel.member"
+        try:
+            registry[channel_member_model].search(
+                [("partner_id", "=", user.partner_id.id), ("channel_id", "=", recipient.id)]
+            )[0].with_context(ctx).fold_state = "open"
+        except Exception:
+            _logger.exception("Could not open chat window with upgrade report.")
+
 
 def get_anchor_link_to_record(model, id, name, action_id=None):
     _validate_model(model)
