@@ -86,6 +86,7 @@ select = [
 
 [tool.ruff.lint.flake8-builtins]
 builtins-ignorelist = ["format", "id", "type"]
+builtins-allowed-modules = ["json"]
 
 [tool.ruff.lint.isort]
 section-order = ["future", "standard-library", "third-party", "first-party", "odoo-addons", "local-folder"]
