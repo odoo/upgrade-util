@@ -1788,3 +1788,20 @@ class TestReplaceRecordReferences(UnitTestCase):
         util.replace_record_references_batch(cr, mapping, "res.groups")
         util.invalidate(u2)
         self.assertEqual(u2[groups].ids, [g3.id])
+
+
+class TestConvertFieldToHtml(UnitTestCase):
+    def test_convert_field_to_html(self):
+        cr = self.env.cr
+
+        model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        f1 = self.env["ir.model.fields"].create(
+            {"name": "x_testx", "model": "res.partner", "ttype": "text", "model_id": model.id, "translate": True}
+        )
+        partner = self.env["res.partner"].create({"name": "test Pxtner", "x_testx": "test partner field"})
+        default = self.env["ir.default"].create({"field_id": f1.id, "json_value": '"Test text"'})
+        util.convert_field_to_html(cr, "res.partner", "x_testx")
+        util.invalidate(default)
+
+        self.assertEqual(default.json_value, '"<p>Test text</p>"')
+        self.assertEqual(partner.x_testx, "<p>test partner field</p>")
