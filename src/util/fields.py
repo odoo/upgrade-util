@@ -676,10 +676,10 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
 
     # Update ir.default
     if table_exists(cr, "ir_default"):
-        json_value_html = pg_text2html("json_value")
+        json_value_html = pg_text2html("json_value::json #>> '{}'")
         query = """
                 UPDATE ir_default AS d
-                   SET json_value = {}
+                   SET json_value = to_json(({})::text)::text
                   FROM ir_model_fields AS imf
                  WHERE imf.name = %s
                    AND imf.model = %s
