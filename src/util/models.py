@@ -250,6 +250,24 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 delete_model = remove_model
 
 
+def _replace_model_in_computed_custom_fields(cr, source, target):
+    # adapt computes of manual fields
+    if column_exists(cr, "ir_model_fields", "compute"):
+        cr.execute(
+            r"""
+                UPDATE ir_model_fields
+                   SET compute = regexp_replace(compute, %s, %s, 'g')
+                 WHERE state = 'manual'
+                   AND compute IS NOT NULL
+                   AND name LIKE 'x\_%%'
+                """,
+            [
+                r"""\yenv\[('|"){}\1\]""".format(re.escape(source)),
+                "env['{}']".format(target),
+            ],
+        )
+
+
 def rename_model(cr, old, new, rename_table=True):
     """
     Rename a model.
@@ -375,6 +393,8 @@ def rename_model(cr, old, new, rename_table=True):
     """.format(col_prefix=col_prefix, old=old.replace(".", r"\."), new=new)
     )
 
+    _replace_model_in_computed_custom_fields(cr, old, new)
+
 
 def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore_m2m=()):
     """
@@ -487,21 +507,7 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
             else:
                 cr.execute(fmt_query)
 
-    # adapt computes of manual fields
-    if column_exists(cr, "ir_model_fields", "compute"):
-        cr.execute(
-            r"""
-            UPDATE ir_model_fields
-               SET compute = regexp_replace(compute, %s, %s, 'g')
-             WHERE state = 'manual'
-               AND compute IS NOT NULL
-               AND name LIKE 'x\_%%'
-            """,
-            [
-                r"""\yenv\[('|"){}\1\]""".format(re.escape(source)),
-                "env['{}']".format(target),
-            ],
-        )
+    _replace_model_in_computed_custom_fields(cr, source, target)
 
     # Adapt translations
     if table_exists(cr, "ir_translation"):
