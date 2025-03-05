@@ -614,6 +614,20 @@ def remove_column(cr, table, column, cascade=False):
 
 
 def alter_column_type(cr, table, column, type, using=None, where=None, logger=_logger):
+    """
+    Alter the type of a column.
+
+    Do it efficiently using a temporary column and parallel UPDATE queries.
+
+    :param str table: name of the affected table.
+    :param str column: name of the column to alter type.
+    :param str type: new type of the column.
+    :param str using: SQL expression that define how to convert the value to the new type.
+                      The `{0}` placeholder will be replaced by the column name.
+    :param str where: used to restrict the values converted via `using`.
+    :param logger: logger used to report the progress.
+    :type logger: :class:`logging.Logger`
+    """
     if where and not using:
         raise ValueError("`where` parameter is only relevant with a non-default `using` parameter")
 
