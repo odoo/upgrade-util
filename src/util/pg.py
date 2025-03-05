@@ -610,6 +610,8 @@ def remove_column(cr, table, column, cascade=False):
 
 
 def alter_column_type(cr, table, column, type, using=None, where=None, logger=_logger):
+    if where and not using:
+        raise ValueError("`where` parameter is only relevant with a non-default `using` parameter")
     # remove the existing linked `ir_model_fields_selection` recods in case it was a selection field
     if table_exists(cr, "ir_model_fields_selection"):
         cr.execute(
