@@ -505,6 +505,21 @@ def column_updatable(cr, table, column):
     return nfo and nfo[2]
 
 
+def _normalize_pg_type(type_):
+    aliases = {
+        "boolean": "bool",
+        "smallint": "int2",
+        "integer": "int4",
+        "bigint": "int8",
+        "real": "float4",
+        "double precision": "float8",
+        "character varying": "varchar",
+        "timestamp with time zone": "timestamptz",
+        "timestamp without time zone": "timestamp",
+    }
+    return aliases.get(type_.lower(), type_)
+
+
 def create_column(cr, table, column, definition, **kwargs):
     """
     Create a column.
@@ -546,18 +561,7 @@ def create_column(cr, table, column, definition, **kwargs):
     elif on_delete_action is not no_def:
         raise ValueError("`on_delete_action` argument can only be used if `fk_table` argument is set.")
 
-    aliases = {
-        "boolean": "bool",
-        "smallint": "int2",
-        "integer": "int4",
-        "bigint": "int8",
-        "real": "float4",
-        "double precision": "float8",
-        "character varying": "varchar",
-        "timestamp with time zone": "timestamptz",
-        "timestamp without time zone": "timestamp",
-    }
-    definition = aliases.get(definition.lower(), definition)
+    definition = _normalize_pg_type(definition)
 
     if definition == "bool" and default is no_def:
         default = False
@@ -612,6 +616,13 @@ def remove_column(cr, table, column, cascade=False):
 def alter_column_type(cr, table, column, type, using=None, where=None, logger=_logger):
     if where and not using:
         raise ValueError("`where` parameter is only relevant with a non-default `using` parameter")
+
+    if not using:
+        current_type = column_type(cr, table, column)
+        if current_type and current_type == _normalize_pg_type(type):
+            logger.info("Column %r of table %r is already defined as %r", column, table, type)
+            return
+
     # remove the existing linked `ir_model_fields_selection` recods in case it was a selection field
     if table_exists(cr, "ir_model_fields_selection"):
         cr.execute(
