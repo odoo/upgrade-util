@@ -622,6 +622,9 @@ def alter_column_type(cr, table, column, type, using=None, where=None, logger=_l
             """,
             [model_of_table(cr, table), column],
         )
+
+    drop_depending_views(cr, table, column)
+
     if not using:
         # if there is a high number of NULL entries, it will be faster to just ignore those
         cr.execute(format_query(cr, "ANALYZE {}({})", table, column))
