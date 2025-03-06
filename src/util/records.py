@@ -1013,6 +1013,7 @@ def update_record_from_xml(
     from_module=None,
     reset_translations=(),
     ensure_references=False,
+    fields=None,
 ):
     """
     Update a record based on its definition in the :doc:`/developer/reference/backend/data`.
@@ -1033,6 +1034,8 @@ def update_record_from_xml(
     :param set(str) reset_translations: field names whose translations get reset
     :param bool ensure_references: whether referred records via `ref` XML attributes
                                    should also be updated.
+    :param set(str) or None fields: optional list of fields to include in the XML declaration.
+                                   If set, all other fields will be ignored.
 
     .. warning::
        This functions uses the ORM, therefore it can only be used after **all** models
@@ -1051,6 +1054,7 @@ def update_record_from_xml(
         from_module=from_module,
         reset_translations=reset_translations,
         ensure_references=ensure_references,
+        fields=fields,
         done_refs=set(),
     )
 
@@ -1063,11 +1067,11 @@ def __update_record_from_xml(
     from_module,
     reset_translations,
     ensure_references,
+    fields,
     done_refs,
 ):
     from .modules import get_manifest
 
-    # Force update of a record from xml file to bypass the noupdate flag
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
 
@@ -1095,6 +1099,7 @@ def __update_record_from_xml(
     else:
         # The xmlid doesn't already exists, nothing to reset
         reset_write_metadata = noupdate = reset_translations = False
+        fields = None
 
     write_data = None
     if reset_write_metadata:
@@ -1133,6 +1138,10 @@ def __update_record_from_xml(
             for node in doc.xpath(xpath):
                 found = True
                 parent = node.getparent()
+                if node.tag == "record" and fields is not None:
+                    for fn in node.xpath("./field[@name]"):
+                        if fn.attrib["name"] not in fields:
+                            node.remove(fn)
                 new_root[0].append(node)
 
                 if node.tag == "menuitem" and parent.tag == "menuitem" and "parent_id" not in node.attrib:
@@ -1148,8 +1157,12 @@ def __update_record_from_xml(
                     template = True
                 if ensure_references:
                     for ref_node in node.xpath("//field[@ref]"):
+                        if fields is not None and ref_node.attrib["name"] not in fields:
+                            continue
                         add_ref(ref_node.get("ref"))
                     for eval_node in node.xpath("//field[@eval]"):
+                        if fields is not None and eval_node.attrib["name"] not in fields:
+                            continue
                         for ref_match in re.finditer(r"\bref\((['\"])(.*?)\1\)", eval_node.get("eval")):
                             add_ref(ref_match.group(2))
 
@@ -1172,6 +1185,7 @@ def __update_record_from_xml(
             from_module=from_module,
             reset_translations=reset_translations,
             ensure_references=True,
+            fields=None,
             done_refs=done_refs,
         )
 
@@ -1189,9 +1203,12 @@ def __update_record_from_xml(
 
     if reset_translations:
         if reset_translations is True:
-            fields_with_values_from_xml = {elem.attrib["name"] for elem in node.xpath("//record/field")}
-            if template:
-                fields_with_values_from_xml |= {"arch_db", "name"}
+            if fields is None:
+                fields_with_values_from_xml = {elem.attrib["name"] for elem in node.xpath("//record/field")}
+                if template:
+                    fields_with_values_from_xml |= {"arch_db", "name"}
+            else:
+                fields_with_values_from_xml = fields
             cr.execute(
                 "SELECT name FROM ir_model_fields WHERE model = %s AND translate = true AND name IN %s",
                 [model, tuple(fields_with_values_from_xml)],
