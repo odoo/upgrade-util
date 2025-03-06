@@ -344,8 +344,11 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
         super(IntegrityCase, self)._setup_registry()
         cr = self.registry.cursor()
         self.addCleanup(cr.close)
-        self.registry.enter_test_mode(cr)
-        self.addCleanup(self.registry.leave_test_mode)
+        if hasattr(self, "registry_enter_test_mode"):
+            self.registry_enter_test_mode(cr=cr)
+        else:
+            self.registry.enter_test_mode(cr)
+            self.addCleanup(self.registry.leave_test_mode)
 
     def setUp(self):
         super(IntegrityCase, self).setUp()
