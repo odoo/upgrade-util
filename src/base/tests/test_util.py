@@ -1258,6 +1258,21 @@ class TestRecords(UnitTestCase):
         tree = etree.fromstring(arch)
         self.assertIsNotNone(tree.find(".//input[@id='login']"))
 
+    def test_update_record_from_xml__fields(self):
+        cr = self.env.cr
+        xmlid = "base.USD"
+
+        usd = self.env.ref(xmlid)
+        usd.write({"name": "XXX", "symbol": "¤"})
+        util.flush(usd)
+        util.invalidate(usd)
+
+        util.update_record_from_xml(cr, xmlid, fields=("symbol"))
+        util.invalidate(usd)
+
+        self.assertEqual(usd.symbol, "$")
+        self.assertEqual(usd.name, "XXX")
+
     def test_ensure_xmlid_match_record(self):
         cr = self.env.cr
         tx1 = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})
