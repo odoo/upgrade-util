@@ -753,7 +753,7 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
                              `merge` or `fail` (default)
     :return: the ID of the record referenced by the *new* xml_id, `None` when the record
              doesn't exist
-    :rtype: int or `None`
+    :rtype: int or None
     """
     if "." not in old or "." not in new:
         raise ValueError("Please use fully qualified name <module>.<name>")
@@ -860,7 +860,7 @@ def ref(cr, xmlid):
 
     :param str xml_id: record xml_id, under the format `module.name`
     :return: ID of the referenced record, `None` if not found.
-    :rtype: int or `None`
+    :rtype: int or None
     """
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
