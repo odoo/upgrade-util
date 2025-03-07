@@ -37,6 +37,7 @@ from .misc import chunks, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
+    SQLStr,
     _get_unique_indexes_with,
     _validate_table,
     column_exists,
@@ -1654,28 +1655,36 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             continue
         res_model_upd = []
         if ir.res_model:
-            res_model_upd.append('"{ir.res_model}" = %(model_dst)s')
+            res_model_upd.append(format_query(cr, "{} = %(model_dst)s", ir.res_model))
         if ir.res_model_id:
-            res_model_upd.append('"{ir.res_model_id}" = %(model_dest_id)s')
-        upd = ", ".join(res_model_upd).format(ir=ir)
-        res_model_whr = " AND ".join(res_model_upd).format(ir=ir)
-        whr = ir.model_filter(placeholder="%(model_src)s")
+            res_model_upd.append(format_query(cr, "{} = %(model_dest_id)s", ir.res_model_id))
+        upd = SQLStr(", ".join(res_model_upd))
+        res_model_whr = SQLStr(" AND ".join(res_model_upd))
+        whr = ir.model_filter(placeholder="%(model_src)s", prefix="t.")
 
         if not id_update:
-            jmap_expr = "true"  # no-op
-            jmap_expr_upd = ""
+            jmap_expr = SQLStr("true")  # no-op
+            jmap_expr_upd = SQLStr("")
         else:
-            jmap_expr = '"{ir.res_id}" = _upgrade_rrr.new'.format(ir=ir)
-            jmap_expr_upd = ", " + jmap_expr
+            jmap_expr = format_query(cr, "{} = _upgrade_rrr.new", ir.res_id)
+            jmap_expr_upd = SQLStr(", " + jmap_expr)
 
-        query = """
-            UPDATE "{ir.table}" t
+        query = format_query(
+            cr,
+            """
+            UPDATE {table} t
                SET {upd}
                    {jmap_expr_upd}
               FROM _upgrade_rrr
              WHERE {whr}
-               AND _upgrade_rrr.old = {ir.res_id}
-        """
+               AND _upgrade_rrr.old = t.{res_id}
+            """,
+            table=ir.table,
+            res_id=ir.res_id,
+            whr=whr,
+            jmap_expr_upd=jmap_expr_upd,
+            upd=upd,
+        )
 
         unique_indexes = []
         if ir.res_model:
@@ -1687,24 +1696,30 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             for _, uniq_cols in unique_indexes:
                 uniq_cols = set(uniq_cols) - {ir.res_id, ir.res_model, ir.res_model_id}  # noqa: PLW2901
                 conditions.append(
-                    """
-                        NOT EXISTS(SELECT 1 FROM {ir.table} WHERE {res_model_whr} AND {jmap_expr} AND %(where_clause)s)
-                    """
-                    % {
-                        "where_clause": "AND".join('"%s"=t."%s"' % (col, col) for col in uniq_cols)
+                    format_query(
+                        cr,
+                        "NOT EXISTS(SELECT 1 FROM {table} WHERE {res_model_whr} AND {jmap_expr} AND {where_clause})",
+                        table=ir.table,
+                        res_model_whr=res_model_whr,
+                        jmap_expr=jmap_expr,
+                        where_clause=SQLStr(" AND ".join(format_query(cr, "{0}=t.{0}", col) for col in uniq_cols))
                         if uniq_cols
-                        else "True"
-                    }
+                        else SQLStr("True"),
+                    )
                 )
-            query = """
-                    %s
-                    AND %s;
-                DELETE FROM {ir.table} USING _upgrade_rrr WHERE {whr} AND {ir.res_id} = _upgrade_rrr.old;
-            """ % (
-                query,
-                "AND".join(conditions),
+            query = format_query(
+                cr,
+                """{prev_query}   AND {cond};
+
+            DELETE FROM {table} t USING _upgrade_rrr WHERE {whr} AND t.{res_id} = _upgrade_rrr.old;
+                """,
+                prev_query=query,
+                cond=SQLStr("\nAND ".join(conditions)),
+                table=ir.table,
+                whr=whr,
+                res_id=ir.res_id,
             )
-            cr.execute(query.format(**locals()), locals())
+            cr.execute(query, locals())
         else:
             fmt_query = cr.mogrify(query.format(**locals()), locals()).decode()
             parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
