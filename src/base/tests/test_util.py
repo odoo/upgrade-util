@@ -1,6 +1,7 @@
 import ast
 import operator
 import re
+import sys
 import threading
 import unittest
 import uuid
@@ -1731,8 +1732,9 @@ class TestMisc(UnitTestCase):
                 "[('company_id', 'in', (companies.active_ids or [False]))]",
             ),
             (
-                "[('company_id','in', user.other.allowed_company_ids)]",
-                "[('company_id', 'in', user.other.allowed_company_ids)]",
+                "[('company_id','in',    user.other.allowed_company_ids)]",
+                # note it keeps the original spacing since no match should happen!
+                "[('company_id','in',    user.other.allowed_company_ids)]",
             ),
             (
                 "[('group_id','in', user.groups_id.ids)]",
@@ -1763,6 +1765,135 @@ class TestMisc(UnitTestCase):
             self.assertIn(repl, [expected, old_unparse_fallback])
         else:
             self.assertEqual(repl, expected)
+
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @mute_logger("odoo.upgrade.util.misc")
+    def test_literal_replace_error(self):
+        # this shouldn't raise a syntax error
+        res = util.literal_replace("[1,2", {"1": "3"})
+        self.assertEqual(res, "[1,2")
+
+    @parametrize(
+        [
+            ("x[1 ]", "x[1]"),
+            ("{x for x in y }, [ {1   }, {1 : 2},x[1],y[ 1:2:3 ] ]", "{x for x in y},[{1},{1:2},x[1],y[1:2:3]]"),
+            (
+                "[1 if True   else 2, * z] + [x for x in y if w], {x:x for x in y} ",
+                "[1 if True else 2,*z]+[x for x in y if w],{x:x for x in y}",
+            ),
+            ("1 <  2 <3, x or z  and y   or x", "1<2<3,x or z and y or x"),
+        ]
+    )
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_literal_replace_full(self, text, orig):
+        # check each grammar piece
+        repl = util.literal_replace(text, {orig: "gone"})
+        self.assertEqual(repl, "gone")
+
+        # minimal change should invalidate the replace
+        text = text.replace("x", "xx")
+        repl = util.literal_replace(text, {orig: "gone"})
+        self.assertEqual(text, repl)
+
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_literal_replace_callable(self):
+        def adapter(node):
+            return ast.parse("this.get('{}')".format(node.attr), mode="eval").body
+
+        repl = util.literal_replace(
+            "result = this. x if that . y == 2 else this  .z",
+            {ast.Attribute(ast.Name("this", None), util.literal_replace.WILDCARD, None): adapter},
+        )
+        self.assertIn(
+            repl,
+            [
+                "result = this.get('x') if that.y == 2 else this.get('z')",
+                # fallback for older unparse
+                "result = (this.get('x') if (that.y == 2) else this.get('z'))",
+            ],
+        )
+
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(hasattr(ast, "Constant"), "`ast.Constant` available from Python3.6")
+    def test_literal_replace_callable2(self):
+        def adapter2(node):
+            return ast.parse(
+                "{} / 42".format(node.left.value if hasattr(node.left, "value") else node.left.n), mode="eval"
+            ).body
+
+        def adapter3(node):
+            return ast.parse("y == 42", mode="eval").body
+
+        repl = util.literal_replace(
+            "16 * w or y == 2",
+            {
+                ast.BinOp(ast.Constant(16), ast.Mult(), ast.Name(util.literal_replace.WILDCARD, None)): adapter2,
+                ast.Compare(ast.Name("y", None), [ast.Eq()], [ast.Constant(util.literal_replace.WILDCARD)]): adapter3,
+            },
+        )
+        # Check with fallback for older unparse
+        self.assertIn(repl, ["16 / 42 or y == 42", "((16 / 42) or (y == 42))"])
+
+        def adapter4(node):
+            return ast.parse(
+                "{}.get({})".format(util.ast_unparse(node.value), util.ast_unparse(node.slice)), mode="eval"
+            ).body
+
+        repl = util.literal_replace(
+            "  x[ 'a' ]+y[b   ] -  z[None]",
+            {
+                ast.Subscript(
+                    ast.Name(util.literal_replace.WILDCARD, None), util.literal_replace.WILDCARD, None
+                ): adapter4
+            },
+        )
+        # Check with fallback for older unparse
+        self.assertIn(repl, ["x.get('a') + y.get(b) - z.get(None)", "((x.get('a') + y.get(b)) - z.get(None))"])
+
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(hasattr(ast, "Constant"), "`ast.Constant` available from Python3.6")
+    def test_literal_replace_wildcards(self):
+        repl = util.literal_replace(
+            "x+1 - z* 18 + [1,2,3]",
+            {
+                ast.Name(util.literal_replace.WILDCARD, None): "y",
+                (ast.Constant if sys.version_info > (3, 9) else ast.Num)(util.literal_replace.WILDCARD): "2",
+                ast.List([util.literal_replace.WILDCARD], None): "[4,5]",
+            },
+        )
+        self.assertIn(repl, ["y + 2 - y * 2 + [4, 5]", "(((y + 2) - (y * 2)) + [4, 5])"])
+
+    @parametrize(
+        [
+            (ast.Constant(util.literal_replace.WILDCARD, kind=None), "*"),
+            (ast.Name(util.literal_replace.WILDCARD, None), "*"),
+            (ast.Attribute(ast.Name(util.literal_replace.WILDCARD, None), util.literal_replace.WILDCARD, None), "*.*"),
+            (
+                ast.Subscript(
+                    ast.Name(util.literal_replace.WILDCARD, None), ast.Name(util.literal_replace.WILDCARD, None), None
+                ),
+                "*[*]",
+            ),
+            (
+                ast.BinOp(
+                    ast.Name(util.literal_replace.WILDCARD, None),
+                    ast.Add(),
+                    ast.Name(util.literal_replace.WILDCARD, None),
+                ),
+                "* + *",
+                "(* + *)",
+            ),
+            (ast.List([util.literal_replace.WILDCARD], None), "[*]"),
+            (ast.Tuple([util.literal_replace.WILDCARD], None), "(*,)"),
+        ]
+    )
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_literal_replace_wildcard_unparse(self, orig, expected, old_unparse_fallback=None):
+        res = util.ast_unparse(orig)
+        if old_unparse_fallback:
+            self.assertIn(res, [expected, old_unparse_fallback])
+        else:
+            self.assertEqual(res, expected)
 
 
 def not_doing_anything_converter(el):
