@@ -1674,6 +1674,41 @@ class TestMisc(UnitTestCase):
         )
         self.assertEqual(repl, expected)
 
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_literal_replace_callable(self):
+        def adapter(node):
+            return ast.parse("this.get('{}')".format(node.attr), mode="eval").body
+
+        repl = util.literal_replace(
+            "result = this. x if that . y == 2 else this  .z",
+            {ast.Attribute(ast.Name("this"), util.literal_replace.WILDCARD): adapter},
+        )
+        self.assertEqual(repl, "result = this.get('x') if that.y == 2 else this.get('z')")
+
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_literal_replace_wildcards(self):
+        repl = util.literal_replace(
+            "x+1 - z* 18",
+            {ast.Name(util.literal_replace.WILDCARD): "y", ast.Constant(util.literal_replace.WILDCARD): "2"},
+        )
+        self.assertEqual(repl, "y + 2 - y * 2")
+
+    @parametrize(
+        [
+            (ast.Attribute(ast.Name(util.literal_replace.WILDCARD), util.literal_replace.WILDCARD), "*.*"),
+            (ast.Constant(util.literal_replace.WILDCARD), "*"),
+            (
+                ast.BinOp(
+                    ast.Constant(util.literal_replace.WILDCARD), ast.Add(), ast.Constant(util.literal_replace.WILDCARD)
+                ),
+                "* + *",
+            ),
+        ]
+    )
+    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    def test_literal_replace_wildcard_unparse(self, orig, expected):
+        self.assertEqual(ast.unparse(orig), expected)
+
 
 def not_doing_anything_converter(el):
     return True

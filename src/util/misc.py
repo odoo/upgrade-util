@@ -510,7 +510,7 @@ class SelfPrintEvalContext(collections.defaultdict):
                 return self._replace_node("_upg_UnaryOp_Not", node) if isinstance(node.op, ast.Not) else node
 
         replacer = RewriteName()
-        root = ast.parse(expr.strip(), mode="eval").body
+        root = ast.parse(expr.strip(), mode="exec")
         visited = replacer.visit(root)
         return (ast_unparse(visited).strip(), SelfPrintEvalContext(replacer.replaces))
 
@@ -521,14 +521,14 @@ class _Replacer(ast.NodeTransformer):
     def __init__(self, mapping):
         self.mapping = collections.defaultdict(list)
         for key, value in mapping.items():
-            key_ast = ast.parse(key, mode="eval").body
+            key_ast = key if isinstance(key, ast.AST) else ast.parse(key, mode="eval").body
             self.mapping[key_ast.__class__.__name__].append((key_ast, value))
 
     def _no_match(self, left, right):
         return False
 
     def _match(self, left, right):
-        same_ctx = getattr(left, "ctx", None).__class__ is getattr(right, "ctx", None).__class__
+        same_ctx = not hasattr(right, "ctx") or getattr(left, "ctx", None).__class__ is right.ctx.__class__
         cname = left.__class__.__name__
         same_type = right.__class__.__name__ == cname
         matcher = getattr(self, "_match_" + cname, self._no_match)
@@ -536,21 +536,25 @@ class _Replacer(ast.NodeTransformer):
 
     def _match_Constant(self, left, right):
         # we don't care about kind for u-strings
-        return type(left.value) is type(right.value) and left.value == right.value
+        return right.value is literal_replace.WILDCARD or (
+            type(left.value) is type(right.value) and left.value == right.value
+        )
 
     def _match_Num(self, left, right):
         # Dreprecated, for Python <3.8
-        return type(left.n) is type(right.n) and left.n == right.n
+        return right.n is literal_replace.WILDCARD or (type(left.n) is type(right.n) and left.n == right.n)
 
     def _match_Str(self, left, right):
         # Deprecated, for Python <3.8
-        return left.s == right.s
+        return right.s is literal_replace.WILDCARD or left.s == right.s
 
     def _match_Name(self, left, right):
-        return left.id == right.id
+        return right.id is literal_replace.WILDCARD or left.id == right.id
 
     def _match_Attribute(self, left, right):
-        return left.attr == right.attr and self._match(left.value, right.value)
+        return (right.attr is literal_replace.WILDCARD or left.attr == right.attr) and self._match(
+            left.value, right.value
+        )
 
     def _match_List(self, left, right):
         return len(left.elts) == len(right.elts) and all(
@@ -581,7 +585,8 @@ class _Replacer(ast.NodeTransformer):
         if node.__class__.__name__ in self.mapping:
             for target_ast, new in self.mapping[node.__class__.__name__]:
                 if self._match(node, target_ast):
-                    return ast.parse(new, mode="eval").body
+                    # since we use eval below, non-callable must be an expression (no assignment)
+                    return new(node) if callable(new) else ast.parse(new, mode="eval").body
         return super(_Replacer, self).visit(node)
 
 
@@ -589,6 +594,14 @@ def literal_replace(expr, mapping):
     if ast_unparse is None:
         _logger.critical("AST unparse unavailable")
         return expr
-    root = ast.parse(expr.strip(), mode="eval").body
+    root = ast.parse(expr.strip(), mode="exec")
     visited = _Replacer(mapping).visit(root)
     return ast_unparse(visited).strip()
+
+
+class _Symbol(str):
+    def __repr__(self):
+        return str(self)
+
+
+literal_replace.WILDCARD = _Symbol("*")
