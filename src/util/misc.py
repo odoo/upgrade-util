@@ -7,6 +7,7 @@ import functools
 import logging
 import os
 import re
+import textwrap
 import uuid
 from contextlib import contextmanager
 from itertools import chain, islice
@@ -32,7 +33,13 @@ try:
     from ast import unparse as ast_unparse
 except ImportError:
     try:
-        from astunparse import unparse as ast_unparse
+        from astunparse import unparse as _ast_unparse
+
+        def ast_unparse(n):
+            # Older unparse adds weird new lines:
+            # >>> unparse(ast.parse("a",mode="eval").body)
+            # 'a\n'
+            return _ast_unparse(n).strip()
     except ImportError:
         ast_unparse = None
 
@@ -521,7 +528,7 @@ class SelfPrintEvalContext(collections.defaultdict):
                 return self._replace_node("_upg_UnaryOp_Not", node) if isinstance(node.op, ast.Not) else node
 
         replacer = RewriteName()
-        root = ast.parse(expr.strip(), mode="eval").body
+        root = ast.parse(expr.strip(), mode="exec")
         visited = replacer.visit(root)
         return (ast_unparse(visited).strip(), SelfPrintEvalContext(replacer.replaces))
 
@@ -532,74 +539,225 @@ class _Replacer(ast.NodeTransformer):
     def __init__(self, mapping):
         self.mapping = collections.defaultdict(list)
         for key, value in mapping.items():
-            key_ast = ast.parse(key, mode="eval").body
+            key_ast = key if isinstance(key, ast.AST) else ast.parse(key, mode="eval").body
             self.mapping[key_ast.__class__.__name__].append((key_ast, value))
+        self.updated = False
 
-    def _no_match(self, left, right):
-        return False
+    def visit(self, node):
+        if node.__class__.__name__ in self.mapping:
+            for target_ast, new in self.mapping[node.__class__.__name__]:
+                if self._match(node, target_ast):
+                    if callable(new):
+                        new_node = new(node)
+                        self.updated |= new_node is not node
+                        return new_node
+                    self.updated = True
+                    # since we use eval below, non-callable must be an expression (no assignment)
+                    return ast.parse(new, mode="eval").body
+        return super(_Replacer, self).visit(node)
+
+    def _strict_match(self, left, right):
+        return left is right
+
+    def _all_match(self, lefts, rights):
+        return len(lefts) == len(rights) and all(self._match(left_, right_) for left_, right_ in zip(lefts, rights))
 
     def _match(self, left, right):
-        same_ctx = getattr(left, "ctx", None).__class__ is getattr(right, "ctx", None).__class__
-        cname = left.__class__.__name__
-        same_type = right.__class__.__name__ == cname
-        matcher = getattr(self, "_match_" + cname, self._no_match)
+        # None context is assumed as a wildcard, it's simpler to write than specific context instances
+        same_ctx = (
+            not hasattr(right, "ctx")
+            or right.ctx is None
+            or getattr(left, "ctx", None).__class__ is right.ctx.__class__
+        )
+        lcname = left.__class__.__name__
+        rcname = right.__class__.__name__
+        same_type = lcname == rcname or (lcname in ["Num", "Str", "NameConstant"] and rcname == "Constant")
+        matcher = getattr(self, "_match_" + lcname, self._strict_match)
         return matcher(left, right) if same_type and same_ctx else False
 
+    #### Literals ####
     def _match_Constant(self, left, right):
-        # we don't care about kind for u-strings
-        return type(left.value) is type(right.value) and left.value == right.value
+        # We don't care about kind for u-strings
+        return right.value is literal_replace.WILDCARD or (
+            type(left.value) is type(right.value) and left.value == right.value
+        )
 
     def _match_Num(self, left, right):
-        # Dreprecated, for Python <3.8
-        return type(left.n) is type(right.n) and left.n == right.n
+        # Dreprecated, for Python <3.8, right could be matched against modern Constant
+        rn = right.n if hasattr(right, "n") else right.value
+        return rn is literal_replace.WILDCARD or (type(left.n) is type(rn) and left.n == rn)
 
     def _match_Str(self, left, right):
+        # Dreprecated, for Python <3.8, right could be matched against modern Constant
+        rs = right.s if hasattr(right, "s") else right.value
+        return rs is literal_replace.WILDCARD or left.s == rs
+
+    def _match_FormattedValue(self, left, right):
+        return (
+            self._match(left.value, right.value)
+            and self._match(left.conversion, right.conversion)
+            # format_spec could be None, handled in _strict_match
+            and self._match(left.format_spec, right.format_spec)
+        )
+
+    def _match_JoinedStr(self, left, right):
+        return self._all_match(left.values, right.values)
+
+    def _match_Bytes(self, left, right):
         # Deprecated, for Python <3.8
-        return left.s == right.s
-
-    def _match_Name(self, left, right):
-        return left.id == right.id
-
-    def _match_Attribute(self, left, right):
-        return left.attr == right.attr and self._match(left.value, right.value)
+        return self._match_Str(left, right)
 
     def _match_List(self, left, right):
-        return len(left.elts) == len(right.elts) and all(
-            self._match(left_, right_) for left_, right_ in zip(left.elts, right.elts)
+        return (len(right.elts) == 1 and right.elts[0] is literal_replace.WILDCARD) or self._all_match(
+            left.elts, right.elts
         )
 
     def _match_Tuple(self, left, right):
         return self._match_List(left, right)
 
-    def _match_ListComp(self, left, right):
+    def _match_Set(self, left, right):
+        return self._match_List(left, right)
+
+    def _match_Dict(self, left, right):
+        return self._all_match(left.keys, right.keys) and self._all_match(left.values, right.values)
+
+    # Ellipsis is matched by _strict_match
+
+    def _match_NameConstant(self, left, right):
+        # Deprecated, for Python <3.8
+        return right.value is literal_replace.WILDCARD or left.value == right.value
+
+    #### Variables ####
+
+    def _match_Name(self, left, right):
+        return right.id is literal_replace.WILDCARD or left.id == right.id
+
+    def _match_Starred(self, left, right):
+        return self._match(left.value, right.value)
+
+    #### Expressions ####
+
+    def _match_Expr(self, left, right):
+        return self._match(left.value, right.value)
+
+    def _match_NamedExpr(self, left, right):
+        return self._match(left.target, right.target) and self._match(left.value, right.value)
+
+    def _match_UnaryOp(self, left, right):
+        return left.op.__class__ is right.op.__class__ and self._match(left.operand, right.operand)
+
+    def _match_BinOp(self, left, right):
         return (
-            self._match(left.elt, right.elt)
-            and len(left.generators) == len(right.generators)
-            and all(self._match(left_, right_) for left_, right_ in zip(left.generators, right.generators))
+            left.op.__class__ is right.op.__class__
+            and self._match(left.left, right.left)
+            and self._match(left.right, right.right)
+        )
+
+    def _match_BoolOp(self, left, right):
+        return left.op.__class__ is right.op.__class__ and self._all_match(left.values, right.values)
+
+    def _match_Compare(self, left, right):
+        return (
+            len(left.ops) == len(right.ops)
+            and all(lop.__class__ is rop.__class__ for lop, rop in zip(left.ops, right.ops))
+            and self._match(left.left, right.left)
+            and self._all_match(left.comparators, right.comparators)
+        )
+
+    def _match_IfExp(self, left, right):
+        return (
+            self._match(left.test, right.test)
+            and self._match(left.body, right.body)
+            and self._match(left.orelse, right.orelse)
+        )
+
+    def _match_Attribute(self, left, right):
+        return (right.attr is literal_replace.WILDCARD or left.attr == right.attr) and self._match(
+            left.value, right.value
+        )
+
+    #### Subscripting ####
+
+    def _match_Subscript(self, left, right):
+        return self._match(left.value, right.value) and (
+            right.slice is literal_replace.WILDCARD or self._match(left.slice, right.slice)
+        )
+
+    def _match_Index(self, left, right):
+        return right.value is literal_replace.WILDCARD or self._match(left.value, right.value)
+
+    def _match_Slice(self, left, right):
+        return (
+            self._match(left.lower, right.lower)
+            and self._match(left.upper, right.upper)
+            and self._match(left.step, right.step)
+        )
+
+    def _match_ExtSlice(self, left, right):
+        return self._all_match(left.dims, right.dims)
+
+    #### Comprehensions ####
+
+    def _match_ListComp(self, left, right):
+        return self._match(left.elt, right.elt) and self._all_match(left.generators, right.generators)
+
+    def _match_SetComp(self, left, right):
+        return self._match_ListComp(left, right)
+
+    def _match_DictComp(self, left, right):
+        return (
+            self._match(left.key, right.key)
+            and self._match(left.value, right.value)
+            and self._all_match(left.generators, right.generators)
         )
 
     def _match_comprehension(self, left, right):
         return (
             # async is not expected in our use cases, just for completeness
             getattr(left, "is_async", 0) == getattr(right, "is_async", 0)
-            and len(left.ifs) == len(right.ifs)
             and self._match(left.target, right.target)
             and self._match(left.iter, right.iter)
-            and all(self._match(left_, right_) for left_, right_ in zip(left.ifs, right.ifs))
+            and self._all_match(left.ifs, right.ifs)
         )
-
-    def visit(self, node):
-        if node.__class__.__name__ in self.mapping:
-            for target_ast, new in self.mapping[node.__class__.__name__]:
-                if self._match(node, target_ast):
-                    return ast.parse(new, mode="eval").body
-        return super(_Replacer, self).visit(node)
 
 
 def literal_replace(expr, mapping):
     if ast_unparse is None:
         _logger.critical("AST unparse unavailable")
         return expr
-    root = ast.parse(expr.strip(), mode="eval").body
-    visited = _Replacer(mapping).visit(root)
-    return ast_unparse(visited).strip()
+    try:
+        root = ast.parse(textwrap.dedent(expr), mode="exec")
+    except SyntaxError:
+        _logger.warning("Invalid Python expression `%s`", expr)
+        return expr
+    replacer = _Replacer(mapping)
+    visited = replacer.visit(root)
+    return ast_unparse(visited).strip() if replacer.updated else expr
+
+
+class _Symbol(str):
+    def __init__(self, symbol):
+        self.id = symbol
+
+    def __repr__(self):
+        return self
+
+
+_Symbol.__name__ = "Name"  # for ast_unparse to render instances
+
+
+literal_replace.WILDCARD = _Symbol("*")
+"""
+Unique object for glob matching
+
+This object should be correctly rendered by `unparse`.
+It can be used in parts where we want a glob match. Example:
+```
+>>> util.ast_unparse(ast.Name(util.literal_replace.WILDCARD, None))
+'*'
+>>> util.ast_unparse(ast.List([util.literal_replace.WILDCARD], None))
+'[*]'
+```
+
+:meta private: exclude from online docs
+"""
