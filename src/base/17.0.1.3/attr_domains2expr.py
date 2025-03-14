@@ -111,9 +111,9 @@ def mod2bool_str(s):
     Note that 0 and 1 are left unchanged since they have the same True/False meaning in Python.
     """
     ss = s.lower()
-    if ss in "yes true on".split():
+    if ss in ["yes", "true", "on"]:
         return "True"
-    if ss in "no false off".split():
+    if ss in ["no", "false", "off"]:
         return "False"
     return s
 

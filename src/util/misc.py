@@ -55,8 +55,8 @@ def _cached(func):
 # copied from odoo as older OpenERP versions doesn't have it
 def str2bool(s, default=None):
     s = unicode(s).lower()
-    y = "y yes 1 true t on".split()
-    n = "n no 0 false f off".split()
+    y = ["y", "yes", "1", "true", "t", "on"]
+    n = ["n", "no", "0", "false", "f", "off"]
     if s not in (y + n):
         if default is None:
             raise ValueError("Use 0/1/yes/no/true/false/on/off")
