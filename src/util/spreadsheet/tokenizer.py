@@ -75,7 +75,7 @@ def replace_special_spaces(text):
 
 
 POSTFIX_UNARY_OPERATORS = ["%"]
-OPERATORS = "+,-,*,/,:,=,<>,>=,>,<=,<,^,&".split(",") + POSTFIX_UNARY_OPERATORS
+OPERATORS = ["+", "-", "*", "/", ":", "=", "<>", ">=", ">", "<=", "<", "^", "&"] + POSTFIX_UNARY_OPERATORS
 
 
 def tokenize(string, locale=DEFAULT_LOCALE):

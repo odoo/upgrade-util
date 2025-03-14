@@ -856,11 +856,37 @@ class BootstrapConverter:
             RenameAttribute.op("data-display", "data-bs-display", "[not(@data-snippet='s_countdown')]"),
             *[
                 RenameAttribute.op(f"data-{attr}", f"data-bs-{attr}")
-                for attr in (
-                    "animation attributes autohide backdrop body container content delay dismiss focus"
-                    " interval margin-right no-jquery offset original-title padding-right parent placement"
-                    " ride sanitize show slide slide-to spy target toggle touch trigger whatever"
-                ).split(" ")
+                for attr in [
+                    "animation",
+                    "attributes",
+                    "autohide",
+                    "backdrop",
+                    "body",
+                    "container",
+                    "content",
+                    "delay",
+                    "dismiss",
+                    "focus",
+                    "interval",
+                    "margin-right",
+                    "no-jquery",
+                    "offset",
+                    "original-title",
+                    "padding-right",
+                    "parent",
+                    "placement",
+                    "ride",
+                    "sanitize",
+                    "show",
+                    "slide",
+                    "slide-to",
+                    "spy",
+                    "target",
+                    "toggle",
+                    "touch",
+                    "trigger",
+                    "whatever",
+                ]
             ],
             # popover
             (CSS(".popover .arrow"), [ReplaceClasses("arrow", "popover-arrow")]),

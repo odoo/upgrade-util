@@ -171,7 +171,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
     [mod_id, mod_label] = cr.fetchone() or [None, model]
     if mod_id:
         # some required fk are in "ON DELETE SET NULL/RESTRICT".
-        for tbl in "base_action_rule base_automation google_drive_config".split():
+        for tbl in ["base_action_rule", "base_automation", "google_drive_config"]:
             if column_exists(cr, tbl, "model_id"):
                 cr.execute("DELETE FROM {0} WHERE model_id=%s".format(tbl), [mod_id])
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))

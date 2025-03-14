@@ -491,14 +491,14 @@ def verify_upgraded_jinja_fields(cr):
 def is_converted_template_valid(env, template_before, template_after, model_name, record_id, engine="inline_template"):
     render_before = None
     with contextlib.suppress(Exception):
-        render_before = _render_template_jinja(env, Markup(template_before), model_name, record_id)
+        render_before = _render_template_jinja(env, template_before, model_name, record_id)
 
     render_after = None
     if render_before is not None:
         try:
             with mute_logger("odoo.addons.mail.models.mail_render_mixin"):
                 render_after = env["mail.render.mixin"]._render_template(
-                    Markup(template_after), model_name, [record_id], engine=engine
+                    template_after, model_name, [record_id], engine=engine
                 )[record_id]
         except Exception:
             pass
@@ -604,4 +604,4 @@ def _render_template_jinja(env, template_txt, model, res_id):
     render_result = template.render(variables)
     if render_result == "False":
         render_result = ""
-    return Markup(render_result)
+    return render_result
