@@ -24,6 +24,7 @@ raw-options.version_scheme = "calver-by-date"
 version-file = "src/_version.py"
 
 [tool.ruff]
+required-version = ">=0.10.0"
 fix = true
 show-fixes = true
 output-format = "full"
@@ -81,12 +82,13 @@ select = [
     "COM818",  # trailing-comma-on-bare-tuple; other rules handled by autoformatter
     "FBT003",  # boolean-positional-value-in-call; other rules not python2 compatible
     "UP005",   # deprecated-unittest-alias
+    "S704",    # unsafe-markup-use; replaces RUF035
 
 ]
 
 [tool.ruff.lint.flake8-builtins]
-builtins-ignorelist = ["format", "id", "type"]
-builtins-allowed-modules = ["json"]
+ignorelist = ["format", "id", "type"]
+allowed-modules = ["json"]
 
 [tool.ruff.lint.isort]
 section-order = ["future", "standard-library", "third-party", "first-party", "odoo-addons", "local-folder"]
