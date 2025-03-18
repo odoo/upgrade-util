@@ -1619,7 +1619,8 @@ class TestMisc(UnitTestCase):
     def test_SelfPrint_prepare(self, value, expected):
         replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
         evaluated = safe_eval(replaced_value, ctx, nocopy=True)
-        self.assertEqual(str(evaluated), expected)
+        # extra fallback for old unparse from astunparse package
+        self.assertIn(str(evaluated), [expected, "({})".format(expected)])
 
     @parametrize(
         [
@@ -1642,6 +1643,7 @@ class TestMisc(UnitTestCase):
             (
                 "[('company_id','in',allowed_company_ids or [False])]",
                 "[('company_id', 'in', companies.active_ids or [False])]",
+                "[('company_id', 'in', (companies.active_ids or [False]))]",
             ),
             (
                 "[('company_id','in', user.other.allowed_company_ids)]",
@@ -1662,7 +1664,7 @@ class TestMisc(UnitTestCase):
         ]
     )
     @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
-    def test_literal_replace(self, orig, expected):
+    def test_literal_replace(self, orig, expected, old_unparse_fallback=None):
         repl = util.literal_replace(
             orig,
             {
@@ -1672,7 +1674,10 @@ class TestMisc(UnitTestCase):
                 "(1, '=', 0)": "(0, '=', 1)",
             },
         )
-        self.assertEqual(repl, expected)
+        if old_unparse_fallback:
+            self.assertIn(repl, [expected, old_unparse_fallback])
+        else:
+            self.assertEqual(repl, expected)
 
 
 def not_doing_anything_converter(el):
