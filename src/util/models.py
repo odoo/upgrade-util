@@ -421,7 +421,10 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
     cr.execute("SELECT model, id FROM ir_model WHERE model in %s", ((source, target),))
     model_ids = dict(cr.fetchall())
     mapping = {model_ids[source]: model_ids[target]}
-    ignores = ["ir_model", "ir_model_fields", "ir_model_constraint", "ir_model_relation"]
+
+    ir_model_tables = ["ir_model", "ir_model_fields", "ir_model_constraint", "ir_model_relation"]
+    ignores = ir_model_tables + [ir.table for ir in indirect_references(cr, bound_only=True) if ir.res_model_id]
+
     replace_record_references_batch(cr, mapping, "ir.model", replace_xmlid=False, ignores=ignores)
 
     # remap the fields on ir_model_fields
@@ -488,7 +491,7 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
         )
 
     for ir in indirect_references(cr):
-        if ir.res_model and not ir.res_id and ir.table not in ignores:
+        if ir.res_model and not ir.res_id and ir.table not in ir_model_tables:
             # only update unbound references, other ones have been updated by the call to
             # `replace_record_references_batch`
             where_clauses = []
