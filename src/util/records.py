@@ -1613,30 +1613,30 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                             ir.res_id,
                         ],
                     )
-                json_path = cr.mogrify(
-                    "$.* ? ({})".format(" || ".join(["@ == %s"] * len(id_mapping))),
-                    list(id_mapping),
-                ).decode()
-
-                query = cr.mogrify(
-                    format_query(
-                        cr,
-                        """
-                        UPDATE {table}
-                           SET {column} = (
-                                   SELECT jsonb_object_agg(key, COALESCE(((jsonb_object(%s::text[]))->>value)::int, value::int))
-                                   FROM jsonb_each_text({column})
-                               )
-                         WHERE {column} IS NOT NULL
-                           AND {column} @? {json_path}
-                        """,
-                        table=ir.table,
-                        column=ir.res_id,
-                        json_path=sql.Literal(json_path),
-                    ),
-                    [list(map(list, id_mapping.items()))],
-                ).decode()
-                explode_execute(cr, query, table=ir.table)
+                query = format_query(
+                    cr,
+                    """
+                     WITH _upg_cd AS (
+                         SELECT t.id,
+                                jsonb_object_agg(j.key, COALESCE(r.new, j.value::int)) as value
+                           FROM {table} t
+                           JOIN jsonb_each_text(t.{column}) j
+                             ON true
+                      LEFT JOIN _upgrade_rrr r
+                             ON r.old = j.value::integer
+                          WHERE {{parallel_filter}}
+                       GROUP BY t.id
+                         HAVING bool_or(r.new IS NOT NULL)
+                     )
+                     UPDATE {table} t
+                        SET {column} = u.value
+                       FROM _upg_cd u
+                      WHERE u.id = t.id
+                    """,
+                    table=ir.table,
+                    column=ir.res_id,
+                )
+                explode_execute(cr, query, table=ir.table, alias="t")
                 # ensure all new ids exist
                 cr.execute(
                     format_query(

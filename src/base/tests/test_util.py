@@ -1460,6 +1460,51 @@ class TestRecords(UnitTestCase):
         [count] = self.env.cr.fetchone()
         self.assertEqual(count, 1)
 
+    @unittest.skipUnless(util.version_gte("18.0"), "Only work on Odoo >= 18")
+    def test_replace_record_references_batch__company_dependent(self):
+        partner_model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        self.env["ir.model.fields"].create(
+            {
+                "name": "x_test_curr",
+                "ttype": "many2one",
+                "model_id": partner_model.id,
+                "relation": "res.currency",
+                "company_dependent": True,
+            }
+        )
+        c1 = self.env["res.currency"].create({"name": "RC1", "symbol": "RC1"})
+        c2 = self.env["res.currency"].create({"name": "RC2", "symbol": "RC2"})
+        c3 = self.env["res.currency"].create({"name": "RC3", "symbol": "RC3"})
+        c4 = self.env["res.currency"].create({"name": "RC4", "symbol": "RC4"})
+
+        p1 = self.env["res.partner"].create({"name": "Captain Jack"})
+        p2 = self.env["res.partner"].create({"name": "River Song"})
+        p3 = self.env["res.partner"].create({"name": "Donna Noble"})
+
+        old = {
+            p1.id: f'{{"1":{c1.id}, "2":{c2.id}, "3":null}}',
+            p2.id: f'{{"1":{c1.id}, "2":{c2.id}, "3":{c3.id}, "4":{c4.id}}}',
+            p3.id: f'{{"1":{c4.id}}}',
+        }
+        for id, value in old.items():
+            self.env.cr.execute("UPDATE res_partner SET x_test_curr = %s WHERE id = %s", [value, id])
+        mapping = {
+            c1.id: c2.id,
+            c2.id: c3.id,
+            c3.id: c1.id,
+        }
+        with self.assertNotUpdated("res_partner", ids=[p3.id]):
+            util.replace_record_references_batch(self.env.cr, mapping, "res.currency")
+        new = {
+            p1.id: {"1": c2.id, "2": c3.id, "3": None},
+            p2.id: {"1": c2.id, "2": c3.id, "3": c1.id, "4": c4.id},
+            p3.id: {"1": c4.id},
+        }
+        self.env.cr.execute("SELECT id, x_test_curr FROM res_partner WHERE id IN %s", [(p1.id, p2.id)])
+        for id, currencies in self.env.cr.fetchall():
+            expected = new[id]
+            self.assertEqual(currencies, expected)
+
     def _prepare_test_delete_unused(self):
         def create_cat():
             name = f"test_{uuid.uuid4().hex}"
