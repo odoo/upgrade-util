@@ -2169,3 +2169,90 @@ class TestRenameXMLID(UnitTestCase):
         util.invalidate(test_view_2)
         self.assertIn('t-call="base.rename_view"', test_view_2.arch_db)
         self.assertIn('t-name="base.rename_view"', test_view_1.arch_db)
+
+
+class TestAssertUpdated(UnitTestCase):
+    def test_assert_updated(self):
+        p1 = self.env["res.partner"].create({"name": "Levi"})
+        p2 = self.env["res.partner"].create({"name": "Mikasa Ackerman"})
+        util.flush(p1)
+        util.flush(p2)
+
+        # when ids is None, assert any record is created or updated
+        with self.assertUpdated("res_partner"):
+            self.env["res.partner"].create({"name": "Sasha Braus"})
+        with self.assertUpdated("res_partner"):
+            p2.city = "Shiganshina"
+            util.flush(p2)
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner"):
+            pass
+
+        # when ids is [], assert a record is updated
+        with self.assertUpdated("res_partner", ids=[]):
+            p1.city = "Underground"
+            util.flush(p1)
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Annie Leonhart"})
+
+        # when ids has multiple records, all records should be updated
+        with self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
+            p1.company_name = "Survey Corps"
+            p2.company_name = "Survey Corps"
+            util.flush(p1)
+            util.flush(p2)
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
+            p1.name = "Levi Ackerman"
+            util.flush(p1)
+
+        # when ids has a record, that record should be the one updated
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[p1.id]):
+            p2.city = "Paradise Island"
+            util.flush(p2)
+
+    def test_assert_not_updated(self):
+        p1 = self.env["res.partner"].create({"name": "Eren Yeager"})
+        p2 = self.env["res.partner"].create({"name": "Armin Arlert"})
+        util.flush(p1)
+        util.flush(p2)
+
+        # when ids is None, assert no record is created or updated
+        with self.assertNotUpdated("res_partner"):
+            pass
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner"):
+            p1.city = "Shiganshina"
+            util.flush(p1)
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner"):
+            self.env["res.partner"].create({"name": "Bertolt Hoover"})
+
+        # when ids is [], assert no record is updated
+        with self.assertNotUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Marco Bodt"})
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[]):
+            p2.city = "Shiganshina"
+            util.flush(p2)
+
+        # when ids has a record, only that record should not be updated
+        with self.assertNotUpdated("res_partner", ids=[p2.id]):
+            p1.company_name = "Survey Corps"
+            util.flush(p1)
+
+        # when ids has multiple records, none of them should be updated
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[p1.id, p2.id]):
+            p2.company_name = "Survey Corps"
+            util.flush(p2)
+
+    def test_assert_updated_combo(self):
+        p1 = self.env["res.partner"].create({"name": "Reiner Braun"})
+        p2 = self.env["res.partner"].create({"name": "Ymir Fritz"})
+        util.flush(p1)
+        util.flush(p2)
+
+        with self.assertUpdated("res_partner", ids=[p1.id]), self.assertNotUpdated("res_partner", ids=[p2.id]):
+            p1.company_name = "Marley Warriors"
+            util.flush(p1)
+
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner"), self.assertNotUpdated(
+            "res_partner", ids=[p2.id]
+        ):
+            p2.city = "Niflheim"
+            util.flush(p2)
