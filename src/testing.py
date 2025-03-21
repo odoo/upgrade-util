@@ -3,6 +3,9 @@ import inspect
 import logging
 import os
 import re
+from contextlib import contextmanager
+
+from psycopg2 import sql
 
 import odoo
 from odoo import api, release
@@ -121,6 +124,89 @@ class UnitTestCase(TransactionCase, _create_meta(10, "upgrade_unit")):
         if "__base_version" not in util.ENVIRON:
             bv = os.getenv("ODOO_BASE_VERSION", release.series)
             util.ENVIRON["__base_version"] = parse_version(bv)
+
+    @contextmanager
+    def assertNotUpdated(self, table, ids=None, msg=None):
+        cr = self.env.cr
+        cr.execute(util.format_query(cr, "DROP TRIGGER IF EXISTS no_update ON {}", table))
+        cr.execute(
+            """
+            CREATE OR REPLACE
+          FUNCTION fail_assert_not_updated() RETURNS TRIGGER AS $$
+             BEGIN
+                RAISE EXCEPTION USING MESSAGE= %s || ', triggered by record: ' || row_to_json(NEW);
+               END
+            $$ LANGUAGE PLPGSQL
+            """,
+            (msg if msg else "Table was updated",),
+        )
+        cr.execute(
+            util.format_query(
+                cr,
+                """
+                CREATE TRIGGER no_update
+                BEFORE {when}
+                    ON {table}
+                FOR EACH ROW {cond} EXECUTE
+           FUNCTION fail_assert_not_updated()
+                """,
+                when=sql.SQL("UPDATE" if ids else "UPDATE or INSERT"),
+                table=table,
+                cond=sql.SQL("WHEN (new.id IN %s)" if ids else ""),
+            ),
+            (tuple(ids) if ids else None,),
+        )
+        try:
+            yield
+        finally:
+            cr.execute(util.format_query(cr, "DROP TRIGGER IF EXISTS no_update ON {}", table))
+
+    @contextmanager
+    def assertUpdated(self, table, ids=None, msg=None):
+        cr = self.env.cr
+        cr.execute(util.format_query(cr, "DROP TRIGGER IF EXISTS assert_update ON {}", table))
+        cr.execute(
+            """
+              DROP TABLE IF EXISTS _upg_test_upd_id;
+            CREATE UNLOGGED TABLE _upg_test_upd_id(id int PRIMARY KEY);
+            CREATE OR REPLACE
+          FUNCTION save_updated() RETURNS TRIGGER AS $$
+             BEGIN
+                INSERT INTO _upg_test_upd_id VALUES (NEW.id);
+                RETURN NULL;
+               END
+            $$ LANGUAGE PLPGSQL
+            """,
+            (msg if msg else "Table was not updated",),
+        )
+        cr.execute(
+            util.format_query(
+                cr,
+                """
+                CREATE TRIGGER assert_update
+                BEFORE {when}
+                    ON {table}
+                FOR EACH ROW {cond} EXECUTE
+           FUNCTION save_updated()
+                """,
+                when=sql.SQL("UPDATE" if ids else "UPDATE or INSERT"),
+                table=table,
+                cond=sql.SQL("WHEN (NEW.id IN %s)" if ids else ""),
+            ),
+            (tuple(ids) if ids else None,),
+        )
+        try:
+            yield
+            cr.execute("SELECT id FROM _upg_test_upd_id")
+            updated_ids = [r[0] for r in cr.fetchall()]
+            if not ids:
+                self.assertNotEqual(updated_ids, [], "No records were updated")
+            else:
+                for id in ids:
+                    self.assertIn(id, updated_ids, f"Record with id={id} was not updated")
+        finally:
+            cr.execute(util.format_query(cr, "DROP TRIGGER IF EXISTS assert_update ON {}", table))
+            cr.execute("DROP TABLE IF EXISTS _upg_test_upd_id")
 
 
 class UpgradeCommon(BaseCase):
