@@ -31,6 +31,7 @@ except NameError:
 
 import psycopg2
 from psycopg2 import errorcodes, sql
+from psycopg2.extensions import quote_ident
 
 try:
     from odoo.modules import module as odoo_module
@@ -984,6 +985,14 @@ class ColumnList(UserList, sql.Composable):
         >>> util.format_query(cr, "SELECT {} t.name FROM table t", columns.using(alias="t", trailing_comma=True))
         'SELECT "t"."id", "t"."field_Yx", t.name FROM table t'
 
+        >>> columns = ColumnList.from_unquoted(cr, ["foo", "BAR"])
+
+        >>> list(columns)
+        ['"foo"', '"BAR"']
+
+        >>> list(columns.iter_unquoted())
+        ['foo', 'BAR']
+
     .. note::
        This class is better used via :func:`~odoo.upgrade.util.pg.get_columns`
     """
@@ -995,6 +1004,16 @@ class ColumnList(UserList, sql.Composable):
         self._leading_comma = False
         self._trailing_comma = False
         self._alias = None
+
+    @classmethod
+    def from_unquoted(cls, cr, list_):
+        """
+        Build a ColumnList from a list of column names that may need quoting.
+
+        :param list(str) list_: list of unquoted column names
+        """
+        quoted = [quote_ident(c, cr._cnx) for c in list_]
+        return cls(list_, quoted)
 
     def using(self, leading_comma=False, trailing_comma=False, alias=None):
         """
