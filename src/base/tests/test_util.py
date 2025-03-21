@@ -53,18 +53,28 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter = mock.Mock()
 
     def test_adapt_renamed_field(self):
-        domain = [("user_ids.partner_id.user_ids.partner_id", "=", False)]
+        term = ("user_ids.partner_id.user_ids.partner_id", "=", False)
+        match_term = ("renamed_user_ids.partner_id.renamed_user_ids.partner_id", "=", False)
+
         Filter = self.env["ir.filters"]
         filter1 = Filter.create(
-            {"name": "Test filter for adapt domain", "model_id": "res.partner", "domain": str(domain)}
+            {"name": "Test filter for adapt domain", "model_id": "res.partner", "domain": str([term])}
         )
-        assert domain == ast.literal_eval(filter1.domain)
+        assert [term] == ast.literal_eval(filter1.domain)
+
+        base_exp = "context.get('context_value') in (1, 2) and [{0}] or ['!', {0}]"
+        base_exp_fallback = "(((context.get('context_value') in (1, 2)) and [{0}]) or ['!', {0}])"
+        filter2 = Filter.create(
+            {"name": "Test filter for adapt domain2", "model_id": "res.partner", "domain": base_exp.format(term)}
+        )
+
         util.invalidate(Filter)
         util.rename_field(self.cr, "res.partner", "user_ids", "renamed_user_ids")
-        match_domain = [("renamed_user_ids.partner_id.renamed_user_ids.partner_id", "=", False)]
-        new_domain = ast.literal_eval(filter1.domain)
 
-        self.assertEqual(match_domain, new_domain)
+        new_domain = ast.literal_eval(filter1.domain)
+        self.assertEqual([match_term], new_domain)
+
+        self.assertIn(filter2.domain, [base_exp.format(match_term), base_exp_fallback.format(match_term)])
 
     @parametrize(
         [
