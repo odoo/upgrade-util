@@ -1068,6 +1068,39 @@ def get_columns(cr, table, ignore=("id",)):
     return ColumnList(*cr.fetchone())
 
 
+def get_common_columns(cr, table1, table2, ignore=("id",)):
+    """
+    Return a list of columns present in both tables.
+
+    :param str table1: first table name whose columns are retrieved
+    :param str table2: second table name whose columns are retrieved
+    :param list(str) ignore: list of column names to ignore in the returning list
+    :return: a list of column names present in both tables
+    :rtype: :class:`~odoo.upgrade.util.pg.ColumnList`
+    """
+    _validate_table(table1)
+    _validate_table(table2)
+
+    cr.execute(
+        """
+            WITH _common AS (
+                SELECT column_name
+                  FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name IN %s
+                   AND column_name != ALL(%s)
+              GROUP BY column_name
+                HAVING count(table_name) = 2
+            )
+            SELECT coalesce(array_agg(column_name::varchar ORDER BY column_name), ARRAY[]::varchar[]),
+                   coalesce(array_agg(quote_ident(column_name) ORDER BY column_name), ARRAY[]::varchar[])
+              FROM _common
+        """,
+        [(table1, table2), list(ignore)],
+    )
+    return ColumnList(*cr.fetchone())
+
+
 def rename_table(cr, old_table, new_table, remove_constraints=True):
     """
     Rename a table.
