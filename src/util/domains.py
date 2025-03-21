@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+import ast
 import collections
 import functools
 import logging
 import re
+import sys
 import warnings
 
 import lxml
@@ -34,7 +36,7 @@ except ImportError:
 from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path
 from .inherit import for_each_inherit
-from .misc import SelfPrintEvalContext, version_gte
+from .misc import SelfPrintEvalContext, ast_unparse, literal_replace, version_gte
 from .pg import column_exists, get_value_or_en_translation, table_exists
 from .records import edit_view
 
@@ -99,6 +101,8 @@ except ImportError:
     is_leaf = expression.is_leaf
     del expression  # unset so it's not used directly
 
+
+AST_CONSTANT_TYPES = (ast.Constant, ast.Str) if sys.version_info < (3, 12) else (ast.Constant,)
 
 _logger = logging.getLogger(__name__)
 DomainField = collections.namedtuple("DomainField", "table domain_column model_select")
@@ -248,6 +252,41 @@ def _replace_path(cr, old, new, src_model, dst_model, path_str):
 
 
 def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
+    if not isinstance(domain, basestring):
+        # defer to the old adapter that replaces invalid terms
+        return _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter, force_adapt)
+
+    def domain_check(ast_node):
+        if all(
+            (
+                isinstance(term, (ast.Tuple, ast.List))
+                and len(term.elts) == 3
+                and isinstance(term.elts[1], AST_CONSTANT_TYPES)
+            )
+            or isinstance(term, AST_CONSTANT_TYPES)
+            for term in ast_node.elts
+        ) and any(isinstance(term, (ast.Tuple, ast.List)) and len(term.elts) == 3 for term in ast_node.elts):
+            # it looks like a domain, let's adapt it
+            internal_domain = _adapt_one_domain_old(
+                cr,
+                target_model,
+                old,
+                new,
+                model,
+                ast_unparse(ast_node),
+                adapter=adapter,
+                force_adapt=force_adapt,
+            )
+            return ast.parse(unicode(internal_domain), mode="eval").body if internal_domain else ast_node
+        return ast_node
+
+    new_domain = literal_replace(domain, {ast.List([literal_replace.WILDCARD], None): domain_check})
+    if new_domain != domain:
+        return new_domain
+    return None
+
+
+def _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
     if not adapter:
         adapter = lambda leaf, _, __: [leaf]
 
@@ -351,6 +390,10 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
 
     _logger.debug("%s: %r -> %r", model, domain, final_dom)
     return final_dom
+
+
+if ast_unparse is None:
+    _adapt_one_domain = _adapt_one_domain_old
 
 
 def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adapt=False):
