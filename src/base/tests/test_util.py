@@ -864,6 +864,10 @@ class TestPG(UnitTestCase):
 
         self.assertIs(columns.using(), columns)
 
+        ulc = columns.using(leading_comma=True)
+        self.assertTrue(s(ulc.using(alias="x")), ', "x"."a", "x"."A"')
+        self.assertIs(ulc, ulc.using(leading_comma=True))
+
 
 class TestORM(UnitTestCase):
     def test_create_cron(self):

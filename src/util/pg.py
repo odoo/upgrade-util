@@ -960,6 +960,10 @@ def get_depending_views(cr, table, column):
     return cr.fetchall()
 
 
+# sentinel object for function parameters to not alter.
+KEEP_CURRENT = object()
+
+
 class ColumnList(UserList, sql.Composable):
     """
     Encapsulate a list of elements that represent column names.
@@ -1025,7 +1029,7 @@ class ColumnList(UserList, sql.Composable):
         quoted = [quote_ident(c, cr._cnx) for c in list_]
         return cls(list_, quoted)
 
-    def using(self, leading_comma=False, trailing_comma=False, alias=None):
+    def using(self, leading_comma=KEEP_CURRENT, trailing_comma=KEEP_CURRENT, alias=KEEP_CURRENT):
         """
         Set up parameters to render this list as a string.
 
@@ -1036,12 +1040,16 @@ class ColumnList(UserList, sql.Composable):
         :return: a copy of the list with the parameters set
         :rtype: :class:`~odoo.upgrade.util.pg.ColumnList`
         """
-        if self._leading_comma is leading_comma and self._trailing_comma is trailing_comma and self._alias == alias:
+        if (
+            (leading_comma is KEEP_CURRENT or self._leading_comma is leading_comma)
+            and (trailing_comma is KEEP_CURRENT or self._trailing_comma is trailing_comma)
+            and (alias is KEEP_CURRENT or self._alias == alias)
+        ):
             return self
         new = ColumnList(self._unquoted_columns, self.data)
-        new._leading_comma = leading_comma
-        new._trailing_comma = trailing_comma
-        new._alias = alias
+        new._leading_comma = self._leading_comma if leading_comma is KEEP_CURRENT else bool(leading_comma)
+        new._trailing_comma = self._trailing_comma if trailing_comma is KEEP_CURRENT else bool(trailing_comma)
+        new._alias = self._alias if alias is KEEP_CURRENT else str(alias) if alias is not None else None
         return new
 
     def as_string(self, context):
