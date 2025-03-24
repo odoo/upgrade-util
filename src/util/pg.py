@@ -1005,6 +1005,16 @@ class ColumnList(UserList, sql.Composable):
         self._trailing_comma = False
         self._alias = None
 
+    def __eq__(self, other):
+        return (
+            isinstance(other, ColumnList)
+            and other.data == self.data
+            and other._unquoted_columns == self._unquoted_columns
+            and other._leading_comma == self._leading_comma
+            and other._trailing_comma == self._trailing_comma
+            and other._alias == self._alias
+        )
+
     @classmethod
     def from_unquoted(cls, cr, list_):
         """
