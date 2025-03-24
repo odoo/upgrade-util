@@ -839,6 +839,31 @@ class TestPG(UnitTestCase):
         target = util.target_of(cr, "res_partner", "_test_lang_id")
         self.assertEqual(target, ("res_lang", "id", "res_partner__test_lang_id_fkey"))
 
+    def test_ColumnList(self):
+        cr = self.env.cr
+
+        s = lambda c: c.as_string(cr._cnx)
+
+        columns = util.ColumnList(["a", "A"], ['"a"', '"A"'])
+        self.assertEqual(len(columns), 2)
+
+        columns2 = util.ColumnList.from_unquoted(cr, ["a", "A"])
+        self.assertEqual(columns2, columns)
+
+        # iterating it yield quoted columns
+        self.assertEqual(list(iter(columns)), ['"a"', '"A"'])
+
+        self.assertEqual(list(columns.iter_unquoted()), ["a", "A"])
+
+        self.assertEqual(s(columns), '"a", "A"')
+
+        self.assertEqual(s(columns.using(alias="t")), '"t"."a", "t"."A"')
+        self.assertEqual(s(columns.using(leading_comma=True)), ', "a", "A"')
+        self.assertEqual(s(columns.using(trailing_comma=True)), '"a", "A",')
+        self.assertEqual(s(columns.using(leading_comma=True, trailing_comma=True)), ', "a", "A",')
+
+        self.assertIs(columns.using(), columns)
+
 
 class TestORM(UnitTestCase):
     def test_create_cron(self):
