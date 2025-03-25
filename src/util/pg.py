@@ -43,7 +43,7 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import log_progress
+from .misc import Sentinel, log_progress
 
 _logger = logging.getLogger(__name__)
 
@@ -541,7 +541,7 @@ def create_column(cr, table, column, definition, **kwargs):
     :rtype: bool
     """
     # Manual PEP 3102
-    no_def = object()
+    no_def = Sentinel("no_def")
     default = kwargs.pop("default", no_def)
     fk_table = kwargs.pop("fk_table", no_def)
     on_delete_action = kwargs.pop("on_delete_action", no_def)
@@ -961,7 +961,7 @@ def get_depending_views(cr, table, column):
 
 
 # sentinel object for function parameters to not alter.
-KEEP_CURRENT = object()
+KEEP_CURRENT = Sentinel("KEEP_CURRENT")
 
 
 class ColumnList(UserList, sql.Composable):
