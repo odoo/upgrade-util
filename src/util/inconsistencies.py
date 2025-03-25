@@ -8,7 +8,7 @@ from psycopg2.extras import Json
 from psycopg2.sql import SQL
 
 from .helpers import _validate_model, table_of_model
-from .misc import chunks, str2bool
+from .misc import Sentinel, chunks, str2bool
 from .pg import format_query, get_value_or_en_translation, target_of
 from .report import add_to_migration_reports, get_anchor_link_to_record, html_escape
 
@@ -20,7 +20,7 @@ INCLUDE_ARCHIVED_PRODUCTS = str2bool(
 )
 FIX_PRODUCT_UOM = str2bool(os.environ.get("ODOO_MIG_FIX_ALL_UOM_INCONSISTENCIES"), default=False)
 
-FROM_ENV = object()
+FROM_ENV = Sentinel("FROM_ENV")
 
 
 def break_recursive_loops(cr, model, field, name_field="name"):

@@ -39,8 +39,19 @@ except ImportError:
 _logger = logging.getLogger(__name__)
 
 
+class Sentinel:
+    # waiting PEP661...
+    __slots__ = ("name",)
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return self.name
+
+
 def _cached(func):
-    sentinel = object()
+    sentinel = Sentinel("sentinel")
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):

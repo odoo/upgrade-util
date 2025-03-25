@@ -8,6 +8,7 @@ from typing import Iterable
 
 from lxml import etree
 
+from .misc import Sentinel
 from .misc import parse_version as Version
 
 _logger = logging.getLogger(__name__)
@@ -228,7 +229,7 @@ def edit_element_classes(element, add, remove, is_qweb=False):
         edit_element_t_classes(element, add, remove)
 
 
-ALL = object()
+ALL = Sentinel("ALL")
 """Sentinel object to indicate "all items" in a collection"""
 
 
