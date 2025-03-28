@@ -2,6 +2,7 @@
 import logging
 import os
 import re
+import sys
 from textwrap import dedent
 
 import lxml
@@ -32,27 +33,30 @@ try:
     except ImportError:
         from odoo import SUPERUSER_ID
     from odoo import release
-    from odoo.tools import html_escape
     from odoo.tools.mail import html_sanitize
 except ImportError:
     from openerp import SUPERUSER_ID, release
     from openerp.tools.mail import html_sanitize
 
-    try:
-        from openerp.tools.misc import html_escape
-    except ImportError:
-        import werkzeug.utils
 
-        # Avoid DeprecationWarning while still remaining compatible with werkzeug pre-0.9
-        if parse_version(getattr(werkzeug, "__version__", "0.0")) < parse_version("0.9.0"):
+if sys.version_info > (3,):
+    from odoo.tools import html_escape
+else:
+    # In python2, `html_escape` always returns a byte-string with non-ascii characters replaced
+    # by their html entities.
 
-            def html_escape(text):
-                return werkzeug.utils.escape(text, quote=True)
+    import werkzeug.utils
 
-        else:
+    # Avoid DeprecationWarning while still remaining compatible with werkzeug pre-0.9
+    if parse_version(getattr(werkzeug, "__version__", "0.0")) < parse_version("0.9.0"):
 
-            def html_escape(text):
-                return werkzeug.utils.escape(text)
+        def html_escape(text):
+            return werkzeug.utils.escape(text, quote=True).encode("ascii", "xmlcharrefreplace")
+
+    else:
+
+        def html_escape(text):
+            return werkzeug.utils.escape(text).encode("ascii", "xmlcharrefreplace")
 
 
 try:
