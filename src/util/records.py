@@ -33,7 +33,7 @@ from .helpers import (
 )
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import chunks, parse_version, version_gte
+from .misc import Sentinel, chunks, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
@@ -1006,11 +1006,14 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     return new_res_id
 
 
+AUTOMATIC = Sentinel("AUTOMATIC")
+
+
 def update_record_from_xml(
     cr,
     xmlid,
     reset_write_metadata=True,
-    force_create=True,
+    force_create=AUTOMATIC,
     from_module=None,
     reset_translations=(),
     ensure_references=False,
@@ -1028,7 +1031,8 @@ def update_record_from_xml(
 
     :param str xmlid: record xml_id, under the format `module.name`
     :param bool reset_write_metadata: whether to update the `write_date` of the record
-    :param bool force_create: whether the record is created if it does not exist
+    :param bool force_create: whether the record is created if it does not exist.
+                              `True` by default, unless `fields` is not None.
     :param str from_module: name of the module from which to update the record, necessary
                             only when the specs are in a different module than the one in
                             the xml_id
@@ -1036,7 +1040,8 @@ def update_record_from_xml(
     :param bool ensure_references: whether referred records via `ref` XML attributes
                                    should also be updated.
     :param set(str) or None fields: optional list of fields to include in the XML declaration.
-                                   If set, all other fields will be ignored.
+                                    If set, all other fields will be ignored. When set, record
+                                    won't be created if missing.
 
     .. warning::
        This functions uses the ORM, therefore it can only be used after **all** models
@@ -1045,7 +1050,8 @@ def update_record_from_xml(
 
     .. note::
        The standard behavior of ORM is to create the record if it doesn't exist, including
-       its xml_id. That will happen on this function as well.
+       its xml_id. That will happen on this function as well, unless `force_create` is set
+       to `False`.
     """
     __update_record_from_xml(
         cr,
@@ -1075,6 +1081,9 @@ def __update_record_from_xml(
 
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
+
+    if force_create is AUTOMATIC:
+        force_create = fields is None  # don't force record creation if we are filtering fields
 
     module, _, name = xmlid.partition(".")
 
