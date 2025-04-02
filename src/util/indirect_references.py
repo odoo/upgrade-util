@@ -100,6 +100,7 @@ def indirect_references(cr, bound_only=False):
         IR("timer_timer", "res_model", "res_id"),
         IR("timer_timer", "parent_res_model", "parent_res_id"),
         IR("worksheet_template", "res_model", None),
+        IR("product_attribute_custom_value", "res_model", "res_id"),
     ]
 
     for ir in each:
