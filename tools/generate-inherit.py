@@ -358,7 +358,7 @@ def checkout(wd: Path, repo: Repo, version: Version) -> bool:
         ["git", "show-ref", "-q", "--verify", f"refs/remotes/origin/{version.name}"], cwd=gitdir, check=False
     )
     if hasref.returncode != 0:
-        return False  # unknow branch
+        return False  # unknown branch
     subprocess.run(
         ["git", "checkout", "-q", "--force", "-B", version.name, f"origin/{version.name}"], cwd=gitdir, check=True
     )

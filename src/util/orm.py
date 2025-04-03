@@ -370,7 +370,7 @@ class iter_browse(object):
         self._strategy = kw.pop("strategy", "flush")
         assert self._strategy in {"flush", "commit"}
         if kw:
-            raise TypeError("Unknow arguments: %s" % ", ".join(kw))
+            raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
         self._patch = None
         self._it = chunks(ids, self._chunk_size, fmt=self._browse)
@@ -438,7 +438,7 @@ class iter_browse(object):
         """
         multi = kw.pop("multi", version_gte("saas~11.5"))
         if kw:
-            raise TypeError("Unknow arguments: %s" % ", ".join(kw))
+            raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
         if not values:
             raise ValueError("`create` cannot be called with an empty `values` argument")
