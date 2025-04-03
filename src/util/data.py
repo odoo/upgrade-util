@@ -105,7 +105,7 @@ def split_group(cr, from_groups, to_group):
         if isinstance(g, basestring):
             gid = ref(cr, g)
             if not gid:
-                _logger.warning("split_group(): Unknow group: %r", g)
+                _logger.warning("split_group(): Unknown group: %r", g)
             return gid
         return g
 
