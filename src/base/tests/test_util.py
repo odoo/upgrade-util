@@ -28,6 +28,7 @@ from odoo.addons.base.maintenance.migrations.util.domains import (
     _model_of_path,
 )
 from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
+from odoo.addons.base.maintenance.migrations.util.pg import cursor_get_connection
 
 USE_ORM_DOMAIN = util.misc.version_gte("saas~18.2")
 NOTNOT = () if USE_ORM_DOMAIN else ("!", "!")
@@ -842,7 +843,7 @@ class TestPG(UnitTestCase):
     def test_ColumnList(self):
         cr = self.env.cr
 
-        s = lambda c: c.as_string(cr._cnx)
+        s = lambda c: c.as_string(cursor_get_connection(cr))
 
         columns = util.ColumnList(["a", "A"], ['"a"', '"A"'])
         self.assertEqual(len(columns), 2)

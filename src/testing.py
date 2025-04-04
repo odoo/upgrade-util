@@ -28,6 +28,7 @@ except ImportError:
 
 from . import util
 from .util import json
+from .util.pg import cursor_get_connection
 
 _logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ class UpgradeCommon(BaseCase):
             ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
         """.format(DATA_TABLE)
         self._data_table_cr.execute(query, (key, value))
-        self._data_table_cr._cnx.commit()
+        cursor_get_connection(self._data_table_cr).commit()
 
     def _get_value(self, key):
         self._init_db()
@@ -169,7 +170,7 @@ class UpgradeCommon(BaseCase):
                     value JSONB NOT NULL
                 )""".format(DATA_TABLE)
                 self._data_table_cr.execute(query)
-                self._data_table_cr._cnx.commit()
+                cursor_get_connection(self._data_table_cr).commit()
             UpgradeCommon.__initialized = True
 
     def _setup_registry(self):
@@ -355,7 +356,7 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
 
         def commit(self):
             if self.dbname == config["log_db"].split("/")[-1]:
-                self._cnx.commit()
+                cursor_get_connection(self).commit()
             else:
                 raise RuntimeError("Commit is forbidden in integrity cases")
 
