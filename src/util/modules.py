@@ -5,7 +5,11 @@ Utility functions for module-level operations.
 In most cases module operations (rename, merge, remove, ...) should be performed in a
 `base` script. The reason is that once the `base` module is upgraded, all the information
 regarding modules should be already set in the DB for the upgrade process to function
-correctly.
+correctly. In order to run specific upgrade scripts after a major upgrade the option
+`--pre-upgrade-scripts`[^1] should be used in the command line. All the specified scripts
+will be run _before_ loading base.
+
+[^1]: available from Odoo 16.0
 """
 
 try:
