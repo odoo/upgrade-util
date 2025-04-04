@@ -1703,34 +1703,56 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         if unique_indexes:
             conditions = []
             for _, uniq_cols in unique_indexes:
-                uniq_cols = set(uniq_cols) - {ir.res_id, ir.res_model, ir.res_model_id}  # noqa: PLW2901
+                uniq_cols = set(uniq_cols) - {ir.res_model, ir.res_model_id}  # noqa: PLW2901
+                if not uniq_cols:
+                    continue
                 conditions.append(
                     format_query(
                         cr,
-                        "NOT EXISTS(SELECT 1 FROM {table} WHERE {res_model_whr} AND {jmap_expr} AND {where_clause})",
-                        table=ir.table,
-                        res_model_whr=res_model_whr,
-                        jmap_expr=jmap_expr,
-                        where_clause=SQLStr(" AND ".join(format_query(cr, "{0}=t.{0}", col) for col in uniq_cols))
-                        if uniq_cols
-                        else SQLStr("True"),
+                        "(ROW_NUMBER() OVER(PARTITION BY {cols} ORDER BY t.id)) > 1",
+                        cols=SQLStr(
+                            ", ".join(
+                                "_upgrade_rrr.new" if col == ir.res_id else format_query(cr, "t.{0}", col)
+                                for col in uniq_cols
+                            )
+                        ),
                     )
                 )
-            query = format_query(
+            dedup_query = format_query(
                 cr,
-                """{prev_query}   AND {cond};
-
-            DELETE FROM {table} t USING _upgrade_rrr WHERE {whr} AND t.{res_id} = _upgrade_rrr.old;
+                """
+                WITH dedup AS (
+                    SELECT t.id,
+                           {is_dup} is_dup
+                      FROM {table} t
+                      JOIN _upgrade_rrr
+                        ON _upgrade_rrr.old = t.{res_id}
+                       AND {model_match}
+                )
+                DELETE FROM {table} t
+                      USING dedup
+                      WHERE dedup.id = t.id
+                        AND dedup.is_dup
                 """,
-                prev_query=query,
-                cond=SQLStr("\nAND ".join(conditions)),
+                model_match=ir.model_filter(placeholder="%(model_src)s", prefix="t."),
+                table=ir.table,
+                is_dup=SQLStr("\nOR ".join(conditions)),
+                res_id=ir.res_id,
+            )
+            cleanup_query = format_query(
+                cr,
+                """
+                DELETE FROM {table} t USING _upgrade_rrr WHERE {whr} AND {res_id} = _upgrade_rrr.old;
+                """,
                 table=ir.table,
                 whr=whr,
                 res_id=ir.res_id,
             )
+            cr.execute(dedup_query, locals())
             cr.execute(query, locals())
+            cr.execute(cleanup_query, locals())
         else:
-            fmt_query = cr.mogrify(query.format(**locals()), locals()).decode()
+            fmt_query = cr.mogrify(query, locals()).decode()
             parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
 
     # reference fields
