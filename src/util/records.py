@@ -1458,18 +1458,22 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
     :param list(str) ignores: list of **table** names to skip when updating the referenced
                               values
     """
-    assert id_mapping
-    assert all(isinstance(v, int) and isinstance(k, int) for k, v in id_mapping.items())
-
     _validate_model(model_src)
     if model_dst is None:
         model_dst = model_src
     else:
         _validate_model(model_dst)
 
+    if model_src == model_dst:
+        same_ids = {k: v for k, v in id_mapping.items() if k == v}
+        if same_ids:
+            _logger.warning("Replace references in model `%s`, ignoring same-id mapping `%s`", model_src, same_ids)
+            id_mapping = {k: v for k, v in id_mapping if k != v}
+
+    assert id_mapping
+    assert all(isinstance(v, int) and isinstance(k, int) for k, v in id_mapping.items())
+
     id_update = any(k != v for k, v in id_mapping.items())
-    nop = (not id_update) and (model_src == model_dst)
-    assert nop is False
 
     ignores = [_validate_table(table) for table in ignores]
     if not replace_xmlid:
