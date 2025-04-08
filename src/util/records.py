@@ -1689,6 +1689,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                SET {upd}
                    {jmap_expr_upd}
               FROM _upgrade_rrr
+              {{extra_join}}
              WHERE {whr}
                AND _upgrade_rrr.old = t.{res_id}
             """,
@@ -1705,17 +1706,41 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         if ir.res_model_id:
             unique_indexes += _get_unique_indexes_with(cr, ir.table, ir.res_id, ir.res_model_id)
         if unique_indexes:
+            query = format_query(
+                cr,
+                query,
+                extra_join=format_query(
+                    cr,
+                    """
+         LEFT JOIN _upgrade_rrr AS _upgrade_rrr2
+                ON _upgrade_rrr.new = _upgrade_rrr2.new
+               AND _upgrade_rrr.old < _upgrade_rrr2.old
+         LEFT JOIN {table} t2
+                ON _upgrade_rrr2.old = t2.{res_id}
+                    """,
+                    table=ir.table,
+                    res_id=ir.res_id,
+                ),
+            )
             conditions = []
             for _, uniq_cols in unique_indexes:
                 uniq_cols = set(uniq_cols) - {ir.res_id, ir.res_model, ir.res_model_id}  # noqa: PLW2901
                 conditions.append(
                     format_query(
                         cr,
-                        "NOT EXISTS(SELECT 1 FROM {table} WHERE {res_model_whr} AND {jmap_expr} AND {where_clause})",
+                        """
+                         -- there is no target already present within the same constraint
+                        NOT EXISTS(SELECT 1 FROM {table} WHERE {res_model_whr} AND {jmap_expr} AND {where_clause})
+                         -- there is no other entry with the same target within the same constraint
+                        AND NOT (t2 IS NOT NULL AND {where_clause2})
+                        """,
                         table=ir.table,
                         res_model_whr=res_model_whr,
                         jmap_expr=jmap_expr,
                         where_clause=SQLStr(" AND ".join(format_query(cr, "{0}=t.{0}", col) for col in uniq_cols))
+                        if uniq_cols
+                        else SQLStr("True"),
+                        where_clause2=SQLStr(" AND ".join(format_query(cr, "t2.{0}=t.{0}", col) for col in uniq_cols))
                         if uniq_cols
                         else SQLStr("True"),
                     )
@@ -1734,7 +1759,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             )
             cr.execute(query, locals())
         else:
-            fmt_query = cr.mogrify(query.format(**locals()), locals()).decode()
+            fmt_query = cr.mogrify(format_query(cr, query, extra_join=SQLStr("")), locals()).decode()
             parallel_execute(cr, explode_query_range(cr, fmt_query, table=ir.table, alias="t"))
 
     # reference fields

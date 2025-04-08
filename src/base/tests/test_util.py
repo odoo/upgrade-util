@@ -389,6 +389,62 @@ class TestAdaptDomainView(UnitTestCase):
         self.assertIn("courriel", view_search_2.arch)
 
 
+@unittest.skipUnless(
+    util.version_gte("13.0"), "This test is incompatible with old style odoo.addons.base.maintenance.migrations.util"
+)
+class TestReplaceReferences(UnitTestCase):
+    def setUp(self):
+        super().setUp()
+        self.env.cr.execute(
+            """
+            CREATE TABLE dummy_model(
+                             id serial PRIMARY KEY,
+                             res_id int,
+                             res_model varchar,
+                             extra varchar,
+                             CONSTRAINT uniq_constr UNIQUE(res_id, res_model, extra)
+                         );
+
+            INSERT INTO dummy_model(res_model, res_id, extra)
+                 VALUES -- the target is there with same res_id
+                        ('res.users', 1, 'x'),
+                        ('res.partner', 1, 'x'),
+
+                        -- two with same target and the target is there
+                        ('res.users', 2, 'x'),
+                        ('res.users', 3, 'x'),
+                        ('res.partner', 2, 'x'),
+
+                        -- two with same target and the target is not there
+                        ('res.users', 4, 'x'),
+                        ('res.users', 5, 'x'),
+
+                        -- target is there different res_id
+                        ('res.users', 6, 'x'),
+                        ('res.partner', 4, 'x')
+            """
+        )
+
+    def _ir_dummy(self, cr, bound_only=True):
+        yield util.IndirectReference("dummy_model", "res_model", "res_id")
+
+    def test_replace_record_references_batch__full_unique(self):
+        cr = self.env.cr
+        mapping = {1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4}
+        with mock.patch("odoo.upgrade.util.records.indirect_references", self._ir_dummy):
+            util.replace_record_references_batch(cr, mapping, "res.users", "res.partner")
+
+        cr.execute("SELECT res_model, res_id, extra FROM dummy_model ORDER BY res_id, res_model")
+        data = cr.fetchall()
+        expected = [
+            ("res.partner", 1, "x"),
+            ("res.partner", 2, "x"),
+            ("res.partner", 3, "x"),
+            ("res.partner", 4, "x"),
+        ]
+        self.assertEqual(data, expected)
+
+
 class TestRemoveFieldDomains(UnitTestCase):
     @parametrize(
         [
