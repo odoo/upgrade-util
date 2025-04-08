@@ -29,80 +29,80 @@ class IndirectReference(
 # By default, there is no `res_id`, no `res_model_id` and it is deleted when the linked model is removed
 # warning: defaults are from the last fields in the namedtuple
 IndirectReference.__new__.__defaults__ = (None, None, False, None)  # https://stackoverflow.com/a/18348004
+_IR = IndirectReference
+
+INDIRECT_REFERENCES = [
+    _IR("ir_attachment", "res_model", "res_id"),
+    _IR("ir_cron", "model", None, set_unknown=True),
+    _IR("ir_act_report_xml", "model", None, set_unknown=True),
+    _IR("ir_act_window", "res_model", "res_id"),
+    _IR("ir_act_window", "res_model", None),
+    _IR("ir_act_window", "src_model", None),
+    _IR("ir_act_server", "wkf_model_name", None),
+    _IR("ir_act_server", "crud_model_name", None),
+    _IR("ir_act_server", "model_name", None, "model_id", set_unknown=True),
+    _IR("ir_act_client", "res_model", None, set_unknown=True),
+    _IR("ir_embedded_actions", "parent_res_model", "parent_res_id"),
+    _IR("ir_model", "model", None),
+    _IR("ir_model_fields", "model", None),
+    _IR("ir_model_fields", "relation", None),  # destination of a relation field
+    _IR("ir_model_data", "model", "res_id"),
+    _IR("ir_filters", "model_id", None, set_unknown=True),  # YUCK!, not an id
+    # duplicated for versions where the `res_id` column does not exists
+    _IR("ir_filters", "model_id", "embedded_parent_res_id"),
+    _IR("ir_exports", "resource", None),
+    _IR("ir_ui_view", "model", None, set_unknown=True),
+    _IR("ir_values", "model", "res_id"),
+    _IR("wkf_transition", "trigger_model", None),
+    _IR("wkf_triggers", "model", None),
+    _IR("ir_model_fields_anonymization", "model_name", None),
+    _IR("ir_model_fields_anonymization_migration_fix", "model_name", None),
+    _IR("base_import_mapping", "res_model", None),
+    _IR("calendar_event", "res_model", "res_id"),  # new in saas~18
+    _IR("data_cleaning_model", "res_model_name", None),
+    _IR("data_cleaning_record", "res_model_name", "res_id"),
+    _IR("data_cleaning_rule", "res_model_name", None),
+    _IR("data_merge_group", "res_model_name", None),
+    _IR("data_merge_model", "res_model_name", None),
+    _IR("data_merge_record", "res_model_name", "res_id"),
+    _IR("documents_document", "res_model", "res_id"),
+    _IR("email_template", "model", None, set_unknown=True),  # stored related
+    _IR("iap_extracted_words", "res_model", "res_id"),
+    _IR("mail_template", "model", None, set_unknown=True),  # model renamed in saas~6
+    _IR("mail_activity", "res_model", "res_id", "res_model_id"),
+    _IR("mail_activity_type", "res_model", None),
+    _IR("mail_alias", None, "alias_force_thread_id", "alias_model_id"),
+    _IR("mail_alias", None, "alias_parent_thread_id", "alias_parent_model_id"),
+    _IR("mail_followers", "res_model", "res_id"),
+    _IR("mail_message_subtype", "res_model", None),
+    _IR("mail_message", "model", "res_id"),
+    _IR("mail_compose_message", "model", "res_id"),
+    _IR("mail_wizard_invite", "res_model", "res_id"),
+    _IR("mail_mail_statistics", "model", "res_id"),
+    _IR("mailing_trace", "model", "res_id"),
+    _IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id", set_unknown=True),
+    _IR("mailing_mailing", None, None, "mailing_model_id", set_unknown=True),
+    _IR("marketing_campaign", "model_name", None, set_unknown=True),  # stored related
+    _IR("marketing_participant", "model_name", "res_id", "model_id", set_unknown=True),
+    _IR("payment_transaction", None, "callback_res_id", "callback_model_id"),
+    _IR("project_project", "alias_model", None, set_unknown=True),
+    # IR("pos_blackbox_be_log", "model_name", None),  # ACTUALLY NOT. We need to keep records intact, even when renaming a model  # noqa: ERA001
+    _IR("quality_point", "worksheet_model_name", None),
+    _IR("rating_rating", "res_model", "res_id", "res_model_id"),
+    _IR("rating_rating", "parent_res_model", "parent_res_id", "parent_res_model_id"),
+    _IR("snailmail_letter", "model", "res_id", set_unknown=True),
+    _IR("sms_template", "model", None),
+    _IR("studio_approval_rule", "model_name", None),
+    _IR("spreadsheet_revision", "res_model", "res_id"),
+    _IR("studio_approval_entry", "model", "res_id"),
+    _IR("timer_timer", "res_model", "res_id"),
+    _IR("timer_timer", "parent_res_model", "parent_res_id"),
+    _IR("worksheet_template", "res_model", None),
+]
 
 
 def indirect_references(cr, bound_only=False):
-    IR = IndirectReference
-    each = [
-        IR("ir_attachment", "res_model", "res_id"),
-        IR("ir_cron", "model", None, set_unknown=True),
-        IR("ir_act_report_xml", "model", None, set_unknown=True),
-        IR("ir_act_window", "res_model", "res_id"),
-        IR("ir_act_window", "res_model", None),
-        IR("ir_act_window", "src_model", None),
-        IR("ir_act_server", "wkf_model_name", None),
-        IR("ir_act_server", "crud_model_name", None),
-        IR("ir_act_server", "model_name", None, "model_id", set_unknown=True),
-        IR("ir_act_client", "res_model", None, set_unknown=True),
-        IR("ir_embedded_actions", "parent_res_model", "parent_res_id"),
-        IR("ir_model", "model", None),
-        IR("ir_model_fields", "model", None),
-        IR("ir_model_fields", "relation", None),  # destination of a relation field
-        IR("ir_model_data", "model", "res_id"),
-        IR("ir_filters", "model_id", None, set_unknown=True),  # YUCK!, not an id
-        # duplicated for versions where the `res_id` column does not exists
-        IR("ir_filters", "model_id", "embedded_parent_res_id"),
-        IR("ir_exports", "resource", None),
-        IR("ir_ui_view", "model", None, set_unknown=True),
-        IR("ir_values", "model", "res_id"),
-        IR("wkf_transition", "trigger_model", None),
-        IR("wkf_triggers", "model", None),
-        IR("ir_model_fields_anonymization", "model_name", None),
-        IR("ir_model_fields_anonymization_migration_fix", "model_name", None),
-        IR("base_import_mapping", "res_model", None),
-        IR("calendar_event", "res_model", "res_id"),  # new in saas~18
-        IR("data_cleaning_model", "res_model_name", None),
-        IR("data_cleaning_record", "res_model_name", "res_id"),
-        IR("data_cleaning_rule", "res_model_name", None),
-        IR("data_merge_group", "res_model_name", None),
-        IR("data_merge_model", "res_model_name", None),
-        IR("data_merge_record", "res_model_name", "res_id"),
-        IR("documents_document", "res_model", "res_id"),
-        IR("email_template", "model", None, set_unknown=True),  # stored related
-        IR("iap_extracted_words", "res_model", "res_id"),
-        IR("mail_template", "model", None, set_unknown=True),  # model renamed in saas~6
-        IR("mail_activity", "res_model", "res_id", "res_model_id"),
-        IR("mail_activity_type", "res_model", None),
-        IR("mail_alias", None, "alias_force_thread_id", "alias_model_id"),
-        IR("mail_alias", None, "alias_parent_thread_id", "alias_parent_model_id"),
-        IR("mail_followers", "res_model", "res_id"),
-        IR("mail_message_subtype", "res_model", None),
-        IR("mail_message", "model", "res_id"),
-        IR("mail_compose_message", "model", "res_id"),
-        IR("mail_wizard_invite", "res_model", "res_id"),
-        IR("mail_mail_statistics", "model", "res_id"),
-        IR("mailing_trace", "model", "res_id"),
-        IR("mail_mass_mailing", "mailing_model", None, "mailing_model_id", set_unknown=True),
-        IR("mailing_mailing", None, None, "mailing_model_id", set_unknown=True),
-        IR("marketing_campaign", "model_name", None, set_unknown=True),  # stored related
-        IR("marketing_participant", "model_name", "res_id", "model_id", set_unknown=True),
-        IR("payment_transaction", None, "callback_res_id", "callback_model_id"),
-        IR("project_project", "alias_model", None, set_unknown=True),
-        # IR("pos_blackbox_be_log", "model_name", None),  # ACTUALLY NOT. We need to keep records intact, even when renaming a model  # noqa: ERA001
-        IR("quality_point", "worksheet_model_name", None),
-        IR("rating_rating", "res_model", "res_id", "res_model_id"),
-        IR("rating_rating", "parent_res_model", "parent_res_id", "parent_res_model_id"),
-        IR("snailmail_letter", "model", "res_id", set_unknown=True),
-        IR("sms_template", "model", None),
-        IR("studio_approval_rule", "model_name", None),
-        IR("spreadsheet_revision", "res_model", "res_id"),
-        IR("studio_approval_entry", "model", "res_id"),
-        IR("timer_timer", "res_model", "res_id"),
-        IR("timer_timer", "parent_res_model", "parent_res_id"),
-        IR("worksheet_template", "res_model", None),
-    ]
-
-    for ir in each:
+    for ir in INDIRECT_REFERENCES:
         if bound_only and not ir.res_id:
             continue
         if ir.res_id and not column_exists(cr, ir.table, ir.res_id):
@@ -130,7 +130,7 @@ def indirect_references(cr, bound_only=False):
             """,
         )
         for model_name, column_name, comodel_name in cr.fetchall():
-            yield IR(table_of_model(cr, model_name), None, column_name, company_dependent_comodel=comodel_name)
+            yield _IR(table_of_model(cr, model_name), None, column_name, company_dependent_comodel=comodel_name)
 
     # XXX Once we will get the model field of `many2one_reference` fields in the database, we should get them also
     # (and filter the one already hardcoded)
