@@ -1159,6 +1159,17 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         "models": tuple(only_models) if only_models else (),
     }
 
+    # update order in ir.model
+    if column_exists(cr, "ir_model", "order") and only_models:
+        cr.execute(
+            rf"""
+            UPDATE ir_model
+               SET "order" = REGEXP_REPLACE("order", '(^|[\s,]){old}([\s,]|$)', '\1{new}\2')
+             WHERE model IN %s
+            """,
+            [only_models],
+        )
+
     # ir.action.server
     if column_exists(cr, "ir_act_server", "update_path") and only_models:
         cr.execute(
