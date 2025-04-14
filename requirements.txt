@@ -1,2 +1,3 @@
 markdown
-odoo_upgrade @ git+https://github.com/odoo/upgrade-util@master
+odoo_upgrade @ git+https://github.com/test12345678989999999/upgrade-util@master
+
