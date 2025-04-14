@@ -1,2 +1,2 @@
 markdown
-odoo_upgrade @ git+https://github.com/amihov/upgrade-util@master
+odoo_upgrade @ git+https://github.com/odoo/upgrade-util@master
