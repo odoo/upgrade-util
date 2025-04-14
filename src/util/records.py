@@ -1468,7 +1468,7 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
         same_ids = {k: v for k, v in id_mapping.items() if k == v}
         if same_ids:
             _logger.warning("Replace references in model `%s`, ignoring same-id mapping `%s`", model_src, same_ids)
-            id_mapping = {k: v for k, v in id_mapping if k != v}
+            id_mapping = {k: v for k, v in id_mapping.items() if k != v}
 
     assert id_mapping
     assert all(isinstance(v, int) and isinstance(k, int) for k, v in id_mapping.items())
