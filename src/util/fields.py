@@ -50,6 +50,7 @@ from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext, log_progress, version_gte
 from .orm import env, invalidate
 from .pg import (
+    SQLStr,
     alter_column_type,
     column_exists,
     column_type,
@@ -182,7 +183,7 @@ def _remove_field_from_context(context, fieldname):
     return changed
 
 
-def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=()):
+def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=(), keep_as_attachments=False):
     """
     Remove a field and its references from the database.
 
@@ -196,6 +197,8 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     :param bool drop_column: whether the field's column is dropped
     :param list(str) or str skip_inherit: list of inheriting models to skip the removal
                                           of the field, use `"*"` to skip all
+    :param bool keep_as_attachments: for binary fields, whether the data should be kept
+                                     as attachments
     """
     _validate_model(model)
 
@@ -353,8 +356,20 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             defaults.pop(fieldname, None)
             cr.execute("UPDATE mail_alias SET alias_defaults = %s WHERE id = %s", [repr(defaults), alias_id])
 
-    # if field was a binary field stored as attachment, clean them...
-    if column_exists(cr, "ir_attachment", "res_field"):
+    table = table_of_model(cr, model)
+    # NOTE table_exists is needed to avoid altering views
+    stored = table_exists(cr, table) and column_exists(cr, table, fieldname)
+
+    if keep_as_attachments:
+        if stored and column_type(cr, table, fieldname) == "bytea":
+            _extract_data_as_attachment(cr, model, fieldname, set_res_field=False)
+        if column_exists(cr, "ir_attachment", "res_field"):
+            query = cr.mogrify(
+                "UPDATE ir_attachment SET res_field = NULL WHERE res_model = %s AND res_field = %s", [model, fieldname]
+            ).decode()
+            explode_execute(cr, query, table="ir_attachment")
+
+    elif column_exists(cr, "ir_attachment", "res_field"):
         parallel_execute(
             cr,
             explode_query_range(
@@ -367,13 +382,20 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         )
 
     table = table_of_model(cr, model)
-    # NOTE table_exists is needed to avoid altering views
-    if drop_column and table_exists(cr, table) and column_exists(cr, table, fieldname):
+    if drop_column and stored:
         remove_column(cr, table, fieldname, cascade=cascade)
 
     # remove field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
-        remove_field(cr, inh.model, fieldname, cascade=cascade, drop_column=drop_column, skip_inherit=skip_inherit)
+        remove_field(
+            cr,
+            inh.model,
+            fieldname,
+            cascade=cascade,
+            drop_column=drop_column,
+            skip_inherit=skip_inherit,
+            keep_as_attachments=keep_as_attachments,
+        )
 
 
 def make_field_non_stored(cr, model, field, selectable=False):
@@ -884,18 +906,45 @@ convert_field_to_property = make_field_company_dependent
 
 
 def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_field=None):
+    _extract_data_as_attachment(cr, model, field, encoded, name_field)
+    # free PG space
+    table = table_of_model(cr, model)
+    remove_column(cr, table, field)
+
+
+def _extract_data_as_attachment(cr, model, field, encoded=True, name_field=None, set_res_field=True):
     _validate_model(model)
     table = table_of_model(cr, model)
     if not column_exists(cr, table, field):
         return
-    name_query = "COALESCE({0}, '{1}('|| id || ').{2}')".format(
-        name_field if name_field else "NULL",
-        model.title().replace(".", ""),
-        field,
+    name_query = cr.mogrify(
+        format_query(cr, "COALESCE({}, CONCAT(%s, '(', id, ').', %s)", name_field if name_field else SQLStr("NULL")),
+        [model.title().replace(".", ""), field],
+    ).decode()
+
+    if not column_exists(cr, "ir_attachment", "res_field"):
+        res_field_query = SQLStr("")
+    elif set_res_field:
+        res_field_query = SQLStr(cr.mogrify(", res_field = %s", [field]).decode())
+    else:
+        res_field_query = SQLStr(", res_field = NULL")
+
+    update_query = format_query(
+        cr,
+        """
+           UPDATE ir_attachment
+              SET res_model = %s,
+                  res_id = %s
+                  {}
+            WHERE id = %s
+        """,
+        res_field_query,
     )
 
     cr.execute(format_query(cr, "SELECT count(*) FROM {} WHERE {} IS NOT NULL", table, field))
     [count] = cr.fetchone()
+    if count == 0:
+        return
 
     A = env(cr)["ir.attachment"]
     iter_cur = cr._cnx.cursor("fetch_binary")
@@ -920,21 +969,11 @@ def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_fiel
         if not encoded:
             data = base64.b64encode(data)  # noqa: PLW2901
         att = A.create({"name": name, "datas": data, "type": "binary"})
-        cr.execute(
-            """
-               UPDATE ir_attachment
-                  SET res_model = %s,
-                      res_id = %s,
-                      res_field = %s
-                WHERE id = %s
-            """,
-            [model, rid, field, att.id],
-        )
+
+        cr.execute(update_query, [model, rid, att.id])
         invalidate(att)
 
     iter_cur.close()
-    # free PG space
-    remove_column(cr, table, field)
 
 
 if version_gte("16.0"):
