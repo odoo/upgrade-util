@@ -980,16 +980,17 @@ if version_gte("16.0"):
 
     def convert_field_to_translatable(cr, model, field):
         table = table_of_model(cr, model)
-        if column_type(cr, table, field) == "jsonb":
+        ctype = column_type(cr, table, field)
+        if not ctype or ctype == "json":
             return
         alter_column_type(cr, table, field, "jsonb", "jsonb_build_object('en_US', {0})")
 
     def convert_field_to_untranslatable(cr, model, field, type="varchar"):
         assert type in ("varchar", "text")
         table = table_of_model(cr, model)
-        if column_type(cr, table, field) != "jsonb":
+        ctype = column_type(cr, table, field)
+        if not ctype or ctype != "jsonb":
             return
-
         alter_column_type(cr, table, field, type, "{0}->>'en_US'")
 
 else:
