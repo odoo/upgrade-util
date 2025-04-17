@@ -918,7 +918,7 @@ def _extract_data_as_attachment(cr, model, field, encoded=True, name_field=None,
     if not column_exists(cr, table, field):
         return
     name_query = cr.mogrify(
-        format_query(cr, "COALESCE({}, CONCAT(%s, '(', id, ').', %s)", name_field if name_field else SQLStr("NULL")),
+        format_query(cr, "COALESCE({}, CONCAT(%s, '(', id, ').', %s))", name_field if name_field else SQLStr("NULL")),
         [model.title().replace(".", ""), field],
     ).decode()
 
