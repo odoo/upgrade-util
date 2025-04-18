@@ -1460,6 +1460,51 @@ class TestRecords(UnitTestCase):
         [count] = self.env.cr.fetchone()
         self.assertEqual(count, 1)
 
+    @unittest.skipUnless(util.version_gte("18.0"), "Only work on Odoo >= 18")
+    def test_replace_record_references_batch__company_dependent(self):
+        partner_model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        self.env["ir.model.fields"].create(
+            {
+                "name": "x_test_curr",
+                "ttype": "many2one",
+                "model_id": partner_model.id,
+                "relation": "res.currency",
+                "company_dependent": True,
+            }
+        )
+        c1 = self.env["res.currency"].create({"name": "RC1", "symbol": "RC1"})
+        c2 = self.env["res.currency"].create({"name": "RC2", "symbol": "RC2"})
+        c3 = self.env["res.currency"].create({"name": "RC3", "symbol": "RC3"})
+        c4 = self.env["res.currency"].create({"name": "RC4", "symbol": "RC4"})
+
+        p1 = self.env["res.partner"].create({"name": "Captain Jack"})
+        p2 = self.env["res.partner"].create({"name": "River Song"})
+        p3 = self.env["res.partner"].create({"name": "Donna Noble"})
+
+        old = {
+            p1.id: f'{{"1":{c1.id}, "2":{c2.id}, "3":null}}',
+            p2.id: f'{{"1":{c1.id}, "2":{c2.id}, "3":{c3.id}, "4":{c4.id}}}',
+            p3.id: f'{{"1":{c4.id}}}',
+        }
+        for id, value in old.items():
+            self.env.cr.execute("UPDATE res_partner SET x_test_curr = %s WHERE id = %s", [value, id])
+        mapping = {
+            c1.id: c2.id,
+            c2.id: c3.id,
+            c3.id: c1.id,
+        }
+        with self.assertNotUpdated("res_partner", ids=[p3.id]):
+            util.replace_record_references_batch(self.env.cr, mapping, "res.currency")
+        new = {
+            p1.id: {"1": c2.id, "2": c3.id, "3": None},
+            p2.id: {"1": c2.id, "2": c3.id, "3": c1.id, "4": c4.id},
+            p3.id: {"1": c4.id},
+        }
+        self.env.cr.execute("SELECT id, x_test_curr FROM res_partner WHERE id IN %s", [(p1.id, p2.id)])
+        for id, currencies in self.env.cr.fetchall():
+            expected = new[id]
+            self.assertEqual(currencies, expected)
+
     def _prepare_test_delete_unused(self):
         def create_cat():
             name = f"test_{uuid.uuid4().hex}"
@@ -2169,3 +2214,90 @@ class TestRenameXMLID(UnitTestCase):
         util.invalidate(test_view_2)
         self.assertIn('t-call="base.rename_view"', test_view_2.arch_db)
         self.assertIn('t-name="base.rename_view"', test_view_1.arch_db)
+
+
+class TestAssertUpdated(UnitTestCase):
+    def test_assert_updated(self):
+        p1 = self.env["res.partner"].create({"name": "Levi"})
+        p2 = self.env["res.partner"].create({"name": "Mikasa Ackerman"})
+        util.flush(p1)
+        util.flush(p2)
+
+        # when ids is None, assert any record is created or updated
+        with self.assertUpdated("res_partner"):
+            self.env["res.partner"].create({"name": "Sasha Braus"})
+        with self.assertUpdated("res_partner"):
+            p2.city = "Shiganshina"
+            util.flush(p2)
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner"):
+            pass
+
+        # when ids is [], assert a record is updated
+        with self.assertUpdated("res_partner", ids=[]):
+            p1.city = "Underground"
+            util.flush(p1)
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Annie Leonhart"})
+
+        # when ids has multiple records, all records should be updated
+        with self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
+            p1.company_name = "Survey Corps"
+            p2.company_name = "Survey Corps"
+            util.flush(p1)
+            util.flush(p2)
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
+            p1.name = "Levi Ackerman"
+            util.flush(p1)
+
+        # when ids has a record, that record should be the one updated
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[p1.id]):
+            p2.city = "Paradise Island"
+            util.flush(p2)
+
+    def test_assert_not_updated(self):
+        p1 = self.env["res.partner"].create({"name": "Eren Yeager"})
+        p2 = self.env["res.partner"].create({"name": "Armin Arlert"})
+        util.flush(p1)
+        util.flush(p2)
+
+        # when ids is None, assert no record is created or updated
+        with self.assertNotUpdated("res_partner"):
+            pass
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner"):
+            p1.city = "Shiganshina"
+            util.flush(p1)
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner"):
+            self.env["res.partner"].create({"name": "Bertolt Hoover"})
+
+        # when ids is [], assert no record is updated
+        with self.assertNotUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Marco Bodt"})
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[]):
+            p2.city = "Shiganshina"
+            util.flush(p2)
+
+        # when ids has a record, only that record should not be updated
+        with self.assertNotUpdated("res_partner", ids=[p2.id]):
+            p1.company_name = "Survey Corps"
+            util.flush(p1)
+
+        # when ids has multiple records, none of them should be updated
+        with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[p1.id, p2.id]):
+            p2.company_name = "Survey Corps"
+            util.flush(p2)
+
+    def test_assert_updated_combo(self):
+        p1 = self.env["res.partner"].create({"name": "Reiner Braun"})
+        p2 = self.env["res.partner"].create({"name": "Ymir Fritz"})
+        util.flush(p1)
+        util.flush(p2)
+
+        with self.assertUpdated("res_partner", ids=[p1.id]), self.assertNotUpdated("res_partner", ids=[p2.id]):
+            p1.company_name = "Marley Warriors"
+            util.flush(p1)
+
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner"), self.assertNotUpdated(
+            "res_partner", ids=[p2.id]
+        ):
+            p2.city = "Niflheim"
+            util.flush(p2)
