@@ -296,7 +296,7 @@ def announce(
         _logger.warning("Cannot announce message", exc_info=True)
     else:
         # Chat window with the report will be open post-upgrade for the admin user
-        if version_between("9.0", "saas~18.2") and user.partner_id and recipient:
+        if version_between("9.0", "saas~18.1") and user.partner_id and recipient:
             channel_member_model = (
                 "discuss.channel.member"
                 if version_gte("saas~16.3")
