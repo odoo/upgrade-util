@@ -102,7 +102,13 @@ except ImportError:
     del expression  # unset so it's not used directly
 
 
-AST_CONSTANT_TYPES = (ast.Constant, ast.Str) if sys.version_info < (3, 12) else (ast.Constant,)
+AST_CONSTANT_TYPES = (
+    (ast.Str,)
+    if sys.version_info < (3, 0)
+    else (ast.Constant, ast.Str)
+    if sys.version_info < (3, 12)
+    else (ast.Constant,)
+)
 
 _logger = logging.getLogger(__name__)
 DomainField = collections.namedtuple("DomainField", "table domain_column model_select")
