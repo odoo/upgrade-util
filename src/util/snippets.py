@@ -15,7 +15,7 @@ from .const import NEARLYWARN
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import import_script, log_progress
-from .pg import column_exists, column_type, get_max_workers, table_exists
+from .pg import column_exists, column_type, cursor_get_connection, get_max_workers, table_exists
 
 _logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")
@@ -44,7 +44,7 @@ def add_snippet_names(cr, table, column, snippets, select_query):
     it = log_progress(cr.fetchall(), _logger, qualifier="rows", size=cr.rowcount, log_hundred_percent=True)
 
     def quote(ident):
-        return quote_ident(ident, cr._cnx)
+        return quote_ident(ident, cursor_get_connection(cr))
 
     for res_id, regex_matches, arch in it:
         regex_matches = [match[0] for match in regex_matches]  # noqa: PLW2901
@@ -88,7 +88,7 @@ def get_html_fields(cr):
     # yield (table, column) of stored html fields (that needs snippets updates)
     for table, columns in html_fields(cr):
         for column in columns:
-            yield table, quote_ident(column, cr._cnx)
+            yield table, quote_ident(column, cursor_get_connection(cr))
 
 
 def html_fields(cr):
@@ -316,7 +316,7 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
 
 def determine_chunk_limit_ids(cr, table, column_arr, where):
     bytes_per_chunk = 100 * 1024 * 1024
-    columns = ", ".join(quote_ident(column, cr._cnx) for column in column_arr if column != "id")
+    columns = ", ".join(quote_ident(column, cursor_get_connection(cr)) for column in column_arr if column != "id")
     cr.execute(
         f"""
          WITH info AS (
