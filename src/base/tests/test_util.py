@@ -1460,6 +1460,11 @@ class TestRecords(UnitTestCase):
         [count] = self.env.cr.fetchone()
         self.assertEqual(count, 1)
 
+    @mute_logger("odoo.upgrade.util.records")
+    def test_replace_record_references_batch__idem_mapping(self):
+        # This logs a warning but shouldn't fail
+        util.replace_record_references_batch(self.env.cr, {1: 1, 2: 2}, "res.country")
+
     def _prepare_test_delete_unused(self):
         def create_cat():
             name = f"test_{uuid.uuid4().hex}"
