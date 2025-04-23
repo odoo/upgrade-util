@@ -495,11 +495,11 @@ class SelfPrintEvalContext(collections.defaultdict):
         Example: [('company_id', 'in', [*company_ids, False])
 
         Returns a pair with the new expression and an evaluation context that should
-        be used in `safe_eval`.
+        be used in :func:`~odoo.upgrade.util.misc.safe_eval`.
 
         ```
         >>> prepared_domain, context = util.SelfPrintEvalContext.preprocess(domain)
-        >>> safe_eval(prepared_domain, context, nocopy=True)
+        >>> safe_eval(prepared_domain, context)
         ```
 
         :meta private: exclude from online docs
@@ -531,6 +531,40 @@ class SelfPrintEvalContext(collections.defaultdict):
         root = ast.parse(expr.strip(), mode="exec")
         visited = replacer.visit(root)
         return (ast_unparse(visited).strip(), SelfPrintEvalContext(replacer.replaces))
+
+
+if version_gte("saas~18.4"):
+    import odoo.tools.safe_eval as _safe_eval_mod
+
+    def safe_eval(expr, context=None):
+        if context is None:
+            context = SelfPrintEvalContext()
+
+        assert isinstance(expr, (str, bytes))
+        assert isinstance(context, SelfPrintEvalContext)
+
+        c = _safe_eval_mod.test_expr(expr, _safe_eval_mod._SAFE_OPCODES, mode="eval", filename=None)
+        context["__builtins__"] = dict(_safe_eval_mod._BUILTINS)
+        try:
+            return _safe_eval_mod.unsafe_eval(c, context, None)
+        except _safe_eval_mod._BUBBLEUP_EXCEPTIONS:
+            raise
+        except Exception as e:
+            raise ValueError("{!r} while evaluating\n{!r}".format(e, expr))
+        finally:
+            del context["__builtins__"]
+else:
+    try:
+        from odoo.tools.safe_eval import safe_eval as _safe_eval_func
+    except ImportError:
+        from openerp.tools.safe_eval import safe_eval as _safe_eval_func
+
+    def safe_eval(expr, context=None):
+        if context is None:
+            context = SelfPrintEvalContext()
+        assert isinstance(context, SelfPrintEvalContext)
+
+        return _safe_eval_func(expr, context, nocopy=True)
 
 
 class _Replacer(ast.NodeTransformer):

@@ -12,6 +12,7 @@ import base64
 import logging
 import re
 import warnings
+from ast import literal_eval
 
 import psycopg2
 from psycopg2 import sql
@@ -25,11 +26,9 @@ except ImportError:
 try:
     from odoo import release
     from odoo.tools.misc import mute_logger
-    from odoo.tools.safe_eval import safe_eval
 except ImportError:
     from openerp import release
     from openerp.tools.misc import mute_logger
-    from openerp.tools.safe_eval import safe_eval
 
 from .domains import FALSE_LEAF, TRUE_LEAF
 
@@ -47,7 +46,7 @@ from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_dom
 from .exceptions import SleepyDeveloperError
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path, table_of_model
 from .inherit import for_each_inherit
-from .misc import SelfPrintEvalContext, log_progress, version_gte
+from .misc import log_progress, safe_eval, version_gte
 from .orm import env, invalidate
 from .pg import (
     SQLStr,
@@ -117,7 +116,7 @@ def _remove_field_from_filters(cr, model, field):
         [model, r"\y{}\y".format(field)],
     )
     for id_, name, context_s in cr.fetchall():
-        context = safe_eval(context_s or "{}", SelfPrintEvalContext(), nocopy=True)
+        context = safe_eval(context_s or "{}")
         changed = _remove_field_from_context(context, field)
         cr.execute("UPDATE ir_filters SET context = %s WHERE id = %s", [unicode(context), id_])
         if changed:
@@ -206,7 +205,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
 
     # clean dashboard's contexts
     for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
-        context = safe_eval(action.get("context", "{}"), SelfPrintEvalContext(), nocopy=True)
+        context = safe_eval(action.get("context", "{}"))
         changed = _remove_field_from_context(context, fieldname)
         action.set("context", unicode(context))
         if changed:
@@ -350,7 +349,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
         )
         for alias_id, defaults_s in cr.fetchall():
             try:
-                defaults = dict(safe_eval(defaults_s))  # XXX literal_eval should works.
+                defaults = dict(literal_eval(defaults_s))
             except Exception:
                 continue
             defaults.pop(fieldname, None)
@@ -1347,7 +1346,6 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
 
         # ir.ui.view.custom
         # adapt the context. The domain will be done by `adapt_domain`
-        eval_context = SelfPrintEvalContext()
         def_old = "default_{}".format(old)
         def_new = "default_{}".format(new)
         match = "{0[old]}|{0[def_old]}".format(p)
@@ -1387,7 +1385,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                     adapt_dict(d[vt])
 
         for _, act in _dashboard_actions(cr, match, *only_models or ()):
-            context = safe_eval(act.get("context", "{}"), eval_context, nocopy=True)
+            context = safe_eval(act.get("context", "{}"))
             adapt_dict(context)
 
             if def_old in context:

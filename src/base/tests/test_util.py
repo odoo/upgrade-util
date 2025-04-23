@@ -17,7 +17,6 @@ except ImportError:
 
 from odoo import modules
 from odoo.tools import mute_logger
-from odoo.tools.safe_eval import safe_eval
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
@@ -1735,11 +1734,11 @@ class TestMisc(UnitTestCase):
         ]
     )
     def test_SelfPrint(self, value, expected):
-        evaluated = safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
+        evaluated = util.safe_eval(value, util.SelfPrintEvalContext())
         self.assertEqual(str(evaluated), expected, "Self printed result differs")
 
         replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
-        evaluated = safe_eval(replaced_value, ctx, nocopy=True)
+        evaluated = util.safe_eval(replaced_value, ctx)
         self.assertEqual(str(evaluated), expected, "Prepared self printed result differs")
 
     @parametrize(
@@ -1759,7 +1758,7 @@ class TestMisc(UnitTestCase):
     @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
     def test_SelfPrint_prepare(self, value, expected):
         replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
-        evaluated = safe_eval(replaced_value, ctx, nocopy=True)
+        evaluated = util.safe_eval(replaced_value, ctx)
         # extra fallback for old unparse from astunparse package
         self.assertIn(str(evaluated), [expected, "({})".format(expected)])
 
@@ -1776,7 +1775,7 @@ class TestMisc(UnitTestCase):
     def test_SelfPrint_failure(self, value):
         # note: `safe_eval` will re-raise a ValueError
         with self.assertRaises(ValueError):
-            safe_eval(value, util.SelfPrintEvalContext(), nocopy=True)
+            util.safe_eval(value)
 
     @parametrize(
         [
