@@ -135,7 +135,13 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
             # remove in batch
             size = (cr.rowcount + chunk_size - 1) / chunk_size
             it = chunks([id for (id,) in cr.fetchall()], chunk_size, fmt=tuple)
+            remove_crons = ref_model == "ir.actions.server" and column_exists(cr, "ir_cron", "ir_actions_server_id")
             for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
+                if remove_crons:
+                    cr.execute("SELECT id FROM ir_cron WHERE ir_actions_server_id IN %s", [tuple(sub_ids)])
+                    cron_ids = [id for (id,) in cr.fetchall()]
+                    remove_records(cr, "ir.cron", cron_ids)
+                    _rm_refs(cr, "ir.cron", cron_ids)
                 remove_records(cr, ref_model, sub_ids)
                 _rm_refs(cr, ref_model, sub_ids)
 
