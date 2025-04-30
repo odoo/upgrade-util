@@ -595,7 +595,7 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
                 query = cr.mogrify(
                     format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter())), [model]
                 ).decode()
-                explode_execute(cr, query, table=table, bucket_size=1000)
+                explode_execute(cr, query, table=table)
         remove_field(cr, model, field, skip_inherit="*")  # inherits will be removed by the recursive call.
 
     # down on inherits of `model`
