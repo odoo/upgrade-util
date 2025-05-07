@@ -28,15 +28,13 @@ except ImportError:
 
 try:
     from odoo.tools import exception_to_unicode
-    from odoo.tools.safe_eval import safe_eval
 except ImportError:
     from openerp.tools import exception_to_unicode
-    from openerp.tools.safe_eval import safe_eval
 
 from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path
 from .inherit import for_each_inherit
-from .misc import SelfPrintEvalContext, ast_unparse, literal_replace, version_gte
+from .misc import SelfPrintEvalContext, ast_unparse, literal_replace, safe_eval, version_gte
 from .pg import column_exists, get_value_or_en_translation, table_exists
 from .records import edit_view
 
@@ -300,7 +298,7 @@ def _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter=Non
     if isinstance(domain, basestring):
         try:
             replaced_domain, ctx = SelfPrintEvalContext.preprocess(domain)
-            eval_dom = normalize_domain(safe_eval(replaced_domain, ctx, nocopy=True))
+            eval_dom = normalize_domain(safe_eval(replaced_domain, ctx))
         except Exception as e:
             oops = exception_to_unicode(e)
             _logger.log(NEARLYWARN, "Cannot evaluate %r domain: %r: %s", model, domain, oops)
