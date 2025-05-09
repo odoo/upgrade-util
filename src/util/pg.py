@@ -428,9 +428,9 @@ def pg_text2html(s, wrap="p"):
                                            'https?://[-A-Za-z0-9+&@#/%%?=~_()|!:,.;]*[-A-Za-z0-9+&@#/%%=~_()|]',
                                            '<a href="\&" target="_blank" rel="noreferrer noopener">\&</a>',
                                            'g'),
-                            E'\\n',
+                            E'\n',
                             '<br>'),
-                    E'\\t',
+                    E'\t',
                     '&Tab;'),
                 '{closing_tag}')
          END

@@ -2109,13 +2109,13 @@ class TestConvertFieldToHtml(UnitTestCase):
         f1 = self.env["ir.model.fields"].create(
             {"name": "x_testx", "model": "res.partner", "ttype": "text", "model_id": model.id, "translate": True}
         )
-        partner = self.env["res.partner"].create({"name": "test Pxtner", "x_testx": "test partner field"})
-        default = self.env["ir.default"].create({"field_id": f1.id, "json_value": '"Test text"'})
+        partner = self.env["res.partner"].create({"name": "test Pxtner", "x_testx": "test\npartner field"})
+        default = self.env["ir.default"].create({"field_id": f1.id, "json_value": '"Test\\ntext"'})
         util.convert_field_to_html(cr, "res.partner", "x_testx")
         util.invalidate(default)
 
-        self.assertEqual(default.json_value, '"<p>Test text</p>"')
-        self.assertEqual(partner.x_testx, "<p>test partner field</p>")
+        self.assertEqual(default.json_value, '"<p>Test<br>text</p>"')
+        self.assertEqual(partner.x_testx, "<p>test<br>partner field</p>")
 
 
 class TestRemoveView(UnitTestCase):
