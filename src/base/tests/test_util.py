@@ -801,7 +801,7 @@ class TestPG(UnitTestCase):
             cr.execute(q)
             self.assertTrue(all(x for (x,) in cr.fetchall()))
 
-    @mute_logger("odoo.upgrade.util.pg.explode_query_range")
+    @mute_logger(util.pg._logger.getChild("explode_query_range").name)
     def test_explode_query_range(self):
         cr = self.env.cr
 
@@ -1822,7 +1822,7 @@ class TestMisc(UnitTestCase):
             self.assertEqual(repl, expected)
 
     @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
-    @mute_logger("odoo.upgrade.util.misc")
+    @mute_logger(util.misc._logger.name)
     def test_literal_replace_error(self):
         # this shouldn't raise a syntax error
         res = util.literal_replace("[1,2", {"1": "3"})
