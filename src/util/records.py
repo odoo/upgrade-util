@@ -808,15 +808,14 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
                 # Adapting t-call and t-name references in views
                 search_pattern = r"""\yt-(call|name)=(["']){}\2""".format(re.escape(old))
                 replace_pattern = r"t-\1=\2{}\2".format(new)
-                if version_gte("16.0"):
-                    arch_col = get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
+                if column_type(cr, "ir_ui_view", "arch_db") == "jsonb":
                     replace_in_all_jsonb_values(
                         cr,
                         "ir_ui_view",
                         "arch_db",
                         PGRegexp(search_pattern),
                         replace_pattern,
-                        extra_filter=cr.mogrify("{} ~ %s".format(arch_col), [search_pattern]).decode(),
+                        extra_filter=cr.mogrify("arch_db->>'en_US' ~ %s", [search_pattern]).decode(),
                     )
                 else:
                     arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
