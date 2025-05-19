@@ -49,6 +49,7 @@ _logger = logging.getLogger(__name__)
 
 ON_DELETE_ACTIONS = frozenset(("SET NULL", "CASCADE", "RESTRICT", "NO ACTION", "SET DEFAULT"))
 MAX_BUCKETS = int(os.getenv("MAX_BUCKETS", "150000"))
+DEFAULT_BUCKET_SIZE = int(os.getenv("BUCKET_SIZE", "10000"))
 
 
 class PGRegexp(str):
@@ -260,7 +261,7 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
-def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=None):
+def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, prefix=None):
     """
     Explode a query to multiple queries that can be executed in parallel.
 
@@ -336,7 +337,7 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=10000, prefix=
     ]
 
 
-def explode_execute(cr, query, table, alias=None, bucket_size=10000, logger=_logger):
+def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, logger=_logger):
     """
     Execute a query in parallel.
 
