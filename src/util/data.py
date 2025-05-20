@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 import logging
 
-from .helpers import model_of_table, table_of_model
-from .pg import get_columns, get_fk, table_exists
-from .records import ref
+from .helpers import table_of_model
+from .pg import SQLStr, format_query, table_exists
+from .records import ref, remove_records, replace_record_references_batch
 
 _logger = logging.getLogger(__name__.rpartition(".")[0])
 
@@ -25,77 +25,26 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
     you can prioritize tags in CamelCase/UPPERCASE.
     """
     table = table_of_model(cr, model)
-    upds = []
-    for ft, fc, _, da in get_fk(cr, table):
-        cols = get_columns(cr, ft, ignore=(fc,))
-        is_many2one = False
-        is_many2many = da == "c" and len(cols) == 1  # if ondelete=cascade fk and only 2 columns, it's a m2m
-        if not is_many2many:
-            cr.execute("SELECT count(*) FROM ir_model_fields WHERE ttype = 'many2many' AND relation_table = %s", [ft])
-            [is_many2many] = cr.fetchone()
-        if not is_many2many:
-            f_model = model_of_table(cr, ft)
-            if f_model:
-                cr.execute(
-                    """
-                        SELECT count(*)
-                          FROM ir_model_fields
-                         WHERE model = %s
-                           AND name = %s
-                           AND ttype = 'many2one'
-                    """,
-                    [f_model, fc],
-                )
-                [is_many2one] = cr.fetchone()
-        assert is_many2many or is_many2one, (
-            "Can't determine if column `%s` of table `%s` is a many2one or many2many" % (fc, ft)
-        )
-        if is_many2many:
-            upds.append(
-                """
-                INSERT INTO {rel}({c1}, {c2})
-                     SELECT r.{c1}, d.id
-                       FROM {rel} r
-                       JOIN dups d ON (r.{c2} = ANY(d.others))
-                     EXCEPT
-                     SELECT r.{c1}, r.{c2}
-                       FROM {rel} r
-                       JOIN dups d ON (r.{c2} = d.id)
-            """.format(rel=ft, c1=cols[0], c2=fc)
-            )
-        else:
-            upds.append(
-                """
-                    UPDATE {rel} r
-                       SET {c} = d.id
-                      FROM dups d
-                     WHERE r.{c} = ANY(d.others)
-                """.format(rel=ft, c=fc)
-            )
 
-    assert upds  # if not m2m found, there is something wrong...
-
-    updates = ",".join("_upd_%s AS (%s)" % x for x in enumerate(upds))
-    query = """
-        WITH dups AS (
-            SELECT (array_agg(id order by {order}))[1] as id,
-                   (array_agg(id order by {order}))[2:array_length(array_agg(id), 1)] as others
+    query = format_query(
+        cr,
+        """
+            SELECT unnest((array_agg(id ORDER BY {order}))[2:]),
+                   (array_agg(id ORDER BY {order}))[1]
               FROM {table}
           GROUP BY {uniq_column}
             HAVING count(id) > 1
-        ),
-        _upd_imd AS (
-            UPDATE ir_model_data x
-               SET res_id = d.id
-              FROM dups d
-             WHERE x.model = %s
-               AND x.res_id = ANY(d.others)
-        ),
-        {updates}
-        DELETE FROM {table} WHERE id IN (SELECT unnest(others) FROM dups)
-    """.format(**locals())
-
-    cr.execute(query, [model])
+        """,
+        table=table,
+        order=SQLStr(order),
+        uniq_column=SQLStr(uniq_column),
+    )
+    cr.execute(query)
+    if not cr.rowcount:
+        return
+    mapping = dict(cr.fetchall())
+    replace_record_references_batch(cr, mapping, model)
+    remove_records(cr, model, mapping.keys())
 
 
 def split_group(cr, from_groups, to_group):
