@@ -62,6 +62,29 @@ from .records import (
     replace_record_references_batch,
 )
 
+__all__ = [
+    "INSTALLED_MODULE_STATES",
+    "force_install_module",
+    "force_migration_of_fresh_module",
+    "force_upgrade_of_fresh_module",
+    "merge_module",
+    "module_auto_install",
+    "module_deps_diff",
+    "module_installed",
+    "modules_auto_discovery",
+    "modules_installed",
+    "move_model",
+    "new_module",
+    "new_module_dep",
+    "remove_module",
+    "remove_module_deps",
+    "remove_theme",
+    "rename_module",
+    "trigger_auto_install",
+    "uninstall_module",
+    "uninstall_theme",
+]
+
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
 

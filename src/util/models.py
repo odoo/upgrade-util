@@ -39,6 +39,14 @@ from .pg import rename_table as pg_rename_table
 from .records import _remove_import_export_paths, _rm_refs, remove_records, remove_view, replace_record_references_batch
 from .report import add_to_migration_reports, html_escape, report_with_list
 
+__all__ = [
+    "convert_model_to_abstract",
+    "delete_model",
+    "merge_model",
+    "remove_inherit_from_model",
+    "remove_model",
+    "rename_model",
+]
 _logger = logging.getLogger(__name__)
 
 

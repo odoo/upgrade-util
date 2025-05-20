@@ -23,6 +23,8 @@ from .misc import get_max_workers, log_progress, make_pickleable_callback, versi
 from .modules import INSTALLED_MODULE_STATES
 from .pg import SQLStr, _existing_columns, column_type, format_query
 
+__all__ = ["convert_html_columns", "convert_html_content", "get_html_fields", "html_fields"]
+
 _logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")
 

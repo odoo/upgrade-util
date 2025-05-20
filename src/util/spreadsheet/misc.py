@@ -11,6 +11,8 @@ from .. import json
 from ..misc import get_max_workers, log_progress, make_pickleable_callback
 from ..pg import SQLStr, format_query
 
+__all__ = ["iter_commands", "multiprocess_commands", "process_commands"]
+
 MEMORY_CAP = 2 * 10**8  # 200MB
 COUNT_CAP = 1000
 _logger = logging.getLogger(__name__)

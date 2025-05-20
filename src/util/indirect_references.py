@@ -4,6 +4,13 @@ import collections
 from .helpers import model_of_table, table_of_model
 from .pg import SQLStr, _existing_columns, table_exists
 
+__all__ = [
+    "IndirectReference",
+    "generate_indirect_reference_cleaning_queries",
+    "indirect_references",
+    "res_model_res_id",
+]
+
 
 class IndirectReference(
     collections.namedtuple(

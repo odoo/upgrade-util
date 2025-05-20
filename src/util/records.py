@@ -58,13 +58,40 @@ from .pg import (
 )
 from .report import add_to_migration_reports
 
-_logger = logging.getLogger(__name__)
-
 # python3 shims
 try:
     basestring  # noqa: B018
 except NameError:
     basestring = unicode = str
+
+__all__ = [
+    "add_view",
+    "delete_unused",
+    "edit_view",
+    "ensure_mail_alias_mapping",
+    "ensure_xmlid_match_record",
+    "force_noupdate",
+    "if_unchanged",
+    "is_changed",
+    "ref",
+    "refs",
+    "remove_act_window_view_mode",
+    "remove_asset",
+    "remove_group",
+    "remove_menus",
+    "remove_record",
+    "remove_records",
+    "remove_view",
+    "remove_views",
+    "rename_xmlid",
+    "replace_in_all_jsonb_values",
+    "replace_record_references",
+    "replace_record_references_batch",
+    "update_parent_path",
+    "update_record_from_xml",
+]
+
+_logger = logging.getLogger(__name__)
 
 if version_gte("15.0"):
     from odoo.tools.misc import file_path

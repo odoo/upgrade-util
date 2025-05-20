@@ -6,6 +6,8 @@ import os
 from .const import ENVIRON, NEARLYWARN
 from .misc import parse_version, version_gte
 
+__all__ = ["direct_inherit_parents", "for_each_inherit", "inherit_parents"]
+
 _logger = logging.getLogger(__name__)
 
 
