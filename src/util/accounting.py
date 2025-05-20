@@ -8,6 +8,8 @@ from .modules import module_installed
 from .orm import env, invalidate
 from .pg import create_column, explode_query_range, get_columns, parallel_execute
 
+__all__ = ["no_deprecated_accounts", "no_fiscal_lock", "skip_failing_python_taxes", "upgrade_analytic_distribution"]
+
 _logger = logging.getLogger(__name__)
 
 

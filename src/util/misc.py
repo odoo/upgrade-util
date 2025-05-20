@@ -59,6 +59,36 @@ except ImportError:
     except ImportError:
         ast_unparse = None
 
+__all__ = [
+    "AUTO",
+    "AUTOMATIC",
+    "SelfPrint",
+    "SelfPrintEvalContext",
+    "Sentinel",
+    "chunks",
+    "expand_braces",
+    "get_max_workers",
+    "get_modules",
+    "has_design_themes",
+    "has_enterprise",
+    "import_code_upgrade",
+    "import_script",
+    "literal_replace",
+    "log_chunks",
+    "log_progress",
+    "make_pickleable_callback",
+    "on_CI",
+    "once",
+    "parse_version",
+    "safe_eval",
+    "skippable_cm",
+    "split_osenv",
+    "splitlines",
+    "str2bool",
+    "version_between",
+    "version_gte",
+]
+
 _logger = logging.getLogger(__name__)
 
 

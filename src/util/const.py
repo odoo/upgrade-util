@@ -7,6 +7,7 @@ try:
 except ImportError:
     from openerp import netsvc
 
+__all__ = ["BIG_TABLE_THRESHOLD", "ENVIRON", "NEARLYWARN"]
 
 # migration environ, used to share data between scripts
 ENVIRON = {

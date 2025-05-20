@@ -16,6 +16,19 @@ except ImportError:
     if version_gte("16.0"):
         raise
 
+__all__ = [
+    "dbuuid",
+    "dispatch_by_dbuuid",
+    "remove_custom_constraint",
+    "rename_custom_column",
+    "rename_custom_model",
+    "rename_custom_module",
+    "rename_custom_table",
+    "reset_cowed_views",
+    "translation2jsonb",
+    "translation2jsonb_all_missing",
+]
+
 _logger = logging.getLogger(__name__)
 
 

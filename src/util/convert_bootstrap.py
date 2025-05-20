@@ -11,6 +11,15 @@ from lxml import etree
 from .misc import Sentinel
 from .misc import parse_version as Version
 
+__all__ = [
+    "BootstrapConverter",
+    "BootstrapHTMLConverter",
+    "convert_tree",
+    "innerxml",
+    "regex_xpath",
+    "simple_css_selector_to_xpath",
+]
+
 _logger = logging.getLogger(__name__)
 
 

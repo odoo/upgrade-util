@@ -50,6 +50,21 @@ try:
 except NameError:
     basestring = str
 
+__all__ = [
+    "create_cron",
+    "custom_module_field_as_manual",
+    "env",
+    "flush",
+    "get_admin_channel",
+    "get_inherit_model_names",
+    "guess_admin_id",
+    "invalidate",
+    "iter_browse",
+    "no_selection_cache_validation",
+    "recompute",
+    "recompute_fields",
+]
+
 _logger = logging.getLogger(__name__)
 
 

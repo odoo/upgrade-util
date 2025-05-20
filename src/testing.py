@@ -139,6 +139,8 @@ except ImportError:
 from . import util
 from .util import json
 
+__all__ = ["IntegrityCase", "UnitTestCase", "UpgradeCase", "change_version", "parametrize"]
+
 _logger = logging.getLogger(__name__)
 
 DATA_TABLE = "upgrade_test_data"

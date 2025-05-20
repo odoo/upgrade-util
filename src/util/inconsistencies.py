@@ -12,6 +12,8 @@ from .misc import Sentinel, chunks, str2bool
 from .pg import format_query, get_value_or_en_translation, target_of
 from .report import add_to_migration_reports, get_anchor_link_to_record, html_escape
 
+__all__ = ["break_recursive_loops", "verify_companies", "verify_products", "verify_uoms"]
+
 _logger = logging.getLogger(__name__)
 
 INCLUDE_ARCHIVED_PRODUCTS = str2bool(

@@ -9,6 +9,8 @@ import lxml
 from .exceptions import SleepyDeveloperError
 from .misc import splitlines, version_between, version_gte
 
+__all__ = ["FieldsPathPart", "model_of_table", "resolve_model_fields_path", "table_of_model"]
+
 _logger = logging.getLogger(__name__.rpartition(".")[0])
 
 _VALID_MODELS = frozenset(

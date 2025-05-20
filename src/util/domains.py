@@ -51,6 +51,8 @@ try:
 except NameError:
     basestring = unicode = str
 
+__all__ = ["adapt_domains"]
+
 # import from domains/expression
 try:
     if not version_gte("saas~18.2"):

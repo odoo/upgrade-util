@@ -76,6 +76,32 @@ try:
 except NameError:
     basestring = unicode = str
 
+__all__ = [
+    "adapt_depends",
+    "adapt_related",
+    "change_field_selection_values",
+    "convert_binary_field_to_attachment",
+    "convert_field_to_html",
+    "convert_field_to_property",
+    "convert_field_to_translatable",
+    "convert_field_to_untranslatable",
+    "convert_m2o_field_to_m2m",
+    "dump_field_to_chatter",
+    "ensure_m2o_func_field_data",
+    "invert_boolean_field",
+    "is_field_anonymized",
+    "m2o2m2m",
+    "make_field_company_dependent",
+    "make_field_non_stored",
+    "move_field_to_module",
+    "register_unanonymization_query",
+    "remove_field",
+    "remove_field_metadata",
+    "rename_field",
+    "update_field_references",
+    "update_field_usage",
+    "update_server_actions_fields",
+]
 
 _logger = logging.getLogger(__name__)
 IMD_FIELD_PATTERN = "field_%s__%s" if version_gte("saas~11.2") else "field_%s_%s"
