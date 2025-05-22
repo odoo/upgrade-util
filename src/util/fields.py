@@ -25,10 +25,8 @@ except ImportError:
 
 try:
     from odoo import release
-    from odoo.tools.misc import mute_logger
 except ImportError:
     from openerp import release
-    from openerp.tools.misc import mute_logger
 
 from .domains import FALSE_LEAF, TRUE_LEAF
 
@@ -56,6 +54,7 @@ from .pg import (
     explode_execute,
     explode_query_range,
     format_query,
+    get_columns,
     get_value_or_en_translation,
     parallel_execute,
     pg_text2html,
@@ -455,23 +454,25 @@ def move_field_to_module(cr, model, fieldname, old_module, new_module, skip_inhe
     """
     _validate_model(model)
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
-    try:
-        with savepoint(cr), mute_logger("openerp.sql_db", "odoo.sql_db"):
-            cr.execute(
-                """
-                   UPDATE ir_model_data
-                      SET module = %s
-                    WHERE model = 'ir.model.fields'
-                      AND name = %s
-                      AND module = %s
-            """,
-                [new_module, name, old_module],
-            )
-    except psycopg2.IntegrityError:
-        cr.execute(
-            "DELETE FROM ir_model_data WHERE model = 'ir.model.fields' AND name = %s AND module = %s",
-            [name, old_module],
-        )
+    columns = get_columns(cr, "ir_model_data", ignore=["id", "module"])
+    query = format_query(
+        cr,
+        """
+            INSERT INTO ir_model_data({0}, module)
+                 SELECT {0}, %s
+                   FROM ir_model_data
+                  WHERE model = 'ir.model.fields'
+                    AND name = %s
+                    AND module = %s
+            ON CONFLICT DO NOTHING
+        """,
+        columns,
+    )
+    cr.execute(query, [new_module, name, old_module])
+    cr.execute(
+        "DELETE FROM ir_model_data WHERE model = 'ir.model.fields' AND name = %s AND module = %s",
+        [name, old_module],
+    )
     # move field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
         move_field_to_module(cr, inh.model, fieldname, old_module, new_module, skip_inherit=skip_inherit)
