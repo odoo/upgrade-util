@@ -59,7 +59,6 @@ from .pg import (
     parallel_execute,
     pg_text2html,
     remove_column,
-    savepoint,
     table_exists,
 )
 from .records import _remove_import_export_paths
@@ -511,49 +510,69 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
         # skip all inherit, they will be handled by the recursive call
         update_field_usage(cr, model, old, new, domain_adapter=domain_adapter, skip_inherit="*")
 
-    try:
-        with savepoint(cr):
-            cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
-            [fid] = cr.fetchone() or [None]
-    except psycopg2.IntegrityError:
+    # search for an existing custom field.
+    cr.execute("SELECT 1 FROM ir_model_fields WHERE model = %s AND name IN %s", [model, (old, new)])
+    if cr.rowcount == 2:
         # If a field with the same name already exists for this model (e.g. due to a custom module),
         # rename it to avoid clashing and warn the customer
         custom_name = new + "_custom"
         rename_field(cr, model, new, custom_name, update_references, domain_adapter=None, skip_inherit=skip_inherit)
-        cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
-        [fid] = cr.fetchone() or [None]
         msg = (
             "The field %r from the model %r is now a standard Odoo field, but it already existed in the database "
             "(coming from a non-standard module) and thus has been renamed to %r" % (new, model, custom_name)
         )
         add_to_migration_reports(msg, "Non-standard fields")
 
+    cr.execute("UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id", (new, model, old))
+    [fid] = cr.fetchone() or [None]
+
     if fid:
+        # recreate the xmlids
         name = IMD_FIELD_PATTERN % (model.replace(".", "_"), new)
-        # In some cases the same field may be present on ir_model_data with both the double __ and single _ name
-        # version. To avoid conflicts (module, name) on the UPDATE below we keep only the double __ version
+
         cr.execute(
             """
              DELETE FROM ir_model_data
-                   WHERE id IN (SELECT unnest((array_agg(id ORDER BY id))[2:count(id)])
-                                  FROM ir_model_data
-                                 WHERE model = 'ir.model.fields'
-                                   AND res_id = %s
-                                 GROUP BY module)
+                   WHERE model = 'ir.model.fields'
+                     AND res_id = %s
+                     AND module != '__export__'
+               RETURNING module
             """,
             [fid],
         )
-        try:
-            with savepoint(cr):
-                cr.execute("UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s", [name, fid])
-        except psycopg2.IntegrityError:
-            # duplicate key. May happen du to conflict between
-            # some_model.sub_id and some_model_sub.id
-            # (before saas~11.2, where pattern changed)
-            name = "%s_%s" % (name, fid)
-            cr.execute("UPDATE ir_model_data SET name=%s WHERE model='ir.model.fields' AND res_id=%s", [name, fid])
+        if cr.rowcount:
+            modules = {mod for (mod,) in cr.fetchall()}
+
+            # match noupdate value with implementation which changed with commit
+            # https://github.com/odoo/odoo/commit/a99e04dfeeef11a781b35574dd625e4007ab5654
+            noupdate = False if version_gte("saas~11.5") else None
+
+            cr.execute(
+                """
+                INSERT INTO ir_model_data(module, name, model, res_id, noupdate)
+                     SELECT unnest(%s), %s, 'ir.model.fields', %s, %s
+                ON CONFLICT DO NOTHING
+                  RETURNING module
+                """,
+                [list(modules), name, fid, noupdate],
+            )
+            conflicted = modules - {mod for (mod,) in cr.fetchall()}
+            if conflicted:
+                # Duplicated key. May happen due to some_model.sub_id and some_model_sub.id
+                # both leading to some_model_sub_id xmlid before saas~11.2 where the pattern
+                # was fixed to be some_module__sub_id and some_model_sub__id respectively.
+                on_conflict_name = "{}_{}".format(name, fid)
+                cr.execute(
+                    """
+                    INSERT INTO ir_model_data(module, name, model, res_id, noupdate)
+                         SELECT unnest(%s), %s, 'ir.model.fields', %s, %s
+                    """,
+                    [list(conflicted), on_conflict_name, fid, noupdate],
+                )
+
         if table_exists(cr, "ir_property"):
             cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
+
     # Updates custom field relation name to match the renamed standard field during upgrade.
     cr.execute(
         """
