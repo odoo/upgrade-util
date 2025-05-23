@@ -53,6 +53,7 @@ from .pg import (
     alter_column_type,
     column_exists,
     column_type,
+    cursor_get_connection,
     explode_execute,
     explode_query_range,
     format_query,
@@ -946,7 +947,7 @@ def _extract_data_as_attachment(cr, model, field, encoded=True, name_field=None,
         return
 
     A = env(cr)["ir.attachment"]
-    iter_cur = cr._cnx.cursor("fetch_binary")
+    iter_cur = cursor_get_connection(cr).cursor("fetch_binary")
     iter_cur.itersize = 1
     iter_cur.execute(
         format_query(
@@ -1522,7 +1523,7 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
         )
     else:
         psycopg2.extras.execute_values(
-            cr._obj,
+            getattr(cr, '_obj__') or cr._obj,
             """
             WITH field_ids AS (
                 SELECT mf1.id as old_field_id, mf2.id as new_field_id
