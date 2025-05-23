@@ -31,6 +31,7 @@ from .helpers import (
     resolve_model_fields_path,
     table_of_model,
 )
+from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
 from .misc import Sentinel, chunks, parse_version, version_gte
@@ -1423,7 +1424,7 @@ def delete_unused(cr, *xmlids, **kwargs):
     return deleted
 
 
-def replace_record_references(cr, old, new, replace_xmlid=True):
+def replace_record_references(cr, old, new, replace_xmlid=True, parent_field="parent_id"):
     """
     Replace all (in)direct references of a record by another.
 
@@ -1436,10 +1437,12 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
     if not old[1]:
         return None
 
-    return replace_record_references_batch(cr, {old[1]: new[1]}, old[0], new[0], replace_xmlid)
+    return replace_record_references_batch(cr, {old[1]: new[1]}, old[0], new[0], replace_xmlid, parent_field)
 
 
-def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, replace_xmlid=True, ignores=()):
+def replace_record_references_batch(
+    cr, id_mapping, model_src, model_dst=None, replace_xmlid=True, ignores=(), parent_field="parent_id"
+):
     """
     Replace all references to records.
 
@@ -1456,6 +1459,9 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                                the source records
     :param list(str) ignores: list of **table** names to skip when updating the referenced
                               values
+    :paream str parent_field: when the target and source model are the same, and the model
+                              table has `parent_path` column, this field will be used to
+                              update it.
     """
     _validate_model(model_src)
     if model_dst is None:
@@ -1781,6 +1787,20 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             )
 
     cr.execute("DROP TABLE _upgrade_rrr")
+    if parent_field and model_dst == model_src:
+        if column_exists(cr, model_src_table, "parent_path"):
+            fk_target = target_of(cr, model_src_table, parent_field)
+            if fk_target:
+                if fk_target[0] != model_src_table:
+                    _logger.warning(
+                        "`%s` has a `parent_path` but `%s` is not a self-referencing FK", model_src_table, parent_field
+                    )
+                else:
+                    update_parent_path(cr, model_src, parent_field)
+            elif parent_field != "parent_id":  # check non-default value
+                _logger.error("`%s` in `%s` is not a self-referencing FK", parent_field, model_src_table)
+        elif column_exists(cr, model_src_table, "parent_left"):
+            _logger.warning("Possibly missing update of parent_left/right in `%s`", model_src_table)
 
 
 def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
@@ -1935,3 +1955,43 @@ def _remove_redundant_tcalls(cr, match):
                 vid,
                 match,
             )
+
+
+def update_parent_path(cr, model, parent_field="parent_id"):
+    """
+    Trigger the update of parent paths in a model.
+
+    :meta private: exclude from online docs
+    """
+    if not version_gte("saas~11.3"):
+        _logger.error("parent_left and parent_right must be computed via the ORM")
+        return
+    table = table_of_model(cr, model)
+    name_field = "name" if column_exists(cr, table, "name") else "id"
+    break_recursive_loops(cr, model, parent_field, name_field)
+    query = format_query(
+        cr,
+        """
+        WITH RECURSIVE __parent_store_compute(id, parent_path) AS (
+             SELECT row.id,
+                    concat(row.id, '/')
+               FROM {table} row
+              WHERE row.{parent_field} IS NULL
+
+            UNION
+
+             SELECT row.id,
+                    concat(comp.parent_path, row.id, '/')
+               FROM {table} row
+               JOIN __parent_store_compute comp
+                 ON row.{parent_field} = comp.id
+        )
+        UPDATE {table} row
+           SET parent_path = comp.parent_path
+          FROM __parent_store_compute comp
+         WHERE row.id = comp.id
+        """,
+        table=table,
+        parent_field=parent_field,
+    )
+    cr.execute(query)
