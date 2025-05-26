@@ -562,6 +562,7 @@ class TestIrExports(UnitTestCase):
         self.assertEqual(self.export.export_fields[0].name, "full_name")
         self.assertEqual(self.export.export_fields[1].name, "rate_ids/name")
 
+    @mute_logger(util.pg._logger.name)
     def test_rename_model(self):
         util.rename_model(self.cr, "res.currency", "res.currency2")
         self._invalidate()
@@ -621,6 +622,7 @@ class TestBaseImportMappings(UnitTestCase):
         self.assertEqual(remaining_mappings[0].field_name, "full_name")
         self.assertEqual(remaining_mappings[1].field_name, "rate_ids/name")
 
+    @mute_logger(util.pg._logger.name)
     def test_rename_model(self):
         util.rename_model(self.cr, "res.currency", "res.currency2")
         util.invalidate(self.import_mapping)
