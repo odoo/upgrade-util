@@ -15,7 +15,7 @@ from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit, inherit_parents
-from .misc import _cached, chunks, log_progress
+from .misc import _cached, chunks, log_progress, version_gte
 from .pg import (
     _get_unique_indexes_with,
     column_exists,
@@ -28,6 +28,7 @@ from .pg import (
     get_value_or_en_translation,
     parallel_execute,
     table_exists,
+    update_m2m_tables,
     view_exists,
 )
 
@@ -268,13 +269,21 @@ def _replace_model_in_computed_custom_fields(cr, source, target):
         )
 
 
-def rename_model(cr, old, new, rename_table=True):
+def rename_model(cr, old, new, rename_table=True, ignored_m2ms="ALL_BEFORE_18_1"):
     """
     Rename a model.
 
-    :param str old: current name of the model to rename
-    :param str new: new name of the model to rename
+    Updates all references to the model name in the DB.
+
+    If table rename is requested, from saas~18.1+, m2m table are updated too, unless
+    ignored. In older versions, m2m tables are skipped unless an empty list is passed.
+
+    :param str old: current model name
+    :param str new: new model name
     :param bool rename_table: whether to also rename the table of the model
+    :param ignored_m2ms: m2m tables to skip. Defaults to `"ALL_BEFORE_18_1"`, which skips
+                         all in Odoo 18 or below, none in saa~18.1+. For all versions, if
+                         the value is not the default, skip only the specified m2m tables.
     """
     _validate_model(old)
     _validate_model(new)
@@ -285,6 +294,10 @@ def rename_model(cr, old, new, rename_table=True):
         new_table = table_of_model(cr, new)
         if new_table != old_table:
             pg_rename_table(cr, old_table, new_table)
+            if ignored_m2ms != "ALL_BEFORE_18_1":  # explicit value, run the the update
+                update_m2m_tables(cr, old_table, new_table, ignored_m2ms)
+            elif version_gte("saas~18.1"):  # from 18.1 we update by default
+                update_m2m_tables(cr, old_table, new_table, ())
 
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]

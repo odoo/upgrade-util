@@ -1351,6 +1351,83 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     )
 
 
+def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
+    """
+    Update m2m table names and columns.
+
+    This function renames m2m tables still referring to `old_table`. It also updates
+    column names and constraints of those tables.
+
+    :param str old_table: former table name
+    :param str new_table: new table name
+    :param list(str) ignored_m2ms: explicit list of m2m tables to ignore
+
+    :meta private: exclude from online docs
+    """
+    assert isinstance(ignored_m2ms, (list, tuple))
+    if old_table == new_table or not version_gte("10.0"):
+        return
+    ignored_m2ms = set(ignored_m2ms)
+    for orig_m2m_table in get_m2m_tables(cr, new_table):
+        if orig_m2m_table in ignored_m2ms:
+            continue
+        m = re.match(r"^(\w+)_{0}_rel|{0}_(\w+)_rel$".format(re.escape(old_table)), orig_m2m_table)
+        if m:
+            m2m_table = "{}_{}_rel".format(*sorted([m.group(1) or m.group(2), new_table]))
+            # Due to the 63 chars limit in generated constraint names, for long table names the FK
+            # constraint is dropped when renaming the table. We need the constraint to correctly
+            # identify the FK targets. The FK constraints will be dropped and recreated below.
+            rename_table(cr, orig_m2m_table, m2m_table, remove_constraints=False)
+            _logger.info("Renamed m2m table %s to %s", orig_m2m_table, m2m_table)
+        else:
+            m2m_table = orig_m2m_table
+        for m2m_col in get_columns(cr, m2m_table).iter_unquoted():
+            col_info = target_of(cr, m2m_table, m2m_col)
+            if not col_info or col_info[0] != new_table or col_info[1] != "id":
+                continue
+            old_col, new_col = map("{}_id".format, [old_table, new_table])
+            if m2m_col != old_col:
+                _logger.warning(
+                    "Possibly missing rename: the column %s of m2m table %s references the table %s",
+                    m2m_col,
+                    m2m_table,
+                    new_table,
+                )
+                continue
+            old_constraint = col_info[2]
+            cr.execute(
+                """
+                SELECT c.confdeltype
+                  FROM pg_constraint c
+                  JOIN pg_class t
+                    ON c.conrelid = t.oid
+                 WHERE t.relname = %s
+                   AND c.conname = %s
+                """,
+                [m2m_table, old_constraint],
+            )
+            on_delete = cr.fetchone()[0]
+            query = format_query(
+                cr,
+                """
+                ALTER TABLE {m2m_table}
+              RENAME COLUMN {old_col} TO {new_col};
+
+                ALTER TABLE {m2m_table}
+            DROP CONSTRAINT {old_constraint},
+            ADD FOREIGN KEY ({new_col}) REFERENCES {new_table} (id) ON DELETE {del_action}
+                """,
+                m2m_table=m2m_table,
+                old_col=old_col,
+                new_col=new_col,
+                old_constraint=old_constraint,
+                new_table=new_table,
+                del_action=SQLStr("RESTRICT") if on_delete == "r" else SQLStr("CASCADE"),
+            )
+            cr.execute(query)
+            _logger.info("Renamed m2m column of table %s from %s to %s", m2m_table, old_col, new_col)
+
+
 def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     if col1 is None:
         col1 = "%s_id" % fk1
