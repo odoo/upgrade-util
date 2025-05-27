@@ -111,9 +111,7 @@ if ThreadPoolExecutor is not None:
         def execute(query):
             with cursor() as tcr:
                 tcr.execute(query)
-                cnt = tcr.rowcount
-                tcr.commit()
-                return cnt
+                return tcr.rowcount
 
         cr.commit()
 
