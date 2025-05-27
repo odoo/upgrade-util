@@ -5,6 +5,8 @@ repos:
         name: Compile python files using the expected runtime version
         entry: ./tools/compile23.py
         language: script
+        require_serial: true
+        verbose: true
       - id: bad-import-000
         name: Incompatible import with old versions in tests and `0.0.0` scripts
         language: pygrep
