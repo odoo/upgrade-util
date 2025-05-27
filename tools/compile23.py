@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from pathlib import PurePath
+from shutil import which
 
 py2_only_patterns = []
 py2_files = []
@@ -41,9 +42,20 @@ for filename in sys.argv[1:]:
 
 
 if py2_files:
-    s = subprocess.run(["python2", "-m", "compileall", "-f", "-q", *py2_files], check=False)
-    if s.returncode:
-        rc = 1
+    if which("python2"):
+        s = subprocess.run(["python2", "-m", "compileall", "-f", "-q", *py2_files], check=False)
+        if s.returncode:
+            rc = 1
+    else:
+        lines = [
+            "WARNING: `python2` hasn't been found in $PATH",
+            "You must ensure the following files are compatible with python2:",
+            *[f" - {f}" for f in py2_files],
+        ]
+        width = max(map(len, lines))
+        message = "\n".join(f"@ {line: <{width}s} @" for line in lines)
+        extra = "@" * (width + 4)
+        print(f"{extra}\n{message}\n{extra}", file=sys.stderr)
 
 if py3_files:
     s = subprocess.run(["python3", "-m", "compileall", "-f", "-q", *py3_files], check=False)
