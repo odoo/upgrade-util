@@ -1786,17 +1786,20 @@ def replace_record_references_batch(
             )
 
     cr.execute("DROP TABLE _upgrade_rrr")
-    if parent_field and model_dst == model_src and column_exists(cr, model_src_table, "parent_path"):
-        fk_target = target_of(cr, model_src_table, parent_field)
-        if fk_target:
-            if fk_target[0] != model_src_table:
-                _logger.warning(
-                    "`%s` has a `parent_path` but `%s` is not a self-referencing FK", model_src_table, parent_field
-                )
-            else:
-                update_parent_path(cr, model_src_table, parent_field)
-        elif parent_field != "parent_id":  # check non-default value
-            _logger.error("`%s` in `%s` is not a self-referencing FK", parent_field, model_src_table)
+    if parent_field and model_dst == model_src:
+        if column_exists(cr, model_src_table, "parent_path"):
+            fk_target = target_of(cr, model_src_table, parent_field)
+            if fk_target:
+                if fk_target[0] != model_src_table:
+                    _logger.warning(
+                        "`%s` has a `parent_path` but `%s` is not a self-referencing FK", model_src_table, parent_field
+                    )
+                else:
+                    update_parent_path(cr, model_src_table, parent_field)
+            elif parent_field != "parent_id":  # check non-default value
+                _logger.error("`%s` in `%s` is not a self-referencing FK", parent_field, model_src_table)
+        elif column_exists(cr, model_src_table, "parent_left"):
+            _logger.warning("Possibly missing update of parent_left/right in `%s`", model_src_table)
 
 
 def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
@@ -1959,6 +1962,9 @@ def update_parent_path(cr, table, parent_field="parent_id"):
 
     :meta private: exclude from online docs
     """
+    if not version_gte("saas~11.3"):
+        _logger.error("parent_left and parent_right must be computed via the ORM")
+        return
     query = format_query(
         cr,
         """
