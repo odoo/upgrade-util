@@ -1,4 +1,5 @@
 import logging
+from odoo.addons.base.maintenance.migrations import util
 
 _logger = logging.getLogger(__name__)
 
@@ -7,7 +8,7 @@ def fix_sale_orders(cr):
     """
     Find and fix sale_order records with invalid next_invoice_date.
 
-    This function searches for all sale_order records where:
+    This function updates all sale_order records where:
       - start_date IS NOT NULL
       - next_invoice_date IS NOT NULL
       - next_invoice_date < start_date
@@ -53,4 +54,8 @@ def migrate(cr, version):
     Side effects:
         Calls fix_sale_orders to perform the corrective update.
     """
+    if not util.module_installed(cr, 'sale_subscription'):
+        _logger.info("Sale subscription module is not installed. Skipping migration.")
+        return
+    _logger.info("Sale subscription module is installed. Running migration.")
     fix_sale_orders(cr)
