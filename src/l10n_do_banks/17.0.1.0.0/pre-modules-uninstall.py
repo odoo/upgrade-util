@@ -4,7 +4,23 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
+def make_account_mandatory_on_website_checkout(cr):
+    """
+    Set the account_on_checkout field to "mandatory" on res.config.settings if website_sale_require_login is installed
+    """
+    env = api.Environment(cr, SUPERUSER_ID, {})
+    if util.module_installed(cr, "website_sale_require_login"):
+        env['res.config.settings'].account_on_checkout = "mandatory"
+        _logger.info("Account on website checkout set to mandatory")
+
 def uninstall_modules(cr):
+    """
+    Script to uninstall modules that are no longer needed or compatible with version 17.0.
+
+    Args:
+        cr (cursor): Database cursor.
+    """
     modules_to_uninstall = [
         'partner_phone_extension',
         'whatsapp_connector_send_stock',
@@ -28,6 +44,7 @@ def uninstall_modules(cr):
         'neutralized_automated_action',
         'import_lot_serial_no',
         'unique_fields_support',
+        'repair_financial_risk',
     ]
 
     for module_name in modules_to_uninstall:
@@ -37,4 +54,5 @@ def uninstall_modules(cr):
 
 
 def migrate(cr, version):
+    make_account_mandatory_on_website_checkout(cr)
     uninstall_modules(cr)
