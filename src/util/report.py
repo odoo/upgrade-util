@@ -88,6 +88,9 @@ ANNOUNCE_MEDIA -= {""}
 
 
 ODOO_SHOWCASE_VIDEOS = {
+    "saas~18.3": "oyev2DxC5yY",
+    "saas~18.2": "bwn_HWuLuTA",
+    "saas~18.1": "is9oLyIkQGk",
     "18.0": "gbE3azm_Io0",
     "saas~17.4": "8F4-uDwom8A",
     "saas~17.2": "ivjgo_2-wkE",
