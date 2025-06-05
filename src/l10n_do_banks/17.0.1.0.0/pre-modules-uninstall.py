@@ -7,11 +7,10 @@ _logger = logging.getLogger(__name__)
 
 def make_account_mandatory_on_website_checkout(cr):
     """
-    Set the account_on_checkout field to "mandatory" on res.config.settings if website_sale_require_login is installed
+    Set the account_on_checkout field to "mandatory" on website if website_sale_require_login is installed
     """
     env = api.Environment(cr, SUPERUSER_ID, {})
-    if util.module_installed(cr, "website_sale_require_login"):
-        env['res.config.settings'].account_on_checkout = "mandatory"
+    if util.['website'].account_on_checkout = "mandatory"
         _logger.info("Account on website checkout set to mandatory")
 
 def uninstall_modules(cr):
