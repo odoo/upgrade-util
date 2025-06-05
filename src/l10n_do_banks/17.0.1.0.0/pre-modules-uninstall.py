@@ -5,14 +5,6 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
-def make_account_mandatory_on_website_checkout(cr):
-    """
-    Set the account_on_checkout field to "mandatory" on website if website_sale_require_login is installed
-    """
-    env = api.Environment(cr, SUPERUSER_ID, {})
-    if util['website'].account_on_checkout == "mandatory":
-        _logger.info("Account on website checkout set to mandatory")
-
 def uninstall_modules(cr):
     """
     Script to uninstall modules that are no longer needed or compatible with version 17.0.
@@ -53,5 +45,4 @@ def uninstall_modules(cr):
 
 
 def migrate(cr, version):
-    make_account_mandatory_on_website_checkout(cr)
     uninstall_modules(cr)
