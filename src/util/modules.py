@@ -841,8 +841,12 @@ def new_module(cr, module, deps=(), auto_install=False, category=None, countries
             """
             INSERT INTO ir_model_data (name, module, noupdate, model, res_id)
                  VALUES ('module_'||%s, 'base', 't', 'ir.module.module', %s)
+            ON CONFLICT (module, name)
+          DO UPDATE SET noupdate = 't',
+                        model = 'ir.module.module',
+                        res_id = %s
             """,
-            [module, new_id],
+            [module, new_id, new_id],
         )
 
     for dep in deps:
