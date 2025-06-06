@@ -640,7 +640,7 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
         # Rename corresponding index
         new_index_name = make_index_name(table, new)
         old_index_name = make_index_name(table, old)
-        cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(new_index_name, old_index_name))
+        cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(old_index_name, new_index_name))
 
     # rename field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
