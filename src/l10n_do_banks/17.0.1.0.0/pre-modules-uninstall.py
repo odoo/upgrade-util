@@ -35,6 +35,7 @@ def uninstall_modules(cr):
         'neutralized_automated_action',
         'import_lot_serial_no',
         'unique_fields_support',
+        'repair_financial_risk_features',
         'repair_financial_risk',
     ]
 
