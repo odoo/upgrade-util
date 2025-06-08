@@ -25,11 +25,11 @@ def deactivate_studio_views(cr):
 
     env = api.Environment(cr, SUPERUSER_ID, {})
 
-    # Get all views with key LIKE 'studio_customization'
+    # Get all views with xml_id LIKE 'studio_customization'
     query = """
         SELECT id, name, key
         FROM ir_ui_view
-        WHERE key LIKE '%studio_customization%'
+        WHERE name LIKE 'studio_customization%' or name LIKE 'Odoo Studio%'
     """
     cr.execute(query)
 
