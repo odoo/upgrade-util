@@ -4,6 +4,16 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
+def delete_advanced_web_domain_widget_assets(cr):
+    """
+    Script to delete advanced_web_domain_widget assets.
+    """
+    env = api.Environment(cr, SUPERUSER_ID, {})
+    assets = env['ir.asset'].search([('name', 'like', 'advanced_web_domain_widget.assets_backend%')])
+    for asset in assets:
+        asset.unlink()
+
 def deactivate_studio_views(cr):
     """
     Script de post-migración para buscar y desactivar vistas de Studio.
@@ -35,10 +45,10 @@ def deactivate_studio_views(cr):
     # Deactivate views
     for view in studio_views:
         try:
-            util.edit_view(cr, viewid=view['id'], active='False')
+            util.edit_view(cr, view_id=view['id'], active='False')
             _logger.info(f"View Deactivate: {view['name']} (ID: {view['id']})")
         except Exception as e:
-            _logger.error(f"Error deactivating view{view['name']} (ID: {view['id']}): {e}")
+            _logger.warning(f"Error deactivating view{view['name']} (ID: {view['id']}): {e}")
     
 
 def deactivate_automated_actions(cr):
@@ -66,5 +76,6 @@ def deactivate_automated_actions(cr):
 
 
 def migrate(cr, version):
+    delete_advanced_web_domain_widget_assets
     deactivate_studio_views(cr)
     deactivate_automated_actions(cr)
