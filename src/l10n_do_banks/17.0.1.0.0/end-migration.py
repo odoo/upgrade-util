@@ -13,6 +13,7 @@ def delete_advanced_web_domain_widget_assets(cr):
     assets = env['ir.asset'].search([('name', 'like', 'advanced_web_domain_widget.assets_backend%')])
     for asset in assets:
         asset.unlink()
+    _logger.info("Advanced Web Domain Widget assets deleted")
 
 def deactivate_studio_views(cr):
     """
@@ -76,6 +77,6 @@ def deactivate_automated_actions(cr):
 
 
 def migrate(cr, version):
-    delete_advanced_web_domain_widget_assets
+    delete_advanced_web_domain_widget_assets(cr)
     deactivate_studio_views(cr)
     deactivate_automated_actions(cr)
