@@ -46,7 +46,8 @@ def deactivate_studio_views(cr):
     # Deactivate views
     for view in studio_views:
         try:
-            util.edit_view(cr, view_id=view['id'], active=False)
+            view_obj = env['ir.ui.view'].browse(view['id'])
+            view_obj.write({'active': False})
             _logger.info(f"View Deactivate: {view['name']} (ID: {view['id']})")
         except Exception as e:
             _logger.warning(f"Error deactivating view{view['name']} (ID: {view['id']}): {e}")
