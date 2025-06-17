@@ -1077,7 +1077,7 @@ def __update_record_from_xml(
     fields,
     done_refs,
 ):
-    from .modules import get_manifest
+    from .modules import get_manifest  # noqa: PLC0415
 
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")

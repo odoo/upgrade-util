@@ -637,7 +637,7 @@ def alter_column_type(cr, table, column, type, using=None, where=None, logger=_l
             logger.info("Column %r of table %r is already defined as %r", column, table, type)
             return
 
-    # remove the existing linked `ir_model_fields_selection` recods in case it was a selection field
+    # remove the existing linked `ir_model_fields_selection` records in case it was a selection field
     if table_exists(cr, "ir_model_fields_selection"):
         cr.execute(
             """
@@ -1007,6 +1007,9 @@ class ColumnList(UserList, sql.Composable):
         self._leading_comma = False
         self._trailing_comma = False
         self._alias = None
+
+    def __hash__(self):
+        return hash((tuple(self._unquoted_columns), self._leading_comma, self._trailing_comma, self._alias))
 
     def __eq__(self, other):
         return (

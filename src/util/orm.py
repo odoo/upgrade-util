@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ruff: noqa: PLC0415
 """
 Utility functions to perform operations via the ORM.
 

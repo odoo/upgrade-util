@@ -22,14 +22,12 @@ def migrate(cr, version):
     execute_values(
         cr._obj,
         "INSERT INTO no_respawn(model, field) VALUES %s",
-        # fmt:off
         [
             (model, field)
             for model, fields in util.ENVIRON["__renamed_fields"].items()
             for field, new_name in fields.items()
             if new_name is None  # means removed :p
         ],
-        # fmt:on
     )
     cr.execute(
         """

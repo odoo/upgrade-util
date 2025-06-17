@@ -1078,7 +1078,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
 
 
 def is_field_anonymized(cr, model, field):
-    from .modules import module_installed
+    from .modules import module_installed  # noqa: PLC0415
 
     _validate_model(model)
     if not module_installed(cr, "anonymization"):
