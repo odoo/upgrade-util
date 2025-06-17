@@ -155,7 +155,7 @@ def _ir_values_value(cr, prefix=None):
     cache = getattr(_ir_values_value, "cache", None)
 
     if cache is None:
-        from .pg import column_type
+        from .pg import column_type  # noqa: PLC0415
 
         if column_type(cr, "ir_values", "value") == "bytea":
             cr.execute("SELECT character_set_name FROM information_schema.character_sets")

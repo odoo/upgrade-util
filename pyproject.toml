@@ -116,6 +116,8 @@ convention = "pep257"
 # and for upgrade scripts
 "src/*/*/{pre,post,end}-*.py" = ["D"]
 
+[tool.ruff.per-file-target-version]
+"tools/fetch-release-notes-video-id.py" = "py312"
 
 [tool.typos.files]
 extend-exclude = [
