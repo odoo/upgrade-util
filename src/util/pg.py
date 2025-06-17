@@ -43,7 +43,7 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import Sentinel, log_progress
+from .misc import Sentinel, log_progress, version_gte
 
 _logger = logging.getLogger(__name__)
 
@@ -472,6 +472,54 @@ def _column_info(cr, table, column):
     return cr.fetchone()
 
 
+_COLUMNS = {}
+if version_gte("10.0"):  # Since at least 9.0
+    _COLUMNS[("ir_model_fields", "depends")] = True
+    _COLUMNS[("ir_model_fields", "domain")] = True
+    _COLUMNS[("ir_model_fields", "relation_table")] = True
+
+    _COLUMNS[("ir_ui_view", "arch_db")] = True
+    _COLUMNS[("ir_ui_view", "active")] = True
+
+    _COLUMNS[("ir_filters", "sort")] = True
+    _COLUMNS[("ir_filters", "domain")] = True
+    _COLUMNS[("ir_filters", "model_id")] = True
+
+    _COLUMNS[("ir_model_rule", "domain_force")] = True
+
+    _COLUMNS[("ir_model_data", "res_id")] = True
+    _COLUMNS[("ir_model_data", "model")] = True
+    _COLUMNS[("ir_model_data", "name")] = True
+
+    _COLUMNS[("ir_attachment", "res_field")] = True
+    _COLUMNS[("ir_attachment", "res_model")] = True
+    _COLUMNS[("ir_attachment", "res_id")] = True
+
+    _COLUMNS[("ir_ui_menu", "action")] = True
+
+    _COLUMNS[("ir_act_window", "res_model")] = True
+    _COLUMNS[("ir_act_window", "res_id")] = True
+    _COLUMNS[("ir_act_window", "domain")] = True
+
+    _COLUMNS[("ir_value", "res_id")] = True
+
+if version_gte("14.0"):  # Since at least 13.0
+    _COLUMNS[("ir_module_module_dependency", "auto_install_required")] = True
+    _COLUMNS[("ir_act_window", "src_model")] = False
+
+if version_gte("saas~16.1"):  # Since 16.0
+    _COLUMNS[("ir_translation", "name")] = False
+
+if version_gte("saas~17.1"):  # Since 17.0
+    _COLUMNS[("ir_cron", "resource_ref")] = True
+    _COLUMNS[("ir_act_server", "resource_ref")] = True
+
+if version_gte("saas~18.1"):  # Since 18.0
+    _COLUMNS[("ir_model_fields", "company_dependent")] = True
+    _COLUMNS[("ir_filters", "embedded_parent_res_id")] = True
+    _COLUMNS[("ir_act_report_xml", "domain")] = True
+
+
 def column_exists(cr, table, column):
     """
     Return whether a column exists.
@@ -480,7 +528,7 @@ def column_exists(cr, table, column):
     :param str column: column to check
     :rtype: bool
     """
-    return _column_info(cr, table, column) is not None
+    return _COLUMNS[(table, column)] if (table, column) in _COLUMNS else (_column_info(cr, table, column) is not None)
 
 
 def column_type(cr, table, column):
