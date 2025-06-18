@@ -47,10 +47,22 @@ def deactivate_studio_views(cr):
     for view in studio_views:
         try:
             view_obj = env['ir.ui.view'].browse(view['id'])
+            
+            inherited_views = env['ir.ui.view'].search([
+                ('inherit_id', '=', view_obj.id),
+                ('active', '=', True)
+            ])
+            
+            for inherited in inherited_views:
+                inherited.write({'active': False})
+                _logger.info(f"Inherited View Deactivated: {inherited.name} (ID: {inherited.id})")
+            
             view_obj.write({'active': False})
-            _logger.info(f"View Deactivate: {view['name']} (ID: {view['id']})")
+            _logger.info(f"View Deactivated: {view['name']} (ID: {view['id']})")            
+            env.cr.commit()
+            
         except Exception as e:
-            _logger.warning(f"Error deactivating view{view['name']} (ID: {view['id']}): {e}")
+            _logger.warning(f"Error deactivating view {view['name']} (ID: {view['id']}): {e}")
     
 
 def deactivate_automated_actions(cr):
