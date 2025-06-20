@@ -1096,13 +1096,10 @@ def __update_record_from_xml(
 
     cr.execute(
         """
-        UPDATE ir_model_data d
-           SET noupdate = false
-          FROM ir_model_data o
-         WHERE o.id = d.id
-           AND d.module = %s
-           AND d.name = %s
-     RETURNING d.model, d.res_id, o.noupdate
+        SELECT model, res_id, noupdate
+          FROM ir_model_data
+         WHERE module = %s
+           AND name = %s
     """,
         [module, name],
     )
@@ -1110,6 +1107,7 @@ def __update_record_from_xml(
         model, res_id, noupdate = cr.fetchone()
         if model == "ir.model":
             return
+        force_noupdate(cr, xmlid, noupdate=False)
     elif not force_create:
         _logger.warning("Record %r not found in database. Skip update.", xmlid)
         return
