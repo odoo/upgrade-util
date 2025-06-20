@@ -1107,7 +1107,8 @@ def __update_record_from_xml(
         return
     else:
         # The xmlid doesn't already exists, nothing to reset
-        reset_write_metadata = noupdate = reset_translations = False
+        reset_write_metadata = reset_translations = False
+        noupdate = True
         fields = None
 
     write_data = None
