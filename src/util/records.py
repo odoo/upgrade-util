@@ -901,11 +901,19 @@ def force_noupdate(cr, xmlid, noupdate=True, warn=False):
              WHERE module = %s
                AND name = %s
                AND noupdate != %s
+         RETURNING model
     """,
         [noupdate, module, name, noupdate],
     )
-    if noupdate is False and cr.rowcount and warn:
-        _logger.warning("Customizations on `%s` might be lost!", xmlid)
+    if cr.rowcount:
+        if noupdate is False and warn:
+            _logger.warning("Customizations on `%s` might be lost!", xmlid)
+
+        [model] = cr.fetchone()
+        for parent_model, _ in inherits_parents(cr, model):
+            parent = parent_model.replace(".", "_")
+            force_noupdate(cr, "{}_{}".format(xmlid, parent), noupdate=noupdate, warn=warn)
+
     return cr.rowcount
 
 
