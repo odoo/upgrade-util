@@ -121,3 +121,4 @@ def inherit_parents(cr, model, skip=(), interval="[)"):
         skip.add(parent)
         for grand_parent in inherit_parents(cr, parent, skip=skip, interval=interval):
             yield grand_parent
+            skip.add(grand_parent)
