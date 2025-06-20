@@ -33,7 +33,7 @@ from .helpers import (
 )
 from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
-from .inherit import direct_inherit_parents, for_each_inherit
+from .inherit import for_each_inherit, inherits_parents
 from .misc import Sentinel, chunks, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
@@ -841,16 +841,15 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
             """
             cr.execute(query, {"old": r"\y{}\y".format(re.escape(old)), "new": new})
 
-        for parent_model, inh in direct_inherit_parents(cr, model):
-            if inh.via:
-                parent = parent_model.replace(".", "_")
-                rename_xmlid(
-                    cr,
-                    "{}_{}".format(old, parent),
-                    "{}_{}".format(new, parent),
-                    noupdate=noupdate,
-                    on_collision=on_collision,
-                )
+        for parent_model, _ in inherits_parents(cr, model):
+            parent = parent_model.replace(".", "_")
+            rename_xmlid(
+                cr,
+                "{}_{}".format(old, parent),
+                "{}_{}".format(new, parent),
+                noupdate=noupdate,
+                on_collision=on_collision,
+            )
         return new_id
     return None
 
