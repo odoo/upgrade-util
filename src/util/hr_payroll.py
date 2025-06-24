@@ -1,12 +1,13 @@
 import logging
 
 from .fields import remove_field
+from .misc import version_between
 from .records import delete_unused, ref
 
 _logger = logging.getLogger(__name__)
 
 
-def remove_salary_rule(cr, xmlid):
+def _remove_salary_rule(cr, xmlid):
     rid = ref(cr, xmlid)
     cr.execute(
         r"""
@@ -40,3 +41,11 @@ def remove_salary_rule(cr, xmlid):
         )
         remove_field(cr, "hr.payroll.report", fname)
     delete_unused(cr, xmlid)
+
+
+if not version_between("16.0", "saas~18.4"):
+
+    def remove_salary_rule(cr, xmlid):
+        delete_unused(cr, xmlid)
+else:
+    remove_salary_rule = _remove_salary_rule
