@@ -38,8 +38,8 @@ def uninstall_modules(cr):
         'repair_financial_risk_features',
         'repair_financial_risk',
         'product_analytic',
+        'sh_product_multi_barcode_mod',
         'sh_product_multi_barcode'
-        'sh_product_multi_barcode_mod'
     ]
 
     for module_name in modules_to_uninstall:
