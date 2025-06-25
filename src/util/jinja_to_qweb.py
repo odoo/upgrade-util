@@ -3,6 +3,7 @@ import functools
 import html
 import logging
 import re
+from multiprocessing import Process, Queue
 
 import babel
 import lxml
@@ -544,32 +545,42 @@ def verify_upgraded_jinja_fields(cr):
 
 
 def is_converted_template_valid(env, template_before, template_after, model_name, record_id, engine="inline_template"):
-    render_before = None
-    with contextlib.suppress(Exception):
-        render_before = _render_template_jinja(env, template_before, model_name, record_id)
+    def callback(q):
+        render_before = None
+        with contextlib.suppress(Exception):
+            render_before = _render_template_jinja(env, template_before, model_name, record_id)
 
-    render_after = None
-    if render_before is not None:
-        try:
-            with mute_logger("odoo.addons.mail.models.mail_render_mixin"):
-                render_after = env["mail.render.mixin"]._render_template(
-                    template_after, model_name, [record_id], engine=engine
-                )[record_id]
-        except Exception:
-            pass
+        render_after = None
+        if render_before is not None:
+            try:
+                with mute_logger("odoo.addons.mail.models.mail_render_mixin"):
+                    render_after = env["mail.render.mixin"]._render_template(
+                        template_after, model_name, [record_id], engine=engine
+                    )[record_id]
+            except Exception:
+                pass
 
-    # post process qweb render to remove comments from the rendered jinja in
-    # order to avoid false negative because qweb never render comments.
-    if render_before and render_after and engine == "qweb":
-        element_before = lxml.html.fragment_fromstring(render_before, create_parent="div")
-        for comment_element in element_before.xpath("//comment()"):
-            comment_element.getparent().remove(comment_element)
-        render_before = lxml.html.tostring(element_before, encoding="unicode")
-        render_after = lxml.html.tostring(
-            lxml.html.fragment_fromstring(render_after, create_parent="div"), encoding="unicode"
-        )
+        # post process qweb render to remove comments from the rendered jinja in
+        # order to avoid false negative because qweb never render comments.
+        if render_before and render_after and engine == "qweb":
+            element_before = lxml.html.fragment_fromstring(render_before, create_parent="div")
+            for comment_element in element_before.xpath("//comment()"):
+                comment_element.getparent().remove(comment_element)
+            render_before = lxml.html.tostring(element_before, encoding="unicode")
+            render_after = lxml.html.tostring(
+                lxml.html.fragment_fromstring(render_after, create_parent="div"), encoding="unicode"
+            )
 
-    return render_before is not None and render_before == render_after
+        q.put(render_before is not None and render_before == render_after)
+
+    # to avoid memory leaks in external C libraries (lxml/libxml2), process in a forked child
+    queue = Queue()
+    proc = Process(target=callback, args=[queue])
+    proc.start()
+    res = queue.get(timeout=60)
+    if proc.is_alive():
+        proc.kill()
+    return res
 
 
 # jinja render
