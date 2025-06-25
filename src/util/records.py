@@ -33,7 +33,7 @@ from .helpers import (
 )
 from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
-from .inherit import direct_inherit_parents, for_each_inherit
+from .inherit import for_each_inherit, inherits_parents
 from .misc import Sentinel, chunks, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
@@ -841,16 +841,15 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
             """
             cr.execute(query, {"old": r"\y{}\y".format(re.escape(old)), "new": new})
 
-        for parent_model, inh in direct_inherit_parents(cr, model):
-            if inh.via:
-                parent = parent_model.replace(".", "_")
-                rename_xmlid(
-                    cr,
-                    "{}_{}".format(old, parent),
-                    "{}_{}".format(new, parent),
-                    noupdate=noupdate,
-                    on_collision=on_collision,
-                )
+        for parent_model, _ in inherits_parents(cr, model):
+            parent = parent_model.replace(".", "_")
+            rename_xmlid(
+                cr,
+                "{}_{}".format(old, parent),
+                "{}_{}".format(new, parent),
+                noupdate=noupdate,
+                on_collision=on_collision,
+            )
         return new_id
     return None
 
@@ -902,11 +901,19 @@ def force_noupdate(cr, xmlid, noupdate=True, warn=False):
              WHERE module = %s
                AND name = %s
                AND noupdate != %s
+         RETURNING model
     """,
         [noupdate, module, name, noupdate],
     )
-    if noupdate is False and cr.rowcount and warn:
-        _logger.warning("Customizations on `%s` might be lost!", xmlid)
+    if cr.rowcount:
+        if noupdate is False and warn:
+            _logger.warning("Customizations on `%s` might be lost!", xmlid)
+
+        [model] = cr.fetchone()
+        for parent_model, _ in inherits_parents(cr, model):
+            parent = parent_model.replace(".", "_")
+            force_noupdate(cr, "{}_{}".format(xmlid, parent), noupdate=noupdate, warn=warn)
+
     return cr.rowcount
 
 
@@ -1089,13 +1096,10 @@ def __update_record_from_xml(
 
     cr.execute(
         """
-        UPDATE ir_model_data d
-           SET noupdate = false
-          FROM ir_model_data o
-         WHERE o.id = d.id
-           AND d.module = %s
-           AND d.name = %s
-     RETURNING d.model, d.res_id, o.noupdate
+        SELECT model, res_id, noupdate
+          FROM ir_model_data
+         WHERE module = %s
+           AND name = %s
     """,
         [module, name],
     )
@@ -1103,12 +1107,14 @@ def __update_record_from_xml(
         model, res_id, noupdate = cr.fetchone()
         if model == "ir.model":
             return
+        force_noupdate(cr, xmlid, noupdate=False)
     elif not force_create:
         _logger.warning("Record %r not found in database. Skip update.", xmlid)
         return
     else:
         # The xmlid doesn't already exists, nothing to reset
-        reset_write_metadata = noupdate = reset_translations = False
+        reset_write_metadata = reset_translations = False
+        noupdate = True
         fields = None
 
     write_data = None
