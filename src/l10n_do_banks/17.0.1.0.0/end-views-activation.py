@@ -12,11 +12,12 @@ def activate_sale_pos_backend_views(cr, xml_ids):
             if view:
                 try:
                     view.write({'active': True})
+                    _logger.info(f"Successfully activated view {xml_id}")
                 except Exception as e:
-                    _logger.warning(f"Error activating view {xml_id}: {e}")
+                    _logger.info(f"Error activating view {xml_id}: {e}")
                     delete_sale_pos_backend_views(cr, [xml_id])
         except Exception as e:
-            _logger.warning(f"Error finding view {xml_id}: {e}")
+            _logger.info(f"Error finding view {xml_id}: {e}")
 
 def delete_sale_pos_backend_views(cr, xml_ids):
     env = api.Environment(cr, SUPERUSER_ID, {})
@@ -26,7 +27,7 @@ def delete_sale_pos_backend_views(cr, xml_ids):
             if view:
                 view.unlink()
         except Exception as e:
-            _logger.warning(f"Error deleting view {xml_id}: {e}")
+            _logger.info(f"Error deleting view {xml_id}: {e}")
 
 
 def migrate(cr, version):
