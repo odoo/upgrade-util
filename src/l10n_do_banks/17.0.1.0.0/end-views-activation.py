@@ -1,4 +1,5 @@
 import logging
+from odoo import api, SUPERUSER_ID
 from odoo.upgrade import util
 
 _logger = logging.getLogger(__name__)
