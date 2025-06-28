@@ -16,7 +16,9 @@ def activate_sale_pos_backend_views(cr, xml_ids):
                     _logger.info(f"Successfully activated view {xml_id}")
                 except Exception as e:
                     _logger.info(f"Error activating view {xml_id}: {e}")
-                    delete_sale_pos_backend_views(cr, [xml_id])
+                    # Only delete view if it has no inherited views
+                    if not env['ir.ui.view'].search([('inherit_id', '=', view.id)]):
+                        delete_sale_pos_backend_views(cr, [xml_id])
         except Exception as e:
             _logger.info(f"Error finding view {xml_id}: {e}")
 
@@ -26,6 +28,12 @@ def delete_sale_pos_backend_views(cr, xml_ids):
         try:
             view = env.ref(xml_id)
             if view:
+                # First deactivate and delete any inherited views
+                inherited_views = env['ir.ui.view'].search([('inherit_id', '=', view.id)])
+                for inherited in inherited_views:
+                    inherited.write({'active': False})
+                    inherited.unlink()
+                # Then delete the main view
                 view.unlink()
         except Exception as e:
             _logger.info(f"Error deleting view {xml_id}: {e}")
