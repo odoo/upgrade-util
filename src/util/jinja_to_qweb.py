@@ -290,14 +290,15 @@ def upgrade_jinja_fields(
     model = model_of_table(cr, table_name)
 
     cr.commit()  # ease the processing for PG
-    cr.execute(
+    ncr = named_cursor(cr, 100)
+    ncr.execute(
         f"""
         SELECT id, {name_field}, {sql_fields}
           FROM {table_name}
          WHERE {sql_where_fields}
         """
     )
-    for data in cr.dictfetchall():
+    for data in ncr.iterdict():
         _logger.info("process %s(%s) %s", table_name, data["id"], data[name_field])
 
         # only for mailing.mailing
@@ -352,6 +353,7 @@ def upgrade_jinja_fields(
                 """,
                 field_values + [data["id"]],
             )
+    ncr.close()
 
     if not table_exists(cr, "ir_translation"):
         return
