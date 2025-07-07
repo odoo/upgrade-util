@@ -2617,8 +2617,8 @@ class TestAssertUpdated(UnitTestCase):
 
         # when ids has multiple records, all records should be updated
         with self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
-            p1.company_name = "Survey Corps"
-            p2.company_name = "Survey Corps"
+            p1.city = "Survey Corps"
+            p2.city = "Survey Corps"
             util.flush(p1)
             util.flush(p2)
         with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
@@ -2654,12 +2654,12 @@ class TestAssertUpdated(UnitTestCase):
 
         # when ids has a record, only that record should not be updated
         with self.assertNotUpdated("res_partner", ids=[p2.id]):
-            p1.company_name = "Survey Corps"
+            p1.city = "Survey Corps"
             util.flush(p1)
 
         # when ids has multiple records, none of them should be updated
         with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[p1.id, p2.id]):
-            p2.company_name = "Survey Corps"
+            p2.city = "Survey Corps"
             util.flush(p2)
 
     def test_assert_updated_combo(self):
@@ -2669,7 +2669,7 @@ class TestAssertUpdated(UnitTestCase):
         util.flush(p2)
 
         with self.assertUpdated("res_partner", ids=[p1.id]), self.assertNotUpdated("res_partner", ids=[p2.id]):
-            p1.company_name = "Marley Warriors"
+            p1.city = "Marley Warriors"
             util.flush(p1)
 
         with self.assertRaises(AssertionError), self.assertUpdated("res_partner"), self.assertNotUpdated(
