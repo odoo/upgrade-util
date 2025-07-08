@@ -897,26 +897,26 @@ def _force_upgrade_of_fresh_module(cr, module, init, version):
     # Low level implementation
     # Force module state to be in `to upgrade`.
     # Needed for migration script execution. See http://git.io/vnF7f
-    if version_gte("saas~18.2") and init:
-        env_ = env(cr)
-        env_.registry._force_upgrade_scripts.add(module)
-        return
-
+    state = "to install" if init and version_gte("saas~18.2") else "to upgrade"
     cr.execute(
         """
             UPDATE ir_module_module
-               SET state='to upgrade',
+               SET state=%s,
                    latest_version=%s
              WHERE name=%s
                AND state='to install'
          RETURNING id
     """,
-        [version, module],
+        [state, version, module],
     )
     if init and cr.rowcount:
-        # Force module in `init` mode beside its state is forced to `to upgrade`
-        # See http://git.io/vnF7O
-        odoo.tools.config["init"][module] = "oh yeah!"
+        if version_gte("saas~18.2"):
+            env_ = env(cr)
+            env_.registry._force_upgrade_scripts.add(module)
+        else:
+            # Force module in `init` mode beside its state is forced to `to upgrade`
+            # See http://git.io/vnF7O
+            odoo.tools.config["init"][module] = "oh yeah!"
 
 
 # for compatibility
