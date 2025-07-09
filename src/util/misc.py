@@ -4,9 +4,12 @@ import ast
 import collections
 import datetime
 import functools
+import hashlib
+import inspect
 import logging
 import os
 import re
+import sys
 import textwrap
 import uuid
 from contextlib import contextmanager
@@ -21,7 +24,7 @@ except ImportError:
     from openerp.modules.module import get_module_path
     from openerp.tools.parse_version import parse_version
 
-from .exceptions import SleepyDeveloperError
+from .exceptions import MigrationError, SleepyDeveloperError
 
 # python3 shim
 try:
@@ -389,6 +392,31 @@ def log_chunks(it, logger, chunk_size, qualifier="items"):
     elif i % chunk_size != 0:
         # log the last partial chunk
         log(i // chunk_size + 1, i % chunk_size)
+
+
+def make_pickleable_callback(callback):
+    """
+    Make a callable importable.
+
+    `ProcessPoolExecutor.map` arguments needs to be pickleable
+    Functions can only be pickled if they are importable.
+    However, the callback's file is not importable due to the dash in the filename.
+    We should then put the executed function in its own importable file.
+
+    :meta private: exclude from online docs
+    """
+    callback_filepath = inspect.getfile(callback)
+    name = "_upgrade_" + hashlib.sha256(callback_filepath.encode()).hexdigest()
+    if name not in sys.modules:
+        sys.modules[name] = import_script(callback_filepath, name=name)
+    try:
+        return getattr(sys.modules[name], callback.__name__)
+    except AttributeError:
+        error_msg = (
+            "The converter callback `{}` is a nested function in `{}`.\n"
+            "Move it outside the `migrate()` function to make it top-level."
+        ).format(callback.__name__, callback.__module__)
+        raise MigrationError(error_msg)
 
 
 class SelfPrint(object):

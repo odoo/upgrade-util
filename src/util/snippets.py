@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
-import inspect
 import logging
 import re
-import sys
-import uuid
 from concurrent.futures import ProcessPoolExecutor
 
 from lxml import etree, html
@@ -12,9 +9,8 @@ from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
 from .const import NEARLYWARN
-from .exceptions import MigrationError
 from .helpers import table_of_model
-from .misc import import_script, log_progress
+from .misc import log_progress, make_pickleable_callback
 from .pg import column_exists, column_type, get_max_workers, table_exists
 
 _logger = logging.getLogger(__name__)
@@ -159,28 +155,6 @@ def html_converter(transform_callback, selector=None):
     :return: object HTMLConverter with callback
     """
     return HTMLConverter(make_pickleable_callback(transform_callback), selector)
-
-
-def make_pickleable_callback(callback):
-    """
-    Make a callable importable.
-
-    `ProcessPoolExecutor.map` arguments needs to be pickleable
-    Functions can only be pickled if they are importable.
-    However, the callback's file is not importable due to the dash in the filename.
-    We should then put the executed function in its own importable file.
-    """
-    callback_filepath = inspect.getfile(callback)
-    name = f"_upgrade_{uuid.uuid4().hex}"
-    mod = sys.modules[name] = import_script(callback_filepath, name=name)
-    try:
-        return getattr(mod, callback.__name__)
-    except AttributeError:
-        error_msg = (
-            f"The converter callback `{callback.__name__}` is a nested function in `{callback.__module__}`.\n"
-            "Move it outside the `migrate()` function to make it top-level."
-        )
-        raise MigrationError(error_msg) from None
 
 
 class BaseConverter:
