@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
+import multiprocessing
 import re
+import sys
 from concurrent.futures import ProcessPoolExecutor
 
 from lxml import etree, html
@@ -279,7 +281,8 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
 
-    with ProcessPoolExecutor(max_workers=get_max_workers()) as executor:
+    extrakwargs = {"mp_context": multiprocessing.get_context("fork")} if sys.version_info >= (3, 7) else {}
+    with ProcessPoolExecutor(max_workers=get_max_workers(), **extrakwargs) as executor:
         convert = Convertor(converters, converter_callback)
         for query in log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
             cr.execute(query)
