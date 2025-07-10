@@ -130,6 +130,8 @@ def has_enterprise():
     if os.getenv("ODOO_HAS_ENTERPRISE"):
         return True
     # XXX maybe we will need to change this for version > 9
+    if version_gte("saas~18.5"):
+        return bool(get_module_path("delivery_fedex", display_warning=False))
     return bool(get_module_path("delivery_fedex", downloaded=False, display_warning=False))
 
 
@@ -142,6 +144,8 @@ def has_design_themes():
     """
     if os.getenv("ODOO_HAS_DESIGN_THEMES"):
         return True
+    if version_gte("saas~18.5"):
+        return bool(get_module_path("theme_yes", display_warning=False))
     return bool(get_module_path("theme_yes", downloaded=False, display_warning=False))
 
 
