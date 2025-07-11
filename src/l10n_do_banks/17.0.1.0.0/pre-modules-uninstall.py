@@ -39,7 +39,15 @@ def uninstall_modules(cr):
         'repair_financial_risk',
         'product_analytic',
         'sh_product_multi_barcode_mod',
-        'sh_product_multi_barcode'
+        'sh_product_multi_barcode',
+        'eq_send_payslip_email',
+        'l10n_do_duplicate_fiscal_number',
+        'l10n_do_hr_payroll_holidays',
+        'odoo_cheque_bank_no_image',
+        'whatsapp_connector_facebook',
+        'whatsapp_connector_menu_analysis',
+        'whatsapp_connector_menu_analysis_sale',
+        'whatsapp_connector_sale'
     ]
 
     for module_name in modules_to_uninstall:
