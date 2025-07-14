@@ -47,7 +47,11 @@ def uninstall_modules(cr):
         'whatsapp_connector_facebook',
         'whatsapp_connector_menu_analysis',
         'whatsapp_connector_menu_analysis_sale',
-        'whatsapp_connector_sale'
+        'whatsapp_connector_sale',
+        'base_rest',
+        'base_rest_auth_api_key',
+        'base_rest_datamodel',
+        'l10n_do_ecf_consult'
     ]
 
     for module_name in modules_to_uninstall:
