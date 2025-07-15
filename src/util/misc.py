@@ -545,7 +545,12 @@ if version_gte("saas~18.4"):
         assert isinstance(expr, (str, bytes))
         assert isinstance(context, SelfPrintEvalContext)
 
-        c = _safe_eval_mod.test_expr(expr, _safe_eval_mod._SAFE_OPCODES, mode="eval", filename=None)
+        if version_gte("saas~18.5"):
+            c = _safe_eval_mod.compile_codeobj(expr, filename=None, mode="eval")
+            _safe_eval_mod.assert_valid_codeobj(_safe_eval_mod._SAFE_OPCODES, c, expr)
+        else:
+            c = _safe_eval_mod.test_expr(expr, _safe_eval_mod._SAFE_OPCODES, mode="eval", filename=None)
+
         context["__builtins__"] = dict(_safe_eval_mod._BUILTINS)
         try:
             return _safe_eval_mod.unsafe_eval(c, context, None)
