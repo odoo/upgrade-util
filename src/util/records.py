@@ -1219,8 +1219,12 @@ def __update_record_from_xml(
                     fields_with_values_from_xml |= {"arch_db", "name"}
             else:
                 fields_with_values_from_xml = fields
+            if version_gte("saas~18.5"):  # translate is varchar
+                sql_code = "SELECT name FROM ir_model_fields WHERE model = %s AND translate IS NOT NULL AND name IN %s"
+            else:  # translate is boolean
+                sql_code = "SELECT name FROM ir_model_fields WHERE model = %s AND translate = true AND name IN %s"
             cr.execute(
-                "SELECT name FROM ir_model_fields WHERE model = %s AND translate = true AND name IN %s",
+                sql_code,
                 [model, tuple(fields_with_values_from_xml)],
             )
             reset_translations = [fname for [fname] in cr.fetchall()]
