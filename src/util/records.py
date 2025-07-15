@@ -1485,7 +1485,7 @@ def replace_record_references_batch(
         ignores.append("ir_model_data")
 
     cr.execute("CREATE UNLOGGED TABLE _upgrade_rrr(old int PRIMARY KEY, new int)")
-    execute_values(cr, "INSERT INTO _upgrade_rrr (old, new) VALUES %s", id_mapping.items())
+    execute_values(getattr(cr, '_obj__', cr), "INSERT INTO _upgrade_rrr (old, new) VALUES %s", id_mapping.items())
 
     if model_src == model_dst:
         fk_def = []
