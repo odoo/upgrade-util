@@ -881,6 +881,60 @@ class TestPG(UnitTestCase):
         cr.execute(util.format_query(cr, "SELECT 1 FROM {}", TEST_TABLE_NAME))
         self.assertFalse(cr.rowcount)
 
+    def test_update_table_from_dict(self):
+        TEST_TABLE_NAME = "_upgrade_update_table_from_dict_test_table"
+        N_ROWS = 10
+
+        cr = self._get_cr()
+
+        cr.execute(
+            util.format_query(
+                cr,
+                """
+                DROP TABLE IF EXISTS {table};
+
+                CREATE TABLE {table} (
+                    id SERIAL PRIMARY KEY,
+                    col1 INTEGER,
+                    col2 INTEGER
+                );
+
+                INSERT INTO {table} (col1, col2) SELECT v, v FROM GENERATE_SERIES(1, %s) as v;
+                """
+                % N_ROWS,
+                table=TEST_TABLE_NAME,
+            )
+        )
+        mapping = {id: {"col1": id * 2} for id in range(1, N_ROWS + 1, 2)}
+        util.update_table_from_dict(cr, TEST_TABLE_NAME, mapping)
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col2 != id",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount)  # otherwise unintended column is affected
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col1 != id AND MOD(id, 2) = 0",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount)  # otherwise unintended rows are affected
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col1 != 2 * id AND MOD(id, 2) = 1",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount)  # otherwise not all expected updates are performed
+
     def test_create_column_with_fk(self):
         cr = self.env.cr
         self.assertFalse(util.column_exists(cr, "res_partner", "_test_lang_id"))
