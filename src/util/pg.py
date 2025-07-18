@@ -2,6 +2,7 @@
 """Utility functions for interacting with PostgreSQL."""
 
 import collections
+import json
 import logging
 import os
 import re
@@ -43,7 +44,7 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import Sentinel, log_progress, version_gte
+from .misc import Sentinel, chunks, log_progress, version_gte
 
 _logger = logging.getLogger(__name__)
 
@@ -1620,4 +1621,86 @@ def create_id_sequence(cr, table, set_as_default=True):
                 sequence=sequence_sql,
                 table=table_sql,
             )
+        )
+
+
+def update_table_from_dict(cr, table, mapping, key_col="id", bucket_size=DEFAULT_BUCKET_SIZE):
+    """
+    Update table's rows based on mapping.
+
+    Efficiently updates rows in a table by mapping an identifier column (`key_col`) value to the new values for the provided set of columns.
+
+    .. example::
+       .. code-block:: python
+
+          util.update_table_from_dict(
+              cr,
+              "account_move",
+              {
+                  1: {"closing_return_id": 2, "always_tax_eligible": True},
+                  2: {"closing_return_id": 3, "always_tax_eligible": False},
+              },
+          )
+
+    :param str table: the table to update
+    :param dict[any, dict[str, any]] mapping: mapping of `key_col` identifiers to maps of column names to their new value
+
+                                              .. example::
+                                                 ..code-block:: python
+
+                                                    mapping = {
+                                                        1: {"col1": 123, "col2": "foo"},
+                                                        2: {"col1": 456, "col2": "bar"},
+                                                    }
+
+                                              .. warning::
+                                                 All maps should have the exact same set of keys (column names). The following
+                                                 example would behave unpredictably:
+                                                 ..code-block:: python
+
+                                                    # WRONG
+                                                    mapping = {
+                                                        1: {"col1": 123, "col2": "foo"},
+                                                        2: {"col1": 456},
+                                                    }
+
+                                                 Either resulting in `col2` updates being ignored or setting it to NULL for row 2.
+
+    :param str key_col: The column to match the key against (`id` by default)
+    :param int bucket_size: maximum number of rows to update per single query
+    """
+    if not mapping:
+        return
+
+    _validate_table(table)
+
+    column_names = list(next(iter(mapping.values())).keys())
+    query = cr.mogrify(
+        format_query(
+            cr,
+            """
+            UPDATE {table} t
+               SET ({columns_list}) = ROW({values_list})
+              FROM JSONB_EACH(%%s) m
+             WHERE t.{key_col}::varchar = m.key
+            """,
+            table=table,
+            columns_list=ColumnList.from_unquoted(cr, column_names),
+            values_list=sql.SQL(", ").join(
+                sql.SQL("(m.value->>%s)::{}").format(sql.SQL(column_type(cr, table, col))) for col in column_names
+            ),
+            key_col=key_col,
+        ),
+        column_names,
+    )
+
+    if len(mapping) <= 1.1 * bucket_size:
+        cr.execute(query, [json.dumps(mapping)])
+    else:
+        parallel_execute(
+            cr,
+            [
+                cr.mogrify(query, [json.dumps(mapping_chunk)]).decode()
+                for mapping_chunk in chunks(mapping.items(), bucket_size, fmt=dict)
+            ],
         )
