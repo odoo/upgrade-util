@@ -5,7 +5,7 @@ from odoo.upgrade import util
 _logger = logging.getLogger(__name__)
 
 
-def activate_sale_pos_backend_views(cr, xml_ids):
+def activate_database_views(cr, xml_ids):
     env = api.Environment(cr, SUPERUSER_ID, {})
     for xml_id in xml_ids:
         try:
@@ -18,11 +18,11 @@ def activate_sale_pos_backend_views(cr, xml_ids):
                     _logger.info(f"Error activating view {xml_id}: {e}")
                     # Only delete view if it has no inherited views
                     if not env['ir.ui.view'].search([('inherit_id', '=', view.id)]):
-                        delete_sale_pos_backend_views(cr, [xml_id])
+                        delete_database_views(cr, [xml_id])
         except Exception as e:
             _logger.info(f"Error finding view {xml_id}: {e}")
 
-def delete_sale_pos_backend_views(cr, xml_ids):
+def delete_database_views(cr, xml_ids):
     env = api.Environment(cr, SUPERUSER_ID, {})
     for xml_id in xml_ids:
         try:
@@ -102,6 +102,7 @@ def migrate(cr, version):
         'tss_report.tss_report_form_wizard',
         'tss_report.view_hr_payslip_form',
         'website_stock_availability.res_config_settings_view_form_inherit',
+        'bi_warranty_registration.warranty_case_claims_form_view1',
     ]
 
-    activate_sale_pos_backend_views(cr, activate_views_list)
+    activate_database_views(cr, activate_views_list)

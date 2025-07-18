@@ -51,7 +51,9 @@ def uninstall_modules(cr):
         'base_rest',
         'base_rest_auth_api_key',
         'base_rest_datamodel',
-        'l10n_do_ecf_consult'
+        'l10n_do_ecf_consult',
+        'account_reconcile_exchange_difference',
+        'account_followup_features',
     ]
 
     for module_name in modules_to_uninstall:
