@@ -38,6 +38,20 @@ def delete_database_views(cr, xml_ids):
         except Exception as e:
             _logger.info(f"Error deleting view {xml_id}: {e}")
 
+def remove_inherited_views(cr, refs):
+    env = api.Environment(cr, SUPERUSER_ID, {})
+    for ref in refs:
+        try:
+            view = env.ref(ref)
+            if view:
+                # Find and delete any inherited views
+                inherited_views = env['ir.ui.view'].search([('inherit_id', '=', view.id)])
+                for inherited in inherited_views:
+                    inherited.write({'active': False})
+                    inherited.unlink()
+                _logger.info(f"Successfully removed inherited views for {ref}")
+        except Exception as e:
+            _logger.info(f"Error removing inherited views for {ref}: {e}")
 
 def migrate(cr, version):
     activate_views_list = [
@@ -102,7 +116,11 @@ def migrate(cr, version):
         'tss_report.tss_report_form_wizard',
         'tss_report.view_hr_payslip_form',
         'website_stock_availability.res_config_settings_view_form_inherit',
+    ]
+
+    remove_inherit_views_list = [
         'bi_warranty_registration.warranty_case_claims_form_view1',
     ]
 
     activate_database_views(cr, activate_views_list)
+    remove_inherited_views(cr, remove_inherit_views_list)
