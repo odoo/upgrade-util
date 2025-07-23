@@ -159,8 +159,9 @@ def migrate(cr, version):
     delete_views_list = [
         'warranty_registration_extra_features.warranty_case_claims_form_view1_inherit',
         'studio_customization.odoo_studio_warranty_5e101e7c-e388-4589-b9b8-628b03ca43f1'
+        'studio_customization.odoo_studio_warranty_64540003-0f78-4e15-8bba-6d3475418fed'
     ]
-    
+
     activate_database_views(cr, activate_views_list)
     delete_database_views(cr, delete_views_list)
     remove_inherited_views(cr, remove_inherit_views_list)
