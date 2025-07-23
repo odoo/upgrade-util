@@ -20,7 +20,7 @@ def migrate(cr, version):
     """
     )
     execute_values(
-        cr._obj,
+        getattr(cr, '_obj__', None) or cr._obj,
         "INSERT INTO no_respawn(model, field) VALUES %s",
         [
             (model, field)
