@@ -15,12 +15,19 @@ def activate_database_views(cr, xml_ids):
                     view.write({'active': True})
                     _logger.info(f"Successfully activated view {xml_id}")
                 except Exception as e:
-                    _logger.info(f"Error activating view {xml_id}: {e}")
-                    # Only delete view if it has no inherited views
-                    if not env['ir.ui.view'].search([('inherit_id', '=', view.id)]):
+                    _logger.warning(f"Error activating view {xml_id}: {e}")
+                    # Try to delete the view if activation fails
+                    # First check if there are any inherited views
+                    inherited_views = env['ir.ui.view'].search([('inherit_id', '=', view.id)])
+                    if inherited_views:
+                        _logger.info(f"View {xml_id} has {len(inherited_views)} inherited views, attempting to delete them first")
+                        # Use the improved delete function that handles inherited views properly
+                        delete_database_views(cr, [xml_id])
+                    else:
+                        _logger.info(f"View {xml_id} has no inherited views, attempting to delete it")
                         delete_database_views(cr, [xml_id])
         except Exception as e:
-            _logger.info(f"Error finding view {xml_id}: {e}")
+            _logger.warning(f"Error finding view {xml_id}: {e}")
 
 def delete_database_views(cr, xml_ids):
     env = api.Environment(cr, SUPERUSER_ID, {})
@@ -28,15 +35,32 @@ def delete_database_views(cr, xml_ids):
         try:
             view = env.ref(xml_id)
             if view:
-                # First deactivate and delete any inherited views
-                inherited_views = env['ir.ui.view'].search([('inherit_id', '=', view.id)])
-                for inherited in inherited_views:
-                    inherited.write({'active': False})
-                    inherited.unlink()
+                # First, recursively find and delete all inherited views
+                def delete_inherited_views_recursive(view_id):
+                    inherited_views = env['ir.ui.view'].search([('inherit_id', '=', view_id)])
+                    for inherited in inherited_views:
+                        # Recursively delete any views that inherit from this inherited view
+                        delete_inherited_views_recursive(inherited.id)
+                        # Deactivate and delete the inherited view
+                        try:
+                            inherited.write({'active': False})
+                            inherited.unlink()
+                            _logger.info(f"Successfully deleted inherited view {inherited.xml_id}")
+                        except Exception as e:
+                            _logger.warning(f"Error deleting inherited view {inherited.xml_id}: {e}")
+                
+                # Delete all inherited views first
+                delete_inherited_views_recursive(view.id)
+                
                 # Then delete the main view
-                view.unlink()
+                try:
+                    view.write({'active': False})
+                    view.unlink()
+                    _logger.info(f"Successfully deleted view {xml_id}")
+                except Exception as e:
+                    _logger.warning(f"Error deleting main view {xml_id}: {e}")
         except Exception as e:
-            _logger.info(f"Error deleting view {xml_id}: {e}")
+            _logger.warning(f"Error finding view {xml_id}: {e}")
 
 def remove_inherited_views(cr, refs):
     env = api.Environment(cr, SUPERUSER_ID, {})
@@ -44,14 +68,25 @@ def remove_inherited_views(cr, refs):
         try:
             view = env.ref(ref)
             if view:
-                # Find and delete any inherited views
-                inherited_views = env['ir.ui.view'].search([('inherit_id', '=', view.id)])
-                for inherited in inherited_views:
-                    inherited.write({'active': False})
-                    inherited.unlink()
+                # Recursively find and delete all inherited views
+                def delete_inherited_views_recursive(view_id):
+                    inherited_views = env['ir.ui.view'].search([('inherit_id', '=', view_id)])
+                    for inherited in inherited_views:
+                        # Recursively delete any views that inherit from this inherited view
+                        delete_inherited_views_recursive(inherited.id)
+                        # Deactivate and delete the inherited view
+                        try:
+                            inherited.write({'active': False})
+                            inherited.unlink()
+                            _logger.info(f"Successfully deleted inherited view {inherited.xml_id}")
+                        except Exception as e:
+                            _logger.warning(f"Error deleting inherited view {inherited.xml_id}: {e}")
+                
+                # Delete all inherited views
+                delete_inherited_views_recursive(view.id)
                 _logger.info(f"Successfully removed inherited views for {ref}")
         except Exception as e:
-            _logger.info(f"Error removing inherited views for {ref}: {e}")
+            _logger.warning(f"Error removing inherited views for {ref}: {e}")
 
 def migrate(cr, version):
     activate_views_list = [
