@@ -28,6 +28,7 @@ from .pg import (
     get_value_or_en_translation,
     parallel_execute,
     table_exists,
+    update_m2m_tables,
     view_exists,
 )
 
@@ -268,7 +269,7 @@ def _replace_model_in_computed_custom_fields(cr, source, target):
         )
 
 
-def rename_model(cr, old, new, rename_table=True):
+def rename_model(cr, old, new, rename_table=True, ignored_m2ms=()):
     """
     Rename a model.
 
@@ -285,6 +286,7 @@ def rename_model(cr, old, new, rename_table=True):
         new_table = table_of_model(cr, new)
         if new_table != old_table:
             pg_rename_table(cr, old_table, new_table)
+            update_m2m_tables(cr, old_table, new_table, ignored_m2ms)
 
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]
