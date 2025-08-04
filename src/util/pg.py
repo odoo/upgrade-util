@@ -216,7 +216,7 @@ def format_query(cr, query, *args, **kwargs):
 
     args = tuple(wrap(a) for a in args)
     kwargs = {k: wrap(v) for k, v in kwargs.items()}
-    return SQLStr(sql.SQL(query).format(*args, **kwargs).as_string(cr._cnx))
+    return SQLStr(sql.SQL(query).format(*args, **kwargs).as_string(cursor_get_connection(cr)))
 
 
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
@@ -604,7 +604,7 @@ def create_column(cr, table, column, definition, **kwargs):
         fk = (
             sql.SQL("REFERENCES {}(id) ON DELETE {}")
             .format(sql.Identifier(fk_table), sql.SQL(on_delete_action))
-            .as_string(cr._cnx)
+            .as_string(cursor_get_connection(cr))
         )
     elif on_delete_action is not no_def:
         raise ValueError("`on_delete_action` argument can only be used if `fk_table` argument is set.")
@@ -892,7 +892,7 @@ def get_index_on(cr, table, *columns):
     """
     _validate_table(table)
 
-    if cr._cnx.server_version >= 90500:
+    if cursor_get_connection(cr).server_version >= 90500:
         position = "array_position(x.indkey, x.unnest_indkey)"
     else:
         # array_position does not exists prior postgresql 9.5
@@ -1027,10 +1027,10 @@ class ColumnList(UserList, sql.Composable):
         >>> list(columns)
         ['id', '"field_Yx"']
 
-        >>> columns.using(alias="t").as_string(cr._cnx)
+        >>> columns.using(alias="t").as_string(cursor_get_connection(cr))
         '"t"."id", "t"."field_Yx"'
 
-        >>> columns.using(leading_comma=True).as_string(cr._cnx)
+        >>> columns.using(leading_comma=True).as_string(cursor_get_connection(cr))
         ', "id", "field_Yx"'
 
         >>> util.format_query(cr, "SELECT {} t.name FROM table t", columns.using(alias="t", trailing_comma=True))
@@ -1076,7 +1076,7 @@ class ColumnList(UserList, sql.Composable):
 
         :param list(str) list_: list of unquoted column names
         """
-        quoted = [quote_ident(c, cr._cnx) for c in list_]
+        quoted = [quote_ident(c, cursor_get_connection(cr)) for c in list_]
         return cls(list_, quoted)
 
     def using(self, leading_comma=KEEP_CURRENT, trailing_comma=KEEP_CURRENT, alias=KEEP_CURRENT):
@@ -1532,7 +1532,8 @@ def get_m2m_tables(cr, table):
 
 class named_cursor(object):
     def __init__(self, cr, itersize=None):
-        self._ncr = cr._cnx.cursor("upg_nc_" + uuid.uuid4().hex, withhold=True)
+        pgconn = cursor_get_connection(cr)
+        self._ncr = pgconn.cursor("upg_nc_" + uuid.uuid4().hex, withhold=True)
         if itersize:
             self._ncr.itersize = itersize
 
@@ -1621,3 +1622,9 @@ def create_id_sequence(cr, table, set_as_default=True):
                 table=table_sql,
             )
         )
+
+
+def cursor_get_connection(cursor):
+    if hasattr(cursor, '_cnx__'):
+        return cursor._cnx__
+    return cursor._cnx
