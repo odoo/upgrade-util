@@ -189,7 +189,8 @@ def expand_braces(s):
 
 
 def split_osenv(name, default=""):
-    return re.split(r"\W+", os.getenv(name, default).strip())
+    value = os.getenv(name, default).strip()
+    return re.split(r"\W+", value) if value else []
 
 
 try:
