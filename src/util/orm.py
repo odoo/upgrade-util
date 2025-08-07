@@ -281,8 +281,12 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     assert strategy in {"flush", "commit", "auto"}
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
+    table = table_of_model(cr, model)
     if ids is None:
-        cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
+        extra_query = ""
+        if "company_id" in Model._fields:
+            extra_query = " JOIN res_company c ON {}.company_id = c.id WHERE c.active = TRUE".format(table)
+        cr.execute("SELECT {}.id FROM {}{}".format(table, table, extra_query))
         ids = tuple(map(itemgetter(0), cr.fetchall()))
 
     if strategy == "auto":
