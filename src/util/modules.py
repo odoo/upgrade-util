@@ -478,8 +478,8 @@ def merge_module(cr, old, into, update_dependers=True):
 
     _up("constraint", mod_ids[old], mod_ids[into])
     _up("relation", mod_ids[old], mod_ids[into])
-    _update_view_key(cr, old, into)
     _up("data", old, into)
+    _update_view_key(cr, old, into)
     if table_exists(cr, "ir_translation"):
         cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [into, old])
 
