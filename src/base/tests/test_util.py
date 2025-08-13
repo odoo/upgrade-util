@@ -1203,6 +1203,12 @@ class TestInherit(UnitTestCase):
         self.assertTrue(all(inh.model == "product.product" for inh in inhs))
         self.assertEqual([inh.via for inh in inhs], [None, None, "product_tmpl_id"])
 
+    def test_inherits_parents(self):
+        self.assertEqual(
+            list(util.inherits_parents(self.env.cr, "crm.team")),
+            [("mail.alias", "alias_id")],
+        )
+
 
 class TestNamedCursors(UnitTestCase):
     @staticmethod
