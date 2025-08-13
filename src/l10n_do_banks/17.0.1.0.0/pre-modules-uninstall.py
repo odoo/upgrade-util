@@ -54,6 +54,8 @@ def uninstall_modules(cr):
         'l10n_do_ecf_consult',
         'account_reconcile_exchange_difference',
         'account_followup_features',
+        'l10n_do_account_followup',
+        'setu_advance_inventory_reports',
     ]
 
     for module_name in modules_to_uninstall:
