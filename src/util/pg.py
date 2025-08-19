@@ -44,7 +44,7 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import Sentinel, log_progress, version_gte
+from .misc import Sentinel, log_progress, on_CI, version_gte
 
 _logger = logging.getLogger(__name__)
 
@@ -289,7 +289,15 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
     cr.execute(format_query(cr, "SELECT min(id), max(id) FROM {}", table))
     min_id, max_id = cr.fetchone()
     if min_id is None:
-        return []  # empty table
+        # empty table
+        if on_CI():
+            # Even if there are any records, return one query to be executed to validate its correctness and avoid
+            # scripts that pass the CI but fail in production.
+            parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
+            return [query.format(parallel_filter=parallel_filter)]
+        else:
+            return []
+
     count = (max_id + 1 - min_id) // bucket_size
     if count > MAX_BUCKETS:
         _logger.getChild("explode_query_range").warning(
