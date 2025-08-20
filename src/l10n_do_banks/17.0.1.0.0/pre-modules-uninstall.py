@@ -56,6 +56,8 @@ def uninstall_modules(cr):
         'account_followup_features',
         'l10n_do_account_followup',
         'setu_advance_inventory_reports',
+        'account_state_report_kl',
+        'sale_mrp_link',
     ]
 
     for module_name in modules_to_uninstall:
