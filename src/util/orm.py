@@ -14,7 +14,6 @@ import re
 from contextlib import contextmanager
 from functools import wraps
 from itertools import chain
-from operator import itemgetter
 from textwrap import dedent
 
 try:
@@ -43,7 +42,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_between, version_gte
-from .pg import column_exists, get_columns
+from .pg import column_exists, format_query, get_columns, named_cursor
 
 # python3 shims
 try:
@@ -281,18 +280,31 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     assert strategy in {"flush", "commit", "auto"}
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
+
+    def get_ids():
+        if ids is not None:
+            for id_ in ids:
+                yield id_
+        else:
+            with named_cursor(cr, itersize=2**20) as ncr:
+                ncr.execute(format_query(cr, "SELECT id FROM {t} ORDER BY id", t=table_of_model(cr, model)))
+                for (id_,) in ncr:
+                    yield id_
+
     if ids is None:
-        cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
-        ids = tuple(map(itemgetter(0), cr.fetchall()))
+        cr.execute(format_query(cr, "SELECT COUNT(id) FROM {t}", t=table_of_model(cr, model)))
+        (count,) = cr.fetchone()
+    else:
+        count = len(ids)
 
     if strategy == "auto":
-        big_table = len(ids) > BIG_TABLE_THRESHOLD
+        big_table = count > BIG_TABLE_THRESHOLD
         any_tracked_field = any(getattr(Model._fields[f], _TRACKING_ATTR, False) for f in fields)
         strategy = "commit" if big_table and any_tracked_field else "flush"
 
-    size = (len(ids) + chunk_size - 1) / chunk_size
+    size = (count + chunk_size - 1) / chunk_size
     qual = "%s %d-bucket" % (model, chunk_size) if chunk_size != 1 else model
-    for subids in log_progress(chunks(ids, chunk_size, list), logger, qualifier=qual, size=size):
+    for subids in log_progress(chunks(get_ids(), chunk_size, list), logger, qualifier=qual, size=size):
         records = Model.browse(subids)
         for field_name in fields:
             field = records._fields[field_name]
