@@ -1119,6 +1119,10 @@ class TestField(UnitTestCase):
         initial_repartition[False] += initial_repartition.pop(None, 0)
         self.assertEqual(back_repartition, initial_repartition)
 
+    def test_convert_m2o_to_m2m(self):
+        # TODO
+        return
+
 
 class TestHelpers(UnitTestCase):
     def test_model_table_conversion(self):

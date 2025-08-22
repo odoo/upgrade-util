@@ -1585,3 +1585,59 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
         ) % {"src_model": src_model, "dst_model": dst_model, "actions": ", ".join(action_names)}
 
         add_to_migration_reports(message=msg, category="Server Actions")
+
+
+def convert_m2o_to_m2m(cr, origin_model, m2o_field, m2m_field):
+    """
+    TODO
+    """
+    _validate_model(origin_model)
+
+    if not table_exists(cr, m2m_field):
+        raise SleepyDeveloperError("m2m table should already exist warning")
+
+    origin_table = table_of_model(cr, origin_model)
+
+    cr.execute(
+        """
+        SELECT kcu.column_name,
+               ccu.table_name AS foreign_table_name,
+               ccu.column_name AS foreign_column_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON kcu.constraint_name = tc.constraint_name
+           AND kcu.table_schema = tc.table_schema
+          JOIN information_schema.constraint_column_usage ccu
+            ON ccu.constraint_name = tc.constraint_name
+         WHERE tc.constraint_type = 'FOREIGN KEY'
+           AND tc.table_name = %s
+        """,
+        [origin_table],
+    )
+    for column_name, foreign_table_name, foreign_column_name in cr.fetchall():
+        if foreign_table_name == origin_table:
+            origin_table_column = column_name
+            origin_table_fk_column = foreign_column_name
+        else:
+            other_table_column = column_name
+
+    cr.execute(
+        format_query(
+            cr,
+            """
+            INSERT INTO {m2m_field} ({origin_table_column}, {other_table_column})
+            SELECT {origin_table_fk_column}, {m2o_field}
+              FROM {origin_table}
+             WHERE {m2o_field} IS NOT NULL
+            """,
+            m2m_field=m2m_field,
+            m2o_field=m2o_field,
+            origin_table_fk_column=origin_table_fk_column,
+            origin_table_column=origin_table_column,
+            other_table_column=other_table_column,
+            origin_table=origin_table,
+        )
+    )
+
+    remove_column(cr, origin_table, m2o_field)
+    rename_field(cr, origin_model, m2o_field, m2m_field)
