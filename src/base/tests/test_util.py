@@ -1045,6 +1045,18 @@ class TestPG(UnitTestCase):
         self.assertTrue(s(ulc.using(alias="x")), ', "x"."a", "x"."A"')
         self.assertIs(ulc, ulc.using(leading_comma=True))
 
+    def test_create_m2m(self):
+        cr = self.env.cr
+
+        m2m_name = "random_table_name"
+        created_m2m = util.create_m2m(cr, m2m_name, "res_users", "res_groups")
+        self.assertEqual(m2m_name, created_m2m)
+        self.assertTrue(util.table_exists(cr, created_m2m))
+
+        auto_generated_m2m_table_name = util.create_m2m(cr, util.AUTO, "res_users", "res_groups")
+        self.assertEqual("res_groups_res_users_rel", auto_generated_m2m_table_name)
+        self.assertTrue(util.table_exists(cr, auto_generated_m2m_table_name))
+
 
 class TestORM(UnitTestCase):
     def test_create_cron(self):
