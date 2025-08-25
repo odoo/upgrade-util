@@ -58,6 +58,14 @@ def uninstall_modules(cr):
         'setu_advance_inventory_reports',
         'account_state_report_kl',
         'sale_mrp_link',
+	'dgii_ir3',
+	'hr_payroll_inputs_dynamic_tree',
+	’l10n_do_check_print',
+	'l10n_do_hr_expense_invoice',
+	’ncf_invoice_template',
+	'ncf_manager',
+	'ncf_purchase',
+	'sh_payslip_send_email',
     ]
 
     for module_name in modules_to_uninstall:
