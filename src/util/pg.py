@@ -1348,7 +1348,8 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         fixup_m2m(cr, m2m, fk1, fk2, col1, col2)
         return
 
-    cr.execute(
+    query = format_query(
+        cr,
         """
         CREATE TABLE {m2m}(
             {col1} integer NOT NULL REFERENCES {fk1}(id) ON DELETE CASCADE,
@@ -1356,8 +1357,14 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
             PRIMARY KEY ({col1}, {col2})
         );
         CREATE INDEX ON {m2m}({col2}, {col1});
-    """.format(**locals())
+        """,
+        m2m=m2m,
+        col1=col1,
+        col2=col2,
+        fk1=fk1,
+        fk2=fk2,
     )
+    cr.execute(query)
 
 
 def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
