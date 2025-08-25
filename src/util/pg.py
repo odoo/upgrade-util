@@ -1369,14 +1369,22 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
         return m2m
 
     cr.execute(
-        """
-        CREATE TABLE {m2m}(
-            {col1} integer NOT NULL REFERENCES {fk1}(id) ON DELETE CASCADE,
-            {col2} integer NOT NULL REFERENCES {fk2}(id) ON DELETE CASCADE,
-            PRIMARY KEY ({col1}, {col2})
-        );
-        CREATE INDEX ON {m2m}({col2}, {col1});
-    """.format(**locals())
+        format_query(
+            cr,
+            """
+            CREATE TABLE {m2m}(
+                {col1} integer NOT NULL REFERENCES {fk1}(id) ON DELETE CASCADE,
+                {col2} integer NOT NULL REFERENCES {fk2}(id) ON DELETE CASCADE,
+                PRIMARY KEY ({col1}, {col2})
+            );
+            CREATE INDEX ON {m2m}({col2}, {col1});
+            """,
+            m2m=m2m,
+            col1=col1,
+            col2=col2,
+            fk1=fk1,
+            fk2=fk2,
+        )
     )
 
     return m2m
