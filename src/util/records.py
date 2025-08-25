@@ -34,7 +34,7 @@ from .helpers import (
 from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import Sentinel, chunks, parse_version, version_gte
+from .misc import AUTOMATIC, chunks, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
@@ -1004,9 +1004,6 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
         )
 
     return new_res_id
-
-
-AUTOMATIC = Sentinel("AUTOMATIC")
 
 
 def update_record_from_xml(
