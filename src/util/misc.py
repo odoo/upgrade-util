@@ -60,6 +60,9 @@ class Sentinel:
         return self.name
 
 
+AUTO = AUTOMATIC = Sentinel("AUTO")
+
+
 def _cached(func):
     sentinel = Sentinel("sentinel")
 
