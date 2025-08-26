@@ -12,12 +12,12 @@ from psycopg2 import sql
 from psycopg2.extras import Json, execute_values
 
 try:
-    from odoo import modules, release
+    from odoo import modules
     from odoo.tools.convert import xml_import
     from odoo.tools.misc import file_open
     from odoo.tools.translate import xml_translate
 except ImportError:
-    from openerp import modules, release
+    from openerp import modules
     from openerp.tools.convert import xml_import
     from openerp.tools.misc import file_open
 
@@ -34,7 +34,7 @@ from .helpers import (
 from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import Sentinel, chunks, parse_version, version_gte
+from .misc import Sentinel, chunks, version_between, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
@@ -1133,6 +1133,7 @@ def __update_record_from_xml(
     template = False
     found = False
     extra_references = []
+    xml_filename = None
 
     def add_ref(ref):
         if "." not in ref:
@@ -1147,6 +1148,8 @@ def __update_record_from_xml(
             doc = lxml.etree.parse(fp)
             for node in doc.xpath(xpath):
                 found = True
+                if xml_filename is None:
+                    xml_filename = "{}/{}".format(from_module, f)
                 parent = node.getparent()
                 if node.tag == "record" and fields is not None:
                     for fn in node.xpath("./field[@name]"):
@@ -1200,8 +1203,9 @@ def __update_record_from_xml(
         )
 
     cr_or_env = env(cr) if version_gte("saas~16.2") else cr
-    importer = xml_import(cr_or_env, from_module, idref={}, mode="update")
-    kw = {"mode": "update"} if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
+    kw = {"xml_filename": xml_filename} if version_gte("8.saas~6") else {}
+    importer = xml_import(cr_or_env, from_module, idref={}, mode="update", **kw)
+    kw = {"mode": "update"} if version_between("8.0", "12.0") else {}
     importer.parse(new_root, **kw)
     if version_gte("13.0"):
         flush(env(cr)["base"])
