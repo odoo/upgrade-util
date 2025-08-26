@@ -44,7 +44,7 @@ from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_dom
 from .exceptions import SleepyDeveloperError
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path, table_of_model
 from .inherit import for_each_inherit
-from .misc import log_progress, safe_eval, version_gte
+from .misc import AUTO, log_progress, safe_eval, version_gte
 from .orm import env, invalidate
 from .pg import (
     SQLStr,
@@ -756,15 +756,12 @@ def convert_m2o_field_to_m2m(cr, model, field, new_name=None, m2m_table=None, co
     table1 = table_of_model(cr, model)
     table2, _, _ = target_of(cr, table1, field)
 
-    if m2m_table is None:
-        m2m_table = "{}_{}_rel".format(*sorted([table1, table2]))
-
     if col1 is None:
         col1 = "{}_id".format(table1)
     if col2 is None:
         col2 = "{}_id".format(table2)
 
-    create_m2m(cr, m2m_table, table1, table2, col1, col2)
+    m2m_table = create_m2m(cr, m2m_table or AUTO, table1, table2, col1, col2)
 
     dedup = SQLStr("ON CONFLICT DO NOTHING")
     if cr._cnx.server_version < 90500:
