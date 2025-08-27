@@ -49,7 +49,7 @@ from .helpers import _validate_model, table_of_model
 from .misc import on_CI, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
-from .pg import column_exists, table_exists, target_of
+from .pg import SQLStr, column_exists, format_query, table_exists, target_of
 from .records import ref, remove_group, remove_menus, remove_records, remove_view, replace_record_references_batch
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
@@ -519,14 +519,15 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
     :return str: the *new* state of the module
     """
     subquery = ""
-    subparams = ()
+    params = [module]
     if if_installed:
         subquery = """AND EXISTS(SELECT 1 FROM ir_module_module
                                   WHERE name IN %s
                                     AND state IN %s)"""
-        subparams = (tuple(if_installed), INSTALLED_MODULE_STATES)
+        params.extend((tuple(if_installed), INSTALLED_MODULE_STATES))
 
-    cr.execute(
+    query = format_query(
+        cr,
         """
         WITH RECURSIVE deps (mod_id, dep_name) AS (
               SELECT m.id, d.name from ir_module_module_dependency d
@@ -547,9 +548,10 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
          WHERE m.id = d.mod_id
            {0}
      RETURNING m.name, m.state
-    """.format(subquery),
-        (module,) + subparams,
+        """,
+        SQLStr(subquery),
     )
+    cr.execute(query, params)
 
     states = dict(cr.fetchall())
     toinstall = [m for m in states if states[m] == "to install"]
@@ -623,7 +625,10 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
             force_install_module(
                 cr,
                 mod,
-                reason="it is an auto install module and its dependency {!r} has been force installed".format(module),
+                reason=(
+                    "it is an auto install module that got all its auto install dependencies installed "
+                    "by the force install of {!r}"
+                ).format(module),
             )
 
     # TODO handle module exclusions
