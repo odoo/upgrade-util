@@ -726,8 +726,11 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
 
         patches.append(patch.object(BaseModel, "_add_magic_fields", _add_magic_fields))
 
-    if version_gte("saas~16.4"):
-        # 3.5.3 allow loading manual fields
+    # 3.5.3 allow loading manual fields
+    if version_gte("saas~18.4"):
+        patches.append(patch("odoo.fields.is_manual_field_name", lambda name: True))
+        patches.append(patch("odoo.orm.model_classes.is_manual_field_name", lambda name: True))
+    elif version_gte("saas~16.4"):
         patches.append(patch("odoo.addons.base.models.ir_model.IrModelFields._is_manual_name", lambda self, name: True))
 
     with all_patches():
