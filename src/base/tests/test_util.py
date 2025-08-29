@@ -2228,8 +2228,9 @@ class TestConvertFieldToHtml(UnitTestCase):
         cr = self.env.cr
 
         model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        translate = "standard" if util.version_gte("saas~18.5") else True
         f1 = self.env["ir.model.fields"].create(
-            {"name": "x_testx", "model": "res.partner", "ttype": "text", "model_id": model.id, "translate": True}
+            {"name": "x_testx", "model": "res.partner", "ttype": "text", "model_id": model.id, "translate": translate}
         )
         partner = self.env["res.partner"].create({"name": "test Pxtner", "x_testx": "test\npartner field"})
         default = self.env["ir.default"].create({"field_id": f1.id, "json_value": '"Test\\ntext"'})
