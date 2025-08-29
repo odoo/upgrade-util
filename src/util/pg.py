@@ -795,8 +795,8 @@ def remove_constraint(cr, table, name, cascade=False, warn=True):
     """
     _validate_table(table)
     log = _logger.warning if warn else _logger.info
-    cascade = "CASCADE" if cascade else ""
-    cr.execute('ALTER TABLE "{}" DROP CONSTRAINT IF EXISTS "{}" {}'.format(table, name, cascade))
+    cascade = SQLStr("CASCADE" if cascade else "")
+    cr.execute(format_query(cr, "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {} {}", table, name, cascade))
     # Exceptionally remove Odoo records, even if we are in PG land on this file. This is somehow
     # valid because ir.model.constraint are ORM low-level objects that relate directly to table
     # constraints.
@@ -804,6 +804,8 @@ def remove_constraint(cr, table, name, cascade=False, warn=True):
     if cr.rowcount:
         ids = tuple(c for (c,) in cr.fetchall())
         cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
+        # The constraint was found remove any index with same name
+        cr.execute(format_query(cr, "DROP INDEX IF EXISTS {}", name))
         return True
     if name.startswith(table + "_"):
         log("%r not found in ir_model_constraint, table=%r", name, table)
