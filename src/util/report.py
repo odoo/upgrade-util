@@ -319,7 +319,7 @@ def announce(
                 _logger.warning("Cannot unfold chat window", exc_info=True)
 
 
-def get_anchor_link_to_record(model, id, name, action_id=None):
+def get_anchor_link_to_record(model, id, name=None, action_id=None):
     _validate_model(model)
     if not name:
         name = "{}(id={})".format(model, id)
