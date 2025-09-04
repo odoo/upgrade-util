@@ -319,9 +319,11 @@ def announce(
                 _logger.warning("Cannot unfold chat window", exc_info=True)
 
 
-def get_anchor_link_to_record(model, id, name, action_id=None):
+def get_anchor_link_to_record(model, id, name=None, action_id=None):
     _validate_model(model)
     if not name:
+        if isinstance(id, tuple):
+            id = id[0]
         name = "{}(id={})".format(model, id)
     if version_gte("saas~17.2"):
         part1 = "action-{}".format(action_id) if action_id else model
