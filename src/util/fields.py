@@ -836,9 +836,17 @@ def _convert_field_to_company_dependent(
         where_condition = "{0} IS NOT NULL"
     else:
         where_condition = cr.mogrify("{0} != %s", [default_value]).decode()
-    where_condition += format_query(cr, " AND {} IS NOT NULL", company_field)
 
-    using = format_query(cr, "jsonb_build_object({}, {{0}})", company_field)
+    if company_field:
+        where_condition += format_query(cr, " AND {} IS NOT NULL", company_field)
+        using = format_query(cr, "jsonb_build_object({}, {{0}})", company_field)
+    else:
+        using = format_query(
+            cr,
+            "(SELECT jsonb_object_agg(c.id, x.{{0}}) FROM {} AS x, res_company AS c WHERE x.id = {}.id GROUP BY x.id)",
+            table,
+            table,
+        )
     alter_column_type(cr, table, field, "jsonb", using=using, where=where_condition)
 
     # delete all old default
