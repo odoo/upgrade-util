@@ -223,8 +223,17 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             return [FALSE_LEAF]
         return [TRUE_LEAF]
 
-    # clean domains
-    adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
+    related = None
+    if column_exists(cr, "ir_model_fields", "related"):
+        cr.execute("SELECT related FROM ir_model_fields WHERE model=%s AND name=%s", [model, fieldname])
+        if cr.rowcount:
+            related = cr.fetchone()[0]
+
+    if related:
+        update_field_usage(cr, model, fieldname, related, skip_inherit=skip_inherit)
+    else:
+        # clean domains
+        adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
 
     if table_exists(cr, "ir_server_object_lines"):
         cr.execute(
