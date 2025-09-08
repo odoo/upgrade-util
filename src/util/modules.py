@@ -43,7 +43,7 @@ except ImportError:
         from openerp.addons.web.controllers.main import module_topological_sort as topological_sort
 
 from .const import ENVIRON, NEARLYWARN
-from .exceptions import MigrationError, SleepyDeveloperError
+from .exceptions import MigrationError, SleepyDeveloperError, UnknownModuleError
 from .fields import remove_field
 from .helpers import _validate_model, table_of_model
 from .misc import on_CI, str2bool, version_gte
@@ -518,9 +518,31 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
                                            already installed
     :return str: the *new* state of the module
     """
+    try:
+        return _force_install_module(cr, module, if_installed, reason)
+    except UnknownModuleError:
+        if version_gte("saas~14.5"):
+            # We must delay until the modules actually exists. They are added by the auto discovery process.
+            ENVIRON["__modules_auto_discovery_force_installs"].add(module)
+            return None
+        else:
+            raise
+
+
+def _force_install_module(cr, module, if_installed=None, reason="it has been explicitly asked for"):
+    """Strict implementation of force_install: raise errors for missing modules."""
+    _assert_modules_exists(cr, module)
     subquery = ""
     params = [module]
     if if_installed:
+        try:
+            _assert_modules_exists(cr, *if_installed)
+        except UnknownModuleError as e:
+            # Warn about unknown modules (can help track typos in the call).
+            # we don't care about missing modules, as by definition, they are not installed.
+            _logger.log(
+                NEARLYWARN, "Unknown 'if_installed' modules: %s; consider them as uninstalled.", ", ".join(e.args)
+            )
         subquery = """AND EXISTS(SELECT 1 FROM ir_module_module
                                   WHERE name IN %s
                                     AND state IN %s)"""
@@ -642,7 +664,7 @@ def _assert_modules_exists(cr, *modules):
     existing_modules = {m[0] for m in cr.fetchall()}
     unexisting_modules = set(modules) - existing_modules
     if unexisting_modules:
-        raise AssertionError("Unexisting modules: {}".format(", ".join(unexisting_modules)))
+        raise UnknownModuleError(*sorted(unexisting_modules))
 
 
 def new_module_dep(cr, module, new_dep):
@@ -973,7 +995,7 @@ def _trigger_auto_discovery(cr):
             module_auto_install(cr, module, auto_install)
 
         if module in force_installs:
-            force_install_module(cr, module)
+            _force_install_module(cr, module)
 
     for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
         _force_upgrade_of_fresh_module(cr, module, init, version)
