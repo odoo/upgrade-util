@@ -46,7 +46,7 @@ from .const import ENVIRON, NEARLYWARN
 from .exceptions import MigrationError, SleepyDeveloperError, UnknownModuleError
 from .fields import remove_field
 from .helpers import _validate_model, table_of_model
-from .misc import on_CI, str2bool, version_gte
+from .misc import on_CI, parse_version, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import SQLStr, column_exists, format_query, table_exists, target_of
@@ -310,6 +310,9 @@ def remove_module(cr, module):
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
 
+    ENVIRON["__modules_auto_discovery_force_installs"].discard(module)
+    ENVIRON["__modules_auto_discovery_force_upgrades"].pop(module, None)
+
 
 def remove_theme(cr, theme, base_theme=None):
     """
@@ -326,6 +329,9 @@ def remove_theme(cr, theme, base_theme=None):
     if cr.rowcount:
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
+
+    ENVIRON["__modules_auto_discovery_force_installs"].discard(theme)
+    ENVIRON["__modules_auto_discovery_force_upgrades"].pop(theme, None)
 
 
 def _update_view_key(cr, old, new):
@@ -372,6 +378,14 @@ def rename_module(cr, old, new):
         [mod_new, mod_old, "base", "ir.module.module"],
     )
 
+    fi = ENVIRON["__modules_auto_discovery_force_installs"]
+    if old in fi:
+        fi.remove(old)
+        fi.add(new)
+    fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
+    if old in fu:
+        fu[new] = fu.pop(old)
+
 
 def merge_module(cr, old, into, update_dependers=True):
     """
@@ -391,6 +405,21 @@ def merge_module(cr, old, into, update_dependers=True):
     """
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
+
+    fi = ENVIRON["__modules_auto_discovery_force_installs"]
+    if old in fi:
+        fi.remove(old)
+        fi.add(into)
+    fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
+    if old in fu:
+        if into not in fu:
+            fu[into] = fu.pop(old)
+        else:
+            init = fu[old][0] or fu[into][0]  # keep init flag
+            # keep the min version, this controls which upgrade scripts run
+            version = fu[old][1] if parse_version(fu[old][1]) < parse_version(fu[into][1]) else fu[into][1]
+            del fu[old]
+            fu[into] = (init, version)
 
     if old not in mod_ids:
         # this can happen in case of temp modules added after a release if the database does not
