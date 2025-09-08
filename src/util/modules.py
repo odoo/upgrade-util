@@ -395,9 +395,11 @@ def merge_module(cr, old, into, update_dependers=True):
     if old not in mod_ids:
         # this can happen in case of temp modules added after a release if the database does not
         # know about this module, i.e: account_full_reconcile in 9.0
-        # `into` should be know. Let it crash if not
         _logger.log(NEARLYWARN, "Unknown module %s. Skip merge into %s.", old, into)
         return
+
+    if into not in mod_ids:
+        raise UnknownModuleError(into)
 
     def _up(table, old, new):
         cr.execute(
