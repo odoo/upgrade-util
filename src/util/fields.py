@@ -41,7 +41,7 @@ except ImportError:
 from . import json
 from .const import ENVIRON
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
-from .exceptions import SleepyDeveloperError
+from .exceptions import SleepyDeveloperError, UpgradeError
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path, table_of_model
 from .inherit import for_each_inherit
 from .misc import AUTO, log_progress, safe_eval, version_gte
@@ -1122,12 +1122,57 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
     table = table_of_model(cr, model)
 
     if column_exists(cr, table, field):
-        query = "UPDATE {table} SET {field}= %s::jsonb->>{field} WHERE {field} IN %s".format(table=table, field=field)
+        ctype = column_type(cr, table, field)
+        if ctype == "varchar":
+            query = "UPDATE {table} t SET {column} = %(json)s::jsonb->>t.{column} WHERE t.{column} = ANY(%(keys)s)"
+        elif ctype == "jsonb":
+            # company dependent selection field
+            query = """
+                WITH upd AS (
+                     SELECT t.id,
+                            jsonb_object_agg(v.key, COALESCE(%(json)s::jsonb->>v.value, v.value)) AS value
+                       FROM {table} t
+                       JOIN LATERAL jsonb_each_text(t.{column}) v
+                         ON true
+                      WHERE jsonb_path_query_array(t.{column}, '$.*') ?| %(keys)s
+                        AND {{parallel_filter}}
+                      GROUP BY t.id
+                )
+                UPDATE {table} t
+                   SET {column} = upd.value
+                  FROM upd
+                 WHERE upd.id = t.id
+            """
+        else:
+            raise UpgradeError("unsupported column type for selection field: {}".format(ctype))
+
+        data = {
+            "keys": list(mapping),
+            "json": json.dumps(mapping),
+        }
         queries = [
-            cr.mogrify(q, [json.dumps(mapping), tuple(mapping)]).decode()
-            for q in explode_query_range(cr, query, table=table)
+            cr.mogrify(q, data).decode()
+            for q in explode_query_range(cr, format_query(cr, query, table=table, column=field), table=table, alias="t")
         ]
         parallel_execute(cr, queries)
+
+    elif table_exists(cr, "ir_property"):
+        cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", [model, field])
+        if cr.rowcount:
+            fields_id = cr.fetchone()[0]
+            query = """
+                UPDATE ir_property
+                   SET value_text = %(json)s::jsonb->>value_text
+                 WHERE value_text IN %(keys)s
+                   AND fields_id = %(fields_id)s
+            """
+            data = {
+                "keys": tuple(mapping),
+                "json": json.dumps(mapping),
+                "fields_id": fields_id,
+            }
+            queries = [cr.mogrify(q, data).decode() for q in explode_query_range(cr, query, table="ir_property")]
+            parallel_execute(cr, queries)
 
     if table_exists(cr, "ir_model_fields_selection"):
         cr.execute(
