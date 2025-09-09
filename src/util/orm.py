@@ -251,7 +251,7 @@ def no_selection_cache_validation(f=None):
 
 
 @no_selection_cache_validation
-def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto"):
+def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto", query=None):
     """
     Recompute field values.
 
@@ -271,31 +271,45 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     :param str model: name of the model to recompute
     :param list(str) fields: list of the name of the fields to recompute
     :param list(int) or None ids: list of the IDs of the records to recompute, when `None`
-                                  recompute *all* records
+                                  recompute *all* records, unless `query` is also set (see
+                                  below)
     :param logger: logger used to report the progress
     :type logger: :class:`logging.Logger`
     :param int chunk_size: number of records per chunk - used to split the processing
     :param str strategy: strategy used to process the re-computation
+    :param str query: query to get the IDs of records to recompute, it is an error to set
+                      both `ids` and `query`
     """
-    assert strategy in {"flush", "commit", "auto"}
+    if strategy not in {"flush", "commit", "auto"}:
+        raise ValueError("Invalid strategy {!r}".format(strategy))
+    if ids is not None and query is not None:
+        raise ValueError("Cannot set both `ids` and `query`")
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
 
-    def get_ids():
-        if ids is not None:
-            for id_ in ids:
-                yield id_
-        else:
-            with named_cursor(cr, itersize=2**20) as ncr:
-                ncr.execute(format_query(cr, "SELECT id FROM {t} ORDER BY id", t=table_of_model(cr, model)))
-                for (id_,) in ncr:
-                    yield id_
-
     if ids is None:
-        cr.execute(format_query(cr, "SELECT COUNT(id) FROM {t}", t=table_of_model(cr, model)))
-        (count,) = cr.fetchone()
+        query = format_query(cr, "SELECT id FROM {} ORDER BY id", table_of_model(cr, model)) if query is None else query
+        cr.execute(query)
+        count = cr.rowcount
+        if count < 2**21:  # avoid the overhead of a named cursor unless we have at least two chunks
+            ids_ = (id_ for (id_,) in cr.fetchall())
+        else:
+
+            def get_ids():
+                with named_cursor(cr, itersize=2**20) as ncr:
+                    ncr.execute(query)
+                    for (id_,) in ncr:
+                        yield id_
+
+            ids_ = get_ids()
     else:
         count = len(ids)
+        ids_ = ids
+
+    if not count:
+        return
+
+    _logger.info("Computing fields %s of %r on %d records", fields, model, count)
 
     if strategy == "auto":
         big_table = count > BIG_TABLE_THRESHOLD
@@ -303,8 +317,8 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         strategy = "commit" if big_table and any_tracked_field else "flush"
 
     size = (count + chunk_size - 1) / chunk_size
-    qual = "%s %d-bucket" % (model, chunk_size) if chunk_size != 1 else model
-    for subids in log_progress(chunks(get_ids(), chunk_size, list), logger, qualifier=qual, size=size):
+    qual = "{} {:d}-bucket".format(model, chunk_size) if chunk_size != 1 else model
+    for subids in log_progress(chunks(ids_, chunk_size, list), logger, qualifier=qual, size=size):
         records = Model.browse(subids)
         for field_name in fields:
             field = records._fields[field_name]
