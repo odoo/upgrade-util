@@ -1465,6 +1465,28 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
                 del_action=SQLStr("RESTRICT") if on_delete == "r" else SQLStr("CASCADE"),
             )
             cr.execute(query)
+
+            cr.execute(
+                """
+                UPDATE ir_model_fields
+                   SET column1 = %s
+                 WHERE relation_table = %s
+                   AND column1 = %s
+                   AND state = 'manual'
+                """,
+                [new_col, m2m_table, old_col],
+            )
+            cr.execute(
+                """
+                UPDATE ir_model_fields
+                   SET column2 = %s
+                 WHERE relation_table = %s
+                   AND column2 = %s
+                   AND state = 'manual'
+                """,
+                [new_col, m2m_table, old_col],
+            )
+
             _logger.info("Renamed m2m column of table %s from %s to %s", m2m_table, old_col, new_col)
 
 
