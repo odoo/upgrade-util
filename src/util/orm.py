@@ -9,12 +9,21 @@ cases totally different alternatives to the ORM's own functions are provided. Th
 on this module work along the ORM of *all* supported versions.
 """
 
+import collections
 import logging
+import multiprocessing
+import os
 import re
+import sys
 from contextlib import contextmanager
 from functools import wraps
-from itertools import chain
+from itertools import chain, repeat
 from textwrap import dedent
+
+try:
+    from concurrent.futures import ProcessPoolExecutor
+except ImportError:
+    ProcessPoolExecutor = None
 
 try:
     from unittest.mock import patch
@@ -27,9 +36,9 @@ try:
     except ImportError:
         from odoo import SUPERUSER_ID
     from odoo import fields as ofields
-    from odoo import modules, release
+    from odoo import modules, release, sql_db
 except ImportError:
-    from openerp import SUPERUSER_ID, modules, release
+    from openerp import SUPERUSER_ID, modules, release, sql_db
 
     try:
         from openerp import fields as ofields
@@ -41,8 +50,8 @@ except ImportError:
 from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
-from .misc import chunks, log_progress, version_between, version_gte
-from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor, query_ids
+from .misc import chunks, log_progress, str2bool, version_between, version_gte
+from .pg import SQLStr, column_exists, format_query, get_columns, get_max_workers, named_cursor, query_ids
 
 # python3 shims
 try:
@@ -51,6 +60,10 @@ except NameError:
     basestring = str
 
 _logger = logging.getLogger(__name__)
+
+UPG_PARALLEL_ITER_BROWSE = str2bool(os.environ.get("UPG_PARALLEL_ITER_BROWSE", "0"))
+# FIXME: for CI! Remove before merge
+UPG_PARALLEL_ITER_BROWSE = True
 
 
 def env(cr):
@@ -348,6 +361,21 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         invalidate(records)
 
 
+def _mp_iter_browse_cb(ids_or_values, params):
+    me = _mp_iter_browse_cb
+    # init upon first call. Done here instead of initializer callback, because py3.6 doesn't have it
+    if not hasattr(me, "env"):
+        sql_db._Pool = None  # children cannot borrow from copies of the same pool, it will cause protocol error
+        me.env = env(sql_db.db_connect(params["dbname"]).cursor())
+        me.env.clear()
+    # process
+    if params["mode"] == "browse":
+        getattr(
+            me.env[params["model_name"]].with_context(params["context"]).browse(ids_or_values), params["attr_name"]
+        )(*params["args"], **params["kwargs"])
+    me.env.cr.commit()
+
+
 class iter_browse(object):
     """
     Iterate over recordsets.
@@ -413,7 +441,25 @@ class iter_browse(object):
         self._yield_chunks = kw.pop("yield_chunks", False)
         self._logger = kw.pop("logger", _logger)
         self._strategy = kw.pop("strategy", "flush")
-        assert self._strategy in {"flush", "commit"}
+        assert self._strategy in {"flush", "commit", "multiprocessing"}
+        if self._strategy == "multiprocessing":
+            if not ProcessPoolExecutor:
+                raise ValueError("multiprocessing strategy can not be used in scripts run by python2")
+            if not UPG_PARALLEL_ITER_BROWSE:
+                self._strategy = "commit"  # downgrade
+                if self._size > 100000:
+                    _logger.warning(
+                        "Browsing %d %s, which may take a long time. "
+                        "This can be sped up by setting the env variable UPG_PARALLEL_ITER_BROWSE to 1. "
+                        "If you do, be sure to examine the results carefully.",
+                        self._size,
+                        self._model._name,
+                    )
+                else:
+                    _logger.info(
+                        "Caller requested multiprocessing strategy, but UPG_PARALLEL_ITER_BROWSE env var is not set. "
+                        "Downgrading strategy to commit.",
+                    )
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
@@ -442,7 +488,7 @@ class iter_browse(object):
         return self._model.browse(*args)
 
     def _end(self):
-        if self._strategy == "commit":
+        if self._strategy in ["commit", "multiprocessing"]:
             self._model.env.cr.commit()
         else:
             flush(self._model)
@@ -485,8 +531,41 @@ class iter_browse(object):
             args = self._cr_uid + args
             return [getattr(chnk, attr)(*args, **kwargs) for chnk in chain(it, self._end())]
 
+        def caller_multiprocessing(*args, **kwargs):
+            params = {
+                "dbname": self._model.env.cr.dbname,
+                "model_name": self._model._name,
+                # convert to dict for pickle. Will still break if any value in the context is not pickleable
+                "context": dict(self._model.env.context),
+                "attr_name": attr,
+                "args": self._cr_uid + args,
+                "kwargs": kwargs,
+                "mode": "browse",
+            }
+            self._model.env.cr.commit()
+            extrakwargs = {"mp_context": multiprocessing.get_context("fork")} if sys.version_info >= (3, 7) else {}
+            with ProcessPoolExecutor(max_workers=get_max_workers(), **extrakwargs) as executor:
+                batch_len = min(get_max_workers() * 10, 1000000 // self._chunk_size)
+                ipc_chunksize = (batch_len + get_max_workers() - 1) // get_max_workers()
+                batch = []
+
+                def submit_batch():
+                    collections.deque(
+                        executor.map(_mp_iter_browse_cb, batch, repeat(params), chunksize=ipc_chunksize), maxlen=0
+                    )
+                    del batch[:]
+
+                for chunk in it:
+                    batch.append(chunk.ids)
+                    if len(batch) % batch_len == 0:
+                        submit_batch()
+                submit_batch()
+            next(self._end(), None)
+            # do not return results in // mode, we expect it to be used for huge numbers of
+            # records and thus would risk MemoryError, also we cannot know if what attr returns is pickleable
+
         self._it = None
-        return caller
+        return caller_multiprocessing if self._strategy == "multiprocessing" else caller
 
     def _values_iter(self, query):
         cr = self._model.env.cr
