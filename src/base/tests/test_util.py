@@ -1131,6 +1131,49 @@ class TestField(UnitTestCase):
         initial_repartition[False] += initial_repartition.pop(None, 0)
         self.assertEqual(back_repartition, initial_repartition)
 
+    @unittest.skipIf(not util.version_gte("saas~17.5"), "Company dependent fields are stored as jsonb since saas~17.5")
+    def test_convert_field_to_company_dependent(self):
+        cr = self.env.cr
+
+        partner_model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        self.env["ir.model.fields"].create(
+            [
+                {
+                    "name": "x_test_cd_1",
+                    "ttype": "char",
+                    "model_id": partner_model.id,
+                },
+                {
+                    "name": "x_test_cd_2",
+                    "ttype": "char",
+                    "model_id": partner_model.id,
+                },
+            ]
+        )
+
+        c1 = self.env["res.company"].create({"name": "Flancrest"})
+
+        test_partners = self.env["res.partner"].create(
+            [
+                {"name": "Homer", "x_test_cd_1": "A", "x_test_cd_2": "A", "company_id": c1.id},
+                {"name": "Marjorie", "x_test_cd_1": "B", "x_test_cd_2": "B"},
+                {"name": "Bartholomew"},
+            ]
+        )
+        test_partners.invalidate_recordset(["x_test_cd_1", "x_test_cd_2"])
+
+        # Using company_id as default, only records with company set are updated
+        util.make_field_company_dependent(cr, "res.partner", "x_test_cd_1", "char")
+        self.assertEqual(test_partners[0].x_test_cd_1, {str(c1.id): "A"})
+        self.assertFalse(test_partners[1].x_test_cd_1)
+        self.assertFalse(test_partners[2].x_test_cd_1)
+
+        # Ignoring company field and composing value for all companies
+        util.make_field_company_dependent(cr, "res.partner", "x_test_cd_2", "char", company_field=False)
+        self.assertEqual(test_partners[0].x_test_cd_2, {str(id): "A" for id in self.env["res.company"].search([]).ids})
+        self.assertEqual(test_partners[1].x_test_cd_2, {str(id): "B" for id in self.env["res.company"].search([]).ids})
+        self.assertFalse(test_partners[2].x_test_cd_2)
+
 
 class TestHelpers(UnitTestCase):
     def test_model_table_conversion(self):
