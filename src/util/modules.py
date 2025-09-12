@@ -43,10 +43,10 @@ except ImportError:
         from openerp.addons.web.controllers.main import module_topological_sort as topological_sort
 
 from .const import ENVIRON, NEARLYWARN
-from .exceptions import MigrationError, SleepyDeveloperError
+from .exceptions import MigrationError, SleepyDeveloperError, UnknownModuleError
 from .fields import remove_field
 from .helpers import _validate_model, table_of_model
-from .misc import on_CI, str2bool, version_gte
+from .misc import on_CI, parse_version, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import SQLStr, column_exists, format_query, table_exists, target_of
@@ -310,6 +310,9 @@ def remove_module(cr, module):
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
 
+    ENVIRON["__modules_auto_discovery_force_installs"].discard(module)
+    ENVIRON["__modules_auto_discovery_force_upgrades"].pop(module, None)
+
 
 def remove_theme(cr, theme, base_theme=None):
     """
@@ -326,6 +329,9 @@ def remove_theme(cr, theme, base_theme=None):
     if cr.rowcount:
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
+
+    ENVIRON["__modules_auto_discovery_force_installs"].discard(theme)
+    ENVIRON["__modules_auto_discovery_force_upgrades"].pop(theme, None)
 
 
 def _update_view_key(cr, old, new):
@@ -372,6 +378,14 @@ def rename_module(cr, old, new):
         [mod_new, mod_old, "base", "ir.module.module"],
     )
 
+    fi = ENVIRON["__modules_auto_discovery_force_installs"]
+    if old in fi:
+        fi.remove(old)
+        fi.add(new)
+    fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
+    if old in fu:
+        fu[new] = fu.pop(old)
+
 
 def merge_module(cr, old, into, update_dependers=True):
     """
@@ -392,12 +406,29 @@ def merge_module(cr, old, into, update_dependers=True):
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
 
+    fi = ENVIRON["__modules_auto_discovery_force_installs"]
+    if old in fi:
+        fi.remove(old)
+        fi.add(into)
+    fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
+    if old in fu:
+        if into not in fu:
+            fu[into] = fu.pop(old)
+        else:
+            init = fu[old][0] or fu[into][0]  # keep init flag
+            # keep the min version, this controls which upgrade scripts run
+            version = fu[old][1] if parse_version(fu[old][1]) < parse_version(fu[into][1]) else fu[into][1]
+            del fu[old]
+            fu[into] = (init, version)
+
     if old not in mod_ids:
         # this can happen in case of temp modules added after a release if the database does not
         # know about this module, i.e: account_full_reconcile in 9.0
-        # `into` should be know. Let it crash if not
         _logger.log(NEARLYWARN, "Unknown module %s. Skip merge into %s.", old, into)
         return
+
+    if into not in mod_ids:
+        raise UnknownModuleError(into)
 
     def _up(table, old, new):
         cr.execute(
@@ -518,9 +549,31 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
                                            already installed
     :return str: the *new* state of the module
     """
+    try:
+        return _force_install_module(cr, module, if_installed, reason)
+    except UnknownModuleError:
+        if version_gte("saas~14.5"):
+            # We must delay until the modules actually exists. They are added by the auto discovery process.
+            ENVIRON["__modules_auto_discovery_force_installs"].add(module)
+            return None
+        else:
+            raise
+
+
+def _force_install_module(cr, module, if_installed=None, reason="it has been explicitly asked for"):
+    """Strict implementation of force_install: raise errors for missing modules."""
+    _assert_modules_exists(cr, module)
     subquery = ""
     params = [module]
     if if_installed:
+        try:
+            _assert_modules_exists(cr, *if_installed)
+        except UnknownModuleError as e:
+            # Warn about unknown modules (can help track typos in the call).
+            # we don't care about missing modules, as by definition, they are not installed.
+            _logger.log(
+                NEARLYWARN, "Unknown 'if_installed' modules: %s; consider them as uninstalled.", ", ".join(e.args)
+            )
         subquery = """AND EXISTS(SELECT 1 FROM ir_module_module
                                   WHERE name IN %s
                                     AND state IN %s)"""
@@ -642,7 +695,7 @@ def _assert_modules_exists(cr, *modules):
     existing_modules = {m[0] for m in cr.fetchall()}
     unexisting_modules = set(modules) - existing_modules
     if unexisting_modules:
-        raise AssertionError("Unexisting modules: {}".format(", ".join(unexisting_modules)))
+        raise UnknownModuleError(*sorted(unexisting_modules))
 
 
 def new_module_dep(cr, module, new_dep):
@@ -973,7 +1026,7 @@ def _trigger_auto_discovery(cr):
             module_auto_install(cr, module, auto_install)
 
         if module in force_installs:
-            force_install_module(cr, module)
+            _force_install_module(cr, module)
 
     for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
         _force_upgrade_of_fresh_module(cr, module, init, version)

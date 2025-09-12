@@ -9,5 +9,9 @@ class SleepyDeveloperError(ValueError):
     pass
 
 
+class UnknownModuleError(AssertionError):
+    pass
+
+
 # Compat
 MigrationError = UpgradeError
