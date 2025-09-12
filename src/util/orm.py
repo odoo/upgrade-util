@@ -381,7 +381,11 @@ class iter_browse(object):
 
     :param model: the model to iterate
     :type model: :class:`odoo.model.Model`
-    :param list(int) ids: list of IDs of the records to iterate
+    :param iterable(int) ids: iterable of IDs of the records to iterate
+    :param int size: the length of `ids`. Can be used to enable progress logging when `ids` has no `__length__`
+    :param str query: alternative to ids, SQL query that can produce them.
+                      Can also be a DML statement with a RETURNING clause.
+                      See :func:`~odoo.upgrade.util.pg.query_ids`
     :param int chunk_size: number of records to load in each iteration chunk, `200` by
                            default
     :param bool yield_chunks: when iterating, yield records in chunks of `chunk_size` instead of one by one.
@@ -403,7 +407,8 @@ class iter_browse(object):
         self._model = model
         self._cr_uid = args[:-1]
         ids = args[-1]
-        self._size = len(ids)
+        self._size = kw.pop("size", None)
+        query = kw.pop("query", None)
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
         self._yield_chunks = kw.pop("yield_chunks", False)
         self._logger = kw.pop("logger", _logger)
@@ -411,6 +416,18 @@ class iter_browse(object):
         assert self._strategy in {"flush", "commit"}
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
+
+        if not (ids is None) ^ (query is None):
+            raise TypeError("Must be initialized using exactly one of `ids` or `query`")
+
+        if query:
+            ids = query_ids(self._model.env.cr, query, itersize=self._chunk_size)
+
+        if not self._size:
+            try:  # noqa: SIM105
+                self._size = len(ids)
+            except TypeError:
+                pass
 
         self._patch = None
         self._it = chunks(ids, self._chunk_size, fmt=self._browse)
@@ -440,9 +457,14 @@ class iter_browse(object):
             raise RuntimeError("%r ran twice" % (self,))
 
         it = self._it if self._yield_chunks else chain.from_iterable(self._it)
-        sz = (self._size + self._chunk_size - 1) // self._chunk_size if self._yield_chunks else self._size
         if self._logger:
-            it = log_progress(it, self._logger, qualifier=self._model._name, size=sz)
+            sz = (
+                (self._size + self._chunk_size - 1) // self._chunk_size
+                if self._size and self._yield_chunks
+                else self._size
+            )
+            qualifier = self._model._name + ("[:{}]".format(self._chunk_size) if self._yield_chunks else "")
+            it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
         self._it = None
         return chain(it, self._end())
 
@@ -455,8 +477,8 @@ class iter_browse(object):
 
         it = self._it
         if self._logger:
-            sz = (self._size + self._chunk_size - 1) // self._chunk_size
-            qualifier = "%s[:%d]" % (self._model._name, self._chunk_size)
+            sz = (self._size + self._chunk_size - 1) // self._chunk_size if self._size else None
+            qualifier = "{}[:{}]".format(self._model._name, self._chunk_size)
             it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
         def caller(*args, **kwargs):
