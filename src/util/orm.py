@@ -11,6 +11,7 @@ on this module work along the ORM of *all* supported versions.
 
 import logging
 import re
+import uuid
 from contextlib import contextmanager
 from functools import wraps
 from itertools import chain
@@ -374,7 +375,8 @@ class iter_browse(object):
 
     :param model: the model to iterate
     :type model: :class:`odoo.model.Model`
-    :param list(int) ids: list of IDs of the records to iterate
+    :param iterable(int) ids: iterable of IDs of the records to iterate
+    :param str query: alternative to ids, SQL query that can produce them
     :param int chunk_size: number of records to load in each iteration chunk, `200` by
                            default
     :param logger: logger used to report the progress, by default
@@ -387,14 +389,15 @@ class iter_browse(object):
     See also :func:`~odoo.upgrade.util.orm.env`
     """
 
-    __slots__ = ("_chunk_size", "_cr_uid", "_it", "_logger", "_model", "_patch", "_size", "_strategy")
+    __slots__ = ("_chunk_size", "_cr_uid", "_ids", "_it", "_logger", "_model", "_patch", "_query", "_size", "_strategy")
 
     def __init__(self, model, *args, **kw):
         assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
         self._model = model
         self._cr_uid = args[:-1]
-        ids = args[-1]
-        self._size = len(ids)
+        self._ids = args[-1]
+        self._size = kw.pop("size", None)
+        self._query = kw.pop("query", None)
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
         self._logger = kw.pop("logger", _logger)
         self._strategy = kw.pop("strategy", "flush")
@@ -402,8 +405,44 @@ class iter_browse(object):
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
+        if not (self._ids is None) ^ (self._query is None):
+            raise TypeError("Must be initialized using exactly one of `ids` or `query`")
+
+        if self._query:
+            self._ids_query()
+
+        if not self._size:
+            try:
+                self._size = len(self._ids)
+            except TypeError:
+                raise ValueError("When passing ids as a generator, the size kwarg is mandatory")
         self._patch = None
-        self._it = chunks(ids, self._chunk_size, fmt=self._browse)
+        self._it = chunks(self._ids, self._chunk_size, fmt=self._browse)
+
+    def _ids_query(self):
+        cr = self._model.env.cr
+        tmp_tbl = "_upgrade_ib_{}".format(uuid.uuid4().hex)
+        cr.execute(
+            format_query(
+                cr,
+                "CREATE UNLOGGED TABLE {}(id) AS (WITH query AS ({}) SELECT * FROM query)",
+                tmp_tbl,
+                SQLStr(self._query),
+            )
+        )
+        self._size = cr.rowcount
+        cr.execute(
+            format_query(cr, "ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY (id)", tmp_tbl, "pk_{}_id".format(tmp_tbl))
+        )
+
+        def get_ids():
+            with named_cursor(cr, itersize=self._chunk_size) as ncr:
+                ncr.execute(format_query(cr, "SELECT id FROM {} ORDER BY id", tmp_tbl))
+                for (id_,) in ncr:
+                    yield id_
+            cr.execute(format_query(cr, "DROP TABLE IF EXISTS {}", tmp_tbl))
+
+        self._ids = get_ids()
 
     def _browse(self, ids):
         next(self._end(), None)
