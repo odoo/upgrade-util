@@ -362,7 +362,9 @@ class iter_browse(object):
 
     :param model: the model to iterate
     :type model: :class:`odoo.model.Model`
-    :param list(int) ids: list of IDs of the records to iterate
+    :param iterable(int) ids: iterable of IDs of the records to iterate
+    :param str query: alternative to ids, SQL query that can produce them.
+                      Can also be a DML statement with a RETURNING clause.
     :param int chunk_size: number of records to load in each iteration chunk, `200` by
                            default
     :param bool yield_chunks: when iterating, yield records in chunks of `chunk_size` instead of one by one.
@@ -377,14 +379,27 @@ class iter_browse(object):
     See also :func:`~odoo.upgrade.util.orm.env`
     """
 
-    __slots__ = ("_chunk_size", "_cr_uid", "_it", "_logger", "_model", "_patch", "_size", "_strategy", "_yield_chunks")
+    __slots__ = (
+        "_chunk_size",
+        "_cr_uid",
+        "_ids",
+        "_it",
+        "_logger",
+        "_model",
+        "_patch",
+        "_query",
+        "_size",
+        "_strategy",
+        "_yield_chunks",
+    )
 
     def __init__(self, model, *args, **kw):
         assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
         self._model = model
         self._cr_uid = args[:-1]
-        ids = args[-1]
-        self._size = len(ids)
+        self._ids = args[-1]
+        self._size = kw.pop("size", None)
+        self._query = kw.pop("query", None)
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
         self._yield_chunks = kw.pop("yield_chunks", False)
         self._logger = kw.pop("logger", _logger)
@@ -393,8 +408,19 @@ class iter_browse(object):
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
+        if not (self._ids is None) ^ (self._query is None):
+            raise TypeError("Must be initialized using exactly one of `ids` or `query`")
+
+        if self._query:
+            self._ids = query_ids(self._model.env.cr, self._query, itersize=self._chunk_size)
+
+        if not self._size:
+            try:
+                self._size = len(self._ids)
+            except TypeError:
+                raise ValueError("When passing ids as a generator, the size kwarg is mandatory")
         self._patch = None
-        self._it = chunks(ids, self._chunk_size, fmt=self._browse)
+        self._it = chunks(self._ids, self._chunk_size, fmt=self._browse)
 
     def _browse(self, ids):
         next(self._end(), None)
