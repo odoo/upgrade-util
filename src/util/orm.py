@@ -371,7 +371,7 @@ class iter_browse(object):
 
     :param model: the model to iterate
     :type model: :class:`odoo.model.Model`
-    :param list(int) ids: list of IDs of the records to iterate
+    :param iterable(int) ids: iterable of IDs of the records to iterate
     :param int chunk_size: number of records to load in each iteration chunk, `200` by
                            default
     :param logger: logger used to report the progress, by default
@@ -391,7 +391,12 @@ class iter_browse(object):
         self._model = model
         self._cr_uid = args[:-1]
         ids = args[-1]
-        self._size = len(ids)
+        self._size = kw.pop("size", None)
+        if not self._size:
+            try:
+                self._size = len(ids)
+            except TypeError:
+                raise ValueError("When passing ids as a generator, the size kwarg is mandatory")
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
         self._logger = kw.pop("logger", _logger)
         self._strategy = kw.pop("strategy", "flush")
