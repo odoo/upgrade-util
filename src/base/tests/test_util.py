@@ -701,6 +701,38 @@ class TestIterBrowse(UnitTestCase):
         expected = (len(ids) + chunk_size - 1) // chunk_size
         self.assertEqual(write.call_count, expected)
 
+    def test_iter_browse_ids_gen(self):
+        cr = self.env.cr
+        cr.execute("SELECT id FROM res_country")
+        ids = (c for (c,) in cr.fetchall())
+        ids_len = cr.rowcount
+        chunk_size = 10
+
+        res_chunks = list(
+            util.iter_browse(
+                self.env["res.country"], ids, size=ids_len, logger=None, chunk_size=chunk_size, yield_chunks=True
+            )
+        )
+        no_chunks = (ids_len + chunk_size - 1) // chunk_size
+        self.assertEqual(len(res_chunks), no_chunks)
+        self.assertEqual(len(res_chunks[0]), chunk_size)
+
+    def test_iter_browse_ids_query(self):
+        cr = self.env.cr
+        query = "SELECT id FROM res_country"
+        cr.execute(query)
+        ids_len = cr.rowcount
+        chunk_size = 10
+
+        res_chunks = list(
+            util.iter_browse(
+                self.env["res.country"], None, query=query, logger=None, chunk_size=chunk_size, yield_chunks=True
+            )
+        )
+        no_chunks = (ids_len + chunk_size - 1) // chunk_size
+        self.assertEqual(len(res_chunks), no_chunks)
+        self.assertEqual(len(res_chunks[0]), chunk_size)
+
     def test_iter_browse_create_non_empty(self):
         RP = self.env["res.partner"]
         with self.assertRaises(ValueError):
