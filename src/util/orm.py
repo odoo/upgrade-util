@@ -9,8 +9,11 @@ cases totally different alternatives to the ORM's own functions are provided. Th
 on this module work along the ORM of *all* supported versions.
 """
 
+import collections
 import logging
+import os
 import re
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from functools import wraps
 from itertools import chain
@@ -27,9 +30,9 @@ try:
     except ImportError:
         from odoo import SUPERUSER_ID
     from odoo import fields as ofields
-    from odoo import modules, release
+    from odoo import modules, release, sql_db
 except ImportError:
-    from openerp import SUPERUSER_ID, modules, release
+    from openerp import SUPERUSER_ID, modules, release, sql_db
 
     try:
         from openerp import fields as ofields
@@ -41,8 +44,8 @@ except ImportError:
 from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
-from .misc import chunks, log_progress, version_between, version_gte
-from .pg import column_exists, format_query, get_columns, named_cursor
+from .misc import chunks, log_progress, str2bool, version_between, version_gte
+from .pg import column_exists, format_query, get_columns, get_max_workers, named_cursor
 
 # python3 shims
 try:
@@ -51,6 +54,8 @@ except NameError:
     basestring = str
 
 _logger = logging.getLogger(__name__)
+
+UPG_PARALLEL_ITER_BROWSE = str2bool(os.environ.get("UPG_PARALLEL_ITER_BROWSE", "0"))
 
 
 def env(cr):
@@ -338,6 +343,23 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         invalidate(records)
 
 
+def _mp_iter_browse_cb(ids_or_values):
+    me = _mp_iter_browse_cb
+    # init upon first call. Done here instead of initializer callback, because py3.6 doesn't have it
+    if not hasattr(me, "env"):
+        sql_db._Pool = None  # children cannot borrow from copies of the same pool, it will cause protocol error
+        me.env = env(sql_db.db_connect(me.params["dbname"]).cursor())
+        me.env.clear()
+    # process
+    if me.params["mode"] == "browse":
+        getattr(me.env[me.params["model_name"]].browse(ids_or_values), me.params["attr_name"])(
+            *me.params["args"], **me.params["kwargs"]
+        )
+    if me.params["mode"] == "create":
+        me.env[me.params["model_name"]].create(ids_or_values)
+    me.env.cr.commit()
+
+
 class iter_browse(object):
     """
     Iterate over recordsets.
@@ -371,13 +393,12 @@ class iter_browse(object):
 
     :param model: the model to iterate
     :type model: :class:`odoo.model.Model`
-    :param list(int) ids: list of IDs of the records to iterate
-    :param int chunk_size: number of records to load in each iteration chunk, `200` by
-                           default
+    :param iterable(int) ids: iterable of IDs of the records to iterate
+    :param int chunk_size: number of records to load in each iteration chunk, `200` by default
     :param logger: logger used to report the progress, by default
                    :data:`~odoo.upgrade.util.orm._logger`
     :type logger: :class:`logging.Logger`
-    :param str strategy: whether to `flush` or `commit` on each chunk, default is `flush`
+    :param str strategy: whether to `flush`, `commit` or `multiprocess` each chunk, default is `flush`
     :return: the object returned by this class can be used to iterate, or call any model
              method, safely on millions of records.
 
@@ -391,11 +412,28 @@ class iter_browse(object):
         self._model = model
         self._cr_uid = args[:-1]
         ids = args[-1]
-        self._size = len(ids)
+        self._size = kw.pop("size", None)
+        if not self._size:
+            try:
+                self._size = len(ids)
+            except TypeError:
+                raise ValueError("When passing ids as a generator, the size kwarg is mandatory")
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
         self._logger = kw.pop("logger", _logger)
         self._strategy = kw.pop("strategy", "flush")
-        assert self._strategy in {"flush", "commit"}
+        assert self._strategy in {"flush", "commit", "multiprocessing"}
+        if self._strategy == "multiprocessing":
+            if UPG_PARALLEL_ITER_BROWSE:
+                self._task_size = self._chunk_size
+                self._chunk_size = max(get_max_workers() * 10 * self._task_size, 1000000)
+            elif self._size > 100000:
+                _logger.warning(
+                    "Browsing %d %s, which may take a long time. "
+                    "This can be sped up by setting the env variable UPG_PARALLEL_ITER_BROWSE to 1. "
+                    "If you do, be sure to examine the results carefully.",
+                    self._size,
+                    self._model._name,
+                )
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
@@ -412,8 +450,10 @@ class iter_browse(object):
         return self._model.browse(*args)
 
     def _end(self):
-        if self._strategy == "commit":
+        if self._strategy in ["commit", "multiprocessing"]:
             self._model.env.cr.commit()
+            if self._strategy == "multiprocessing" and UPG_PARALLEL_ITER_BROWSE:
+                delattr(_mp_iter_browse_cb, "params")
         else:
             flush(self._model)
         invalidate(self._model, *self._cr_uid)
@@ -447,6 +487,25 @@ class iter_browse(object):
 
         def caller(*args, **kwargs):
             args = self._cr_uid + args
+            if self._strategy == "multiprocessing" and UPG_PARALLEL_ITER_BROWSE:
+                _mp_iter_browse_cb.params = {
+                    "dbname": self._model.env.cr.dbname,
+                    "model_name": self._model._name,
+                    "attr_name": attr,
+                    "args": args,
+                    "kwargs": kwargs,
+                    "mode": "browse",
+                }
+                with ProcessPoolExecutor(max_workers=get_max_workers()) as executor:
+                    for chunk in it:
+                        collections.deque(
+                            executor.map(_mp_iter_browse_cb, chunks(chunk._ids, self._task_size, fmt=tuple)),
+                            maxlen=0,
+                        )
+                next(self._end(), None)
+                # do not return results in // mode, we expect it to be used for huge numbers of
+                # records and thus would risk MemoryError
+                return None
             return [getattr(chnk, attr)(*args, **kwargs) for chnk in chain(it, self._end())]
 
         self._it = None
