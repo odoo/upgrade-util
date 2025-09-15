@@ -122,11 +122,12 @@ def module_installed(cr, module):
     return modules_installed(cr, module)
 
 
-def uninstall_module(cr, module):
+def uninstall_module(cr, module, remove_model_inherits=False):
     """
     Uninstall and remove all records owned by a module.
 
     :param str module: name of the module to uninstall
+    :param bool remove_model_inherits: whether to remove inherits of the module's models
     """
     cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (module,))
     (mod_id,) = cr.fetchone() or [None]
@@ -235,13 +236,13 @@ def uninstall_module(cr, module):
     if model_ids:
         cr.execute("SELECT model FROM ir_model WHERE id IN %s", [tuple(model_ids)])
         for (model,) in cr.fetchall():
-            delete_model(cr, model)
+            delete_model(cr, model, remove_inherits=remove_model_inherits)
 
     if field_ids:
         cr.execute("SELECT model, name FROM ir_model_fields WHERE id IN %s", [tuple(field_ids)])
         for model, name in cr.fetchall():
             if name == "id":
-                delete_model(cr, model)
+                delete_model(cr, model, remove_inherits=remove_model_inherits)
             else:
                 remove_field(cr, model, name)
 
@@ -286,7 +287,7 @@ def uninstall_theme(cr, theme, base_theme=None):
     uninstall_module(cr, theme)
 
 
-def remove_module(cr, module):
+def remove_module(cr, module, remove_model_inherits=False):
     """
     Completely remove a module.
 
@@ -294,6 +295,7 @@ def remove_module(cr, module):
     the module - no trace of it is left in the database.
 
     :param str module: name of the module to remove
+    :param bool remove_model_inherits: whether to remove inherits of the module's models
 
     .. warning::
        Since this function removes *all* data associated to the module. Ensure to
@@ -303,7 +305,7 @@ def remove_module(cr, module):
     # module need to be currently installed and running as deletions
     # are made using orm.
 
-    uninstall_module(cr, module)
+    uninstall_module(cr, module, remove_model_inherits=remove_model_inherits)
     cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
     cr.execute("DELETE FROM ir_module_module WHERE name=%s RETURNING id", (module,))
     if cr.rowcount:
