@@ -58,6 +58,7 @@ def uninstall_modules(cr):
         'setu_advance_inventory_reports',
         'account_state_report_kl',
         'sale_mrp_link',
+        'bim',
     ]
 
     for module_name in modules_to_uninstall:
