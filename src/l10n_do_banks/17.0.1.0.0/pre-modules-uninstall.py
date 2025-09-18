@@ -59,6 +59,7 @@ def uninstall_modules(cr):
         'account_state_report_kl',
         'sale_mrp_link',
         'bim',
+        'component',
     ]
 
     for module_name in modules_to_uninstall:
