@@ -42,7 +42,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_between, version_gte
-from .pg import column_exists, format_query, get_columns, named_cursor
+from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor
 
 # python3 shims
 try:
@@ -278,7 +278,8 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     :param int chunk_size: number of records per chunk - used to split the processing
     :param str strategy: strategy used to process the re-computation
     :param str query: query to get the IDs of records to recompute, it is an error to set
-                      both `ids` and `query`
+                      both `ids` and `query`. Note that the processing will always happen
+                      in ascending order. If that is unwanted, you must use `ids` instead.
     """
     if strategy not in {"flush", "commit", "auto"}:
         raise ValueError("Invalid strategy {!r}".format(strategy))
@@ -288,25 +289,26 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     model = Model._name
 
     if ids is None:
-        query = format_query(cr, "SELECT id FROM {} ORDER BY id", table_of_model(cr, model)) if query is None else query
-        cr.execute(query)
+        query = format_query(cr, "SELECT id FROM {}", table_of_model(cr, model)) if query is None else SQLStr(query)
+        cr.execute(
+            format_query(cr, "CREATE UNLOGGED TABLE _upgrade_rf(id) AS (WITH query AS ({}) SELECT * FROM query)", query)
+        )
         count = cr.rowcount
-        if count < 2**21:  # avoid the overhead of a named cursor unless we have at least two chunks
-            ids_ = (id_ for (id_,) in cr.fetchall())
-        else:
+        cr.execute("ALTER TABLE _upgrade_rf ADD CONSTRAINT pk_upgrade_rf_id PRIMARY KEY (id)")
 
-            def get_ids():
-                with named_cursor(cr, itersize=2**20) as ncr:
-                    ncr.execute(query)
-                    for (id_,) in ncr:
-                        yield id_
+        def get_ids():
+            with named_cursor(cr, itersize=2**20) as ncr:
+                ncr.execute("SELECT id FROM _upgrade_rf ORDER BY id")
+                for (id_,) in ncr:
+                    yield id_
 
-            ids_ = get_ids()
+        ids_ = get_ids()
     else:
         count = len(ids)
         ids_ = ids
 
     if not count:
+        cr.execute("DROP TABLE IF EXISTS _upgrade_rf")
         return
 
     _logger.info("Computing fields %s of %r on %d records", fields, model, count)
@@ -336,6 +338,7 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         else:
             flush(records)
         invalidate(records)
+    cr.execute("DROP TABLE IF EXISTS _upgrade_rf")
 
 
 class iter_browse(object):
