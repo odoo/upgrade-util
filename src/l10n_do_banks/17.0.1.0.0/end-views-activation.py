@@ -146,6 +146,7 @@ def migrate(cr, version):
         'sale_pos_backend.view_sale_cashier_authorization_code_form',
         'sale_pos_backend.view_sale_cashier_inherit_form',
         'sale_pos_backend.view_sale_cashier_rate_form',
+        'sale_pos_backend.view_order_sales_pos_backend_form',
         'sale_pos_backend_advance_payment.view_sale_cashier_session_inherit_form',
         'sale_pos_backend_advance_payment.view_sale_cashier_multi_journal_form',
         'sale_pos_backend_card_bin_promotion_payments.view_sale_cashier_authorization_code_form',
