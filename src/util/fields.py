@@ -38,6 +38,12 @@ except ImportError:
         return "%s_%s_index" % (table_name, column_name)
 
 
+try:
+    from odoo.tools import pickle
+except ImportError:
+    import pickle
+
+
 from . import json
 from .const import ENVIRON
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
@@ -1216,6 +1222,35 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
             """,
             [model, field, [k for k in mapping if k not in mapping.values()]],
         )
+
+    if table_exists(cr, "ir_values"):
+        query = """
+            UPDATE ir_values
+               SET value = %(json)s::jsonb->>value
+             WHERE model = %(model)s
+               AND name = %(name)s
+               AND key = 'default'
+               AND value IN %(keys)s
+        """
+        dumped_map = {pickle.dumps(k): pickle.dumps(v) for k, v in mapping.items()}
+    else:
+        query = """
+            UPDATE ir_default d
+               SET json_value = (%(json)s::jsonb->>d.json_value)
+              FROM ir_model_fields f
+             WHERE d.field_id = f.id
+               AND f.model = %(model)s
+               AND f.name = %(name)s
+               AND d.json_value IN %(keys)s
+        """
+        dumped_map = {json.dumps(k): json.dumps(v) for k, v in mapping.items()}
+    data = {
+        "keys": tuple(dumped_map),
+        "json": json.dumps(dumped_map),
+        "model": model,
+        "name": field,
+    }
+    cr.execute(query, data)
 
     def adapter(leaf, _or, _neg):
         left, op, right = leaf
