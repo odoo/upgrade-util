@@ -229,6 +229,14 @@ def invalidate(records, *args):
     ((env and getattr(records.env, "invalidate_all", None)) or records.invalidate_cache)(*args)
 
 
+def clear_cache(records):
+    env = getattr(records, "env", None)
+    (
+        (env and getattr(records.env, "registry", None) and getattr(records.env.registry, "clear_cache", None))
+        or records.clear_caches
+    )()
+
+
 def no_selection_cache_validation(f=None):
     if not version_gte("8.0"):
         return f
