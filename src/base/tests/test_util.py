@@ -1131,6 +1131,31 @@ class TestField(UnitTestCase):
         initial_repartition[False] += initial_repartition.pop(None, 0)
         self.assertEqual(back_repartition, initial_repartition)
 
+    def test_change_field_selection_with_default(self):
+        cr = self.env.cr
+        lang = self.env["res.lang"].create({"name": "Elvish", "code": "el_VISH", "active": True})
+        if util.table_exists(cr, "ir_default"):
+            self.env["ir.default"].set("res.partner", "lang", "el_VISH")
+        else:
+            self.env["ir.values"].set_default("res.partner", "lang", "el_VISH")
+        util.flush(lang)
+        partner = self.env["res.partner"].create({"name": "Gandalf"})
+        self.assertEqual(partner.lang, "el_VISH")
+
+        util.invalidate(partner)
+        util.change_field_selection_values(cr, "res.partner", "lang", {"el_VISH": "en_US"})
+
+        self.assertEqual(partner.lang, "en_US")
+
+        if util.table_exists(cr, "ir_default"):
+            new_default = (getattr(self.env["ir.default"], "get", None) or self.env["ir.default"]._get)(
+                "res.partner", "lang"
+            )
+        else:
+            new_default = self.env["ir.values"].get_default("res.partner", "lang")
+
+        self.assertEqual(new_default, "en_US")
+
 
 class TestHelpers(UnitTestCase):
     def test_model_table_conversion(self):
