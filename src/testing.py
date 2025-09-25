@@ -224,16 +224,22 @@ class UpgradeCommon(BaseCase):
     def _set_value(self, key, value):
         self._init_db()
         value = json.dumps(value, sort_keys=True)
+        klass = None
+        for mro in type(self).mro():
+            if mro.__module__ in ("odoo.upgrade.testing", "odoo.addons.base.maintenance.migrations.testing"):
+                klass = mro.__name__
+                break
+
         cr = self._data_table_cr
         query = util.format_query(
             cr,
             """
-            INSERT INTO {} (key, value) VALUES (%s, %s)
-            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
+            INSERT INTO {} (key, class, value) VALUES (%s, %s, %s)
+            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, class=EXCLUDED.class
             """,
             DATA_TABLE,
         )
-        cr.execute(query, (key, value))
+        cr.execute(query, (key, klass, value))
         cr._cnx.commit()
 
     def _get_value(self, key):
@@ -264,13 +270,17 @@ class UpgradeCommon(BaseCase):
                     """
                     CREATE TABLE {} (
                         key VARCHAR(255) PRIMARY KEY,
+                        class varchar,
                         value JSONB NOT NULL
                     )
                     """,
                     DATA_TABLE,
                 )
                 cr.execute(query)
-                cr._cnx.commit()
+            else:
+                # upgrade existing table
+                util.create_column(cr, DATA_TABLE, "class", "varchar")
+            cr._cnx.commit()
             UpgradeCommon.__initialized = True
 
     def _setup_registry(self):
