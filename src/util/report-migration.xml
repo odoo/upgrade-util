@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <t t-name="mail.report_migration">
-  <h2> Congratulations, you have just upgraded to Odoo <t t-esc="version" /> </h2>
+  <h2> Congratulations, you have just upgraded to Odoo <t t-out="version" /> </h2>
   <p> Here are changes that may impact day to day flows in this new version. </p>
   <p t-if="int(minor_version) == 0">Want to know more? Check out the full functional <a t-attf-href="https://www.odoo.com/odoo-{{ major_version }}-release-notes">release note</a>.</p>
   <p t-elif="int(minor_version) >= 0">Want to know more? Check out the full functional <a t-attf-href="https://www.odoo.com/odoo-{{ major_version }}-{{ minor_version }}-release-notes">release note</a>.</p>
   <p t-else=""></p>
   <br/>
   <t t-foreach="messages" t-as="category">
-    <h3><t t-esc="category"/></h3>
+    <h3><t t-out="category"/></h3>
     <ul>
       <t t-if="category in ['Disabled views', 'Overridden views']">
         <t t-set="view_message_types" t-value="{
@@ -17,14 +17,14 @@
         <t t-set="message_type" t-value="view_message_types[category]"/>
         <li><details t-if="messages[category]">
           <summary>
-            <t t-esc="message_type[0]"/>
+            <t t-out="message_type[0]"/>
           </summary>
           <ul>
           <t t-foreach="messages[category]" t-as="message">
             <t t-set="view" t-value="message[0]"/>
             <li>
               <t t-if="view.get('copy_id')">
-                <t t-esc="message_type[1] % view"/>
+                <t t-out="message_type[1] % view"/>
                 &amp;nbsp;
                 <t t-raw="get_anchor_link_to_record('ir.ui.view', view['id'], 'Original', action_id=action_view_id)"/>
                 &amp;nbsp;
@@ -50,7 +50,7 @@
       </t>
       <t t-else="">
         <t t-foreach="messages[category]" t-as="message">
-          <li><t t-if="message[1]" t-raw="message[0]" /><t t-else="" t-esc="message[0]" /></li>
+          <li><t t-if="message[1]" t-raw="message[0]" /><t t-else="" t-out="message[0]" /></li>
         </t>
       </t>
     </ul>

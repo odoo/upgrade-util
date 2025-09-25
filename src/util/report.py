@@ -130,6 +130,8 @@ def announce_release_note(cr):
     filepath = os.path.join(os.path.dirname(__file__), "release-note.xml")
     with open(filepath, "rb") as fp:
         contents = fp.read()
+        if not version_gte("15.0"):
+            contents = contents.replace(b"t-out", b"t-esc")
         report = lxml.etree.fromstring(contents)
     e = env(cr)
     major_version, minor_version = re.findall(r"\d+", release.major_version)
@@ -151,6 +153,8 @@ def announce_migration_report(cr):
         contents = fp.read()
         if Markup:
             contents = contents.replace(b"t-raw", b"t-out")
+        if not version_gte("15.0"):
+            contents = contents.replace(b"t-out", b"t-esc")
         report = lxml.etree.fromstring(contents)
     e = env(cr)
     major_version, minor_version = re.findall(r"\d+", release.major_version)
