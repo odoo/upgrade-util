@@ -224,39 +224,53 @@ class UpgradeCommon(BaseCase):
     def _set_value(self, key, value):
         self._init_db()
         value = json.dumps(value, sort_keys=True)
-        query = """
+        cr = self._data_table_cr
+        query = util.format_query(
+            cr,
+            """
             INSERT INTO {} (key, value) VALUES (%s, %s)
             ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
-        """.format(DATA_TABLE)
-        self._data_table_cr.execute(query, (key, value))
-        self._data_table_cr._cnx.commit()
+            """,
+            DATA_TABLE,
+        )
+        cr.execute(query, (key, value))
+        cr._cnx.commit()
 
     def _get_value(self, key):
         self._init_db()
-        query = "SELECT value FROM {} WHERE key = %s".format(DATA_TABLE)
-        self._data_table_cr.execute(query, [key])
-        result = self._data_table_cr.fetchone()
+        cr = self._data_table_cr
+        query = util.format_query(cr, "SELECT value FROM {} WHERE key = %s", DATA_TABLE)
+        cr.execute(query, [key])
+        result = cr.fetchone()
         if not result:
             raise KeyError(key)
         return result[0]
 
     def _key_exists(self, key):
         self._init_db()
-        query = "SELECT 1 FROM {} WHERE key = %s".format(DATA_TABLE)
-        self._data_table_cr.execute(query, [key])
-        return bool(self._data_table_cr.rowcount)
+        cr = self._data_table_cr
+        query = util.format_query(cr, "SELECT 1 FROM {} WHERE key = %s", DATA_TABLE)
+        cr.execute(query, [key])
+        return bool(cr.rowcount)
 
     def _init_db(self):
         if not UpgradeCommon.__initialized:
-            self._data_table_cr.execute("SELECT 1 FROM pg_class WHERE relname=%s", [DATA_TABLE])
-            if not self._data_table_cr.rowcount:
+            cr = self._data_table_cr
+            cr.execute("SELECT 1 FROM pg_class WHERE relname=%s", [DATA_TABLE])
+            if not cr.rowcount:
                 _logger.info("Creating table %s", DATA_TABLE)
-                query = """ CREATE TABLE {} (
-                    key VARCHAR(255) PRIMARY KEY,
-                    value JSONB NOT NULL
-                )""".format(DATA_TABLE)
-                self._data_table_cr.execute(query)
-                self._data_table_cr._cnx.commit()
+                query = util.format_query(
+                    cr,
+                    """
+                    CREATE TABLE {} (
+                        key VARCHAR(255) PRIMARY KEY,
+                        value JSONB NOT NULL
+                    )
+                    """,
+                    DATA_TABLE,
+                )
+                cr.execute(query)
+                cr._cnx.commit()
             UpgradeCommon.__initialized = True
 
     def _setup_registry(self):
