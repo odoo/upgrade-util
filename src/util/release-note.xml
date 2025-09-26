@@ -6,7 +6,7 @@
   <t t-if="odoo_showcase_video_id">
     <br/>
     <a t-attf-href="https://www.youtube.com/watch?v={{ odoo_showcase_video_id }}" target="_blank">
-      <b>Meet Odoo <t t-esc="major_version"/>.<t t-esc="minor_version"/> now !</b>
+      <b>Meet Odoo <t t-out="major_version"/>.<t t-out="minor_version"/> now !</b>
       <div class="card shadow-sm yt-container" style="max-height: 360px; max-width: 640px">
           <img t-attf-src="https://img.youtube.com/vi/{{ odoo_showcase_video_id }}/maxresdefault.jpg"/>
       </div>
