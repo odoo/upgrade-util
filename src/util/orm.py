@@ -42,7 +42,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_between, version_gte
-from .pg import SQLStr, column_exists, format_query, get_columns, query_ids
+from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor, query_ids
 
 # python3 shims
 try:
@@ -488,35 +488,55 @@ class iter_browse(object):
         self._it = None
         return caller
 
-    def create(self, values, **kw):
+    def _values_iter(self, query):
+        cr = self._model.env.cr
+        with named_cursor(cr, itersize=self._chunk_size) as ncr:
+            ncr.execute(query)
+            for row in ncr.iterdict():
+                yield row
+
+    def create(self, values=None, query=None, **kw):
         """
         Create records.
 
         An alternative to the default `create` method of the ORM that is safe to use to
         create millions of records.
 
-        :param list(dict) values: list of values of the records to create
+        :param iterable(dict) values: iterable of values of the records to create
+        :param int size: the no. of elements produced by values or query.
+                         Can be used to enable progress logging when `ids` has no `__length__` or with query
+        :param str query: alternative to values, SQL query that can produce them.
+                          Can also be a DML statement with a RETURNING clause.
         :param bool multi: whether to use the multi version of `create`, by default is
                            `True` from Odoo 12 and above
         """
         multi = kw.pop("multi", version_gte("saas~11.5"))
+        size = kw.pop("size", None)
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
-        if not values:
-            raise ValueError("`create` cannot be called with an empty `values` argument")
+        if not (values is None) ^ (query is None):
+            raise ValueError("`create` needs to be called using exactly one of `values` or `query` arguments")
 
-        if self._size:
-            raise ValueError("`create` can only called on empty `browse_record` objects.")
+        if self._size != 0:
+            raise ValueError("`create` can only be called on `iter_browse` objects of 0 size. I.e. init with `ids=[]`")
 
-        ids = []
-        size = len(values)
+        if query:
+            values = self._values_iter(query)
+
+        if size is None:
+            try:  # noqa: SIM105
+                size = len(values)
+            except TypeError:
+                pass
+
         it = chunks(values, self._chunk_size, fmt=list)
         if self._logger:
-            sz = (size + self._chunk_size - 1) // self._chunk_size
+            sz = (size + self._chunk_size - 1) // self._chunk_size if size else None
             qualifier = "env[%r].create([:%d])" % (self._model._name, self._chunk_size)
             it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
+        ids = []
         self._patch = no_selection_cache_validation()
         for sub_values in it:
             self._patch.start()
