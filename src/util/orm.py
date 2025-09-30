@@ -367,7 +367,12 @@ def _mp_iter_browse_cb(ids_or_values, params):
         getattr(
             me.env[params["model_name"]].with_context(params["context"]).browse(ids_or_values), params["attr_name"]
         )(*params["args"], **params["kwargs"])
+    if params["mode"] == "create":
+        new_ids = me.env[params["model_name"]].with_context(params["context"]).create(ids_or_values).ids
     me.env.cr.commit()
+    if params["mode"] == "create":
+        return new_ids
+    return None
 
 
 class iter_browse(object):
@@ -522,8 +527,12 @@ class iter_browse(object):
             raise RuntimeError("%r ran twice" % (self,))
 
         it = chain.from_iterable(self._it)
+        sz = self._size
+        if self._strategy == "multiprocessing":
+            it = self._it
+            sz = (self._size + self._chunk_size - 1) // self._chunk_size
         if self._logger:
-            it = log_progress(it, self._logger, qualifier=self._model._name, size=self._size)
+            it = log_progress(it, self._logger, qualifier=self._model._name, size=sz)
         self._it = None
         return chain(it, self._end())
 
@@ -593,31 +602,64 @@ class iter_browse(object):
         if self._size:
             raise ValueError("`create` can only called on empty `browse_record` objects.")
 
-        ids = []
+        if self._strategy == "multiprocessing" and not multi:
+            raise ValueError("The multiprocessing strategy only supports the multi version of `create`")
+
         size = len(values)
-        it = chunks(values, self._chunk_size, fmt=list)
+        chunk_size = self._superchunk_size if self._strategy == "multiprocessing" else self._chunk_size
+        it = chunks(values, chunk_size, fmt=list)
         if self._logger:
-            sz = (size + self._chunk_size - 1) // self._chunk_size
-            qualifier = "env[%r].create([:%d])" % (self._model._name, self._chunk_size)
+            sz = (size + chunk_size - 1) // chunk_size
+            qualifier = "env[%r].create([:%d])" % (self._model._name, chunk_size)
             it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
-        self._patch = no_selection_cache_validation()
-        for sub_values in it:
+        def mp_create():
+            params = {
+                "dbname": self._model.env.cr.dbname,
+                "model_name": self._model._name,
+                # convert to dict for pickle. Will still break if any value in the context is not pickleable
+                "context": dict(self._model.env.context),
+                "mode": "create",
+            }
+            self._model.env.cr.commit()
             self._patch.start()
-
-            if multi:
-                ids += self._model.create(sub_values).ids
-            elif not self._cr_uid:
-                ids += [self._model.create(sub_value).id for sub_value in sub_values]
-            else:
-                # old API, `create` directly return the id
-                ids += [self._model.create(*(self._cr_uid + (sub_value,))) for sub_value in sub_values]
-
+            extrakwargs = {"mp_context": multiprocessing.get_context("fork")} if sys.version_info >= (3, 7) else {}
+            with ProcessPoolExecutor(max_workers=get_max_workers(), **extrakwargs) as executor:
+                for sub_values in it:
+                    for task_result in executor.map(
+                        _mp_iter_browse_cb, chunks(sub_values, self._chunk_size, fmt=tuple), repeat(params)
+                    ):
+                        self._model.env.cr.commit()  # make task_result visible on main cursor before yielding ids
+                        for new_id in task_result:
+                            yield new_id
             next(self._end(), None)
+
+        self._patch = no_selection_cache_validation()
+        if self._strategy == "multiprocessing":
+            ids = mp_create()
+        else:
+            ids = []
+            for sub_values in it:
+                self._patch.start()
+
+                if multi:
+                    ids += self._model.create(sub_values).ids
+                elif not self._cr_uid:
+                    ids += [self._model.create(sub_value).id for sub_value in sub_values]
+                else:
+                    # old API, `create` directly return the id
+                    ids += [self._model.create(*(self._cr_uid + (sub_value,))) for sub_value in sub_values]
+
+                next(self._end(), None)
+
         args = self._cr_uid + (ids,)
-        return iter_browse(
-            self._model, *args, chunk_size=self._chunk_size, logger=self._logger, strategy=self._strategy
-        )
+        kwargs = {
+            "size": size,
+            "chunk_size": self._chunk_size,
+            "logger": None if self._strategy == "multiprocessing" else self._logger,
+            "strategy": self._strategy,
+        }
+        return iter_browse(self._model, *args, **kwargs)
 
 
 @contextmanager
