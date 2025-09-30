@@ -1081,7 +1081,7 @@ if version_gte("16.0"):
     def convert_field_to_translatable(cr, model, field):
         table = table_of_model(cr, model)
         ctype = column_type(cr, table, field)
-        if not ctype or ctype == "json":
+        if not ctype or ctype == "jsonb":
             return
         alter_column_type(cr, table, field, "jsonb", "jsonb_build_object('en_US', {0})")
 
