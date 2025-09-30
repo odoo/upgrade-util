@@ -373,7 +373,12 @@ def _mp_iter_browse_cb(ids_or_values, params):
         getattr(
             me.env[params["model_name"]].with_context(params["context"]).browse(ids_or_values), params["attr_name"]
         )(*params["args"], **params["kwargs"])
+    if params["mode"] == "create":
+        new_ids = me.env[params["model_name"]].with_context(params["context"]).create(ids_or_values).ids
     me.env.cr.commit()
+    if params["mode"] == "create":
+        return new_ids
+    return None
 
 
 class iter_browse(object):
@@ -615,6 +620,12 @@ class iter_browse(object):
             qualifier = "env[%r].create([:%d])" % (self._model._name, self._chunk_size)
             it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
+        if self._strategy == "multiprocessing":
+            return self._create_multiprocessing(it, size, multi)
+
+        return self._create(it, multi)
+
+    def _create(self, it, multi):
         ids = []
         self._patch = no_selection_cache_validation()
         for sub_values in it:
@@ -633,6 +644,54 @@ class iter_browse(object):
         return iter_browse(
             self._model, *args, chunk_size=self._chunk_size, logger=self._logger, strategy=self._strategy
         )
+
+    def _create_multiprocessing(self, it, size, multi):
+        if not multi:
+            raise ValueError("The multiprocessing strategy only supports the multi version of `create`")
+
+        def iter_proc():
+            params = {
+                "dbname": self._model.env.cr.dbname,
+                "model_name": self._model._name,
+                # convert to dict for pickle. Will still break if any value in the context is not pickleable
+                "context": dict(self._model.env.context),
+                "mode": "create",
+            }
+            self._model.env.cr.commit()
+            self._patch.start()
+            extrakwargs = {"mp_context": multiprocessing.get_context("fork")} if sys.version_info >= (3, 7) else {}
+            with ProcessPoolExecutor(max_workers=get_max_workers(), **extrakwargs) as executor:
+                batch_len = min(get_max_workers() * 10, 1000000 // self._chunk_size)
+                ipc_chunksize = (batch_len + get_max_workers() - 1) // get_max_workers()
+                batch = []
+
+                def submit_batch():
+                    for result in executor.map(_mp_iter_browse_cb, batch, repeat(params), chunksize=ipc_chunksize):
+                        self._model.env.cr.commit()  # make result visible on main cursor before yielding ids
+                        for new_id in result:
+                            yield new_id
+                    del batch[:]
+
+                for chunk in it:
+                    batch.append(chunk)
+                    if len(batch) % batch_len == 0:
+                        for new_id in submit_batch():
+                            yield new_id
+                for new_id in submit_batch():
+                    yield new_id
+
+            next(self._end(), None)
+
+        self._patch = no_selection_cache_validation()
+        args = self._cr_uid + (iter_proc(),)
+        kwargs = {
+            "size": size,
+            "chunk_size": self._chunk_size,
+            "logger": None,
+            "strategy": self._strategy,
+            "yield_chunks": self._yield_chunks,
+        }
+        return iter_browse(self._model, *args, **kwargs)
 
 
 @contextmanager
