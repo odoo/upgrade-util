@@ -713,6 +713,27 @@ class TestIterBrowse(UnitTestCase):
         records = ib.create([{"name": name} for name in names], multi=multi)
         self.assertEqual([t.name for t in records], names)
 
+    @parametrize([(True,), (False,)])
+    def test_iter_browse_create_val_gen(self, multi):
+        chunk_size = 2
+        RP = self.env["res.partner"]
+
+        names = [f"Name {i}" for i in range(7)]
+        ib = util.iter_browse(RP, [], chunk_size=chunk_size)
+        records = ib.create(({"name": name} for name in names), size=7, multi=multi)
+        self.assertEqual([t.name for t in records], names)
+
+    @parametrize([(True,), (False,)])
+    def test_iter_browse_create_val_query(self, multi):
+        chunk_size = 2
+        RP = self.env["res.partner"]
+
+        names = [f"Name {i}" for i in range(7)]
+        query = "SELECT 'Name ' || i AS name FROM GENERATE_SERIES(0, 6) AS i"
+        ib = util.iter_browse(RP, [], chunk_size=chunk_size)
+        records = ib.create(query=query, multi=multi)
+        self.assertEqual([t.name for t in records], names)
+
     def test_iter_browse_iter_twice(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
