@@ -42,7 +42,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_between, version_gte
-from .pg import SQLStr, column_exists, format_query, get_columns, query_ids
+from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor, query_ids
 
 # python3 shims
 try:
@@ -422,6 +422,19 @@ class iter_browse(object):
         self._patch = None
         self._it = chunks(self._ids, self._chunk_size, fmt=self._browse)
 
+    def _values_query(self, query):
+        cr = self._model.env.cr
+        cr.execute(format_query(cr, "WITH query AS ({}) SELECT count(*) FROM query", SQLStr(query)))
+        size = cr.fetchone()[0]
+
+        def get_values():
+            with named_cursor(cr, itersize=self._chunk_size) as ncr:
+                ncr.execute(SQLStr(query))
+                for row in ncr.iterdict():
+                    yield row
+
+        return size, get_values()
+
     def _browse(self, ids):
         next(self._end(), None)
         args = self._cr_uid + (list(ids),)
@@ -473,35 +486,47 @@ class iter_browse(object):
         self._it = None
         return caller
 
-    def create(self, values, **kw):
+    def create(self, values=None, query=None, **kw):
         """
         Create records.
 
         An alternative to the default `create` method of the ORM that is safe to use to
         create millions of records.
 
-        :param list(dict) values: list of values of the records to create
+        :param iterable(dict) values: iterable of values of the records to create
+        :param int size: the no. of elements produced by values, required if values is a generator
+        :param str query: alternative to values, SQL query that can produce them.
+                          *No* DML statements allowed. Only SELECT.
         :param bool multi: whether to use the multi version of `create`, by default is
                            `True` from Odoo 12 and above
         """
         multi = kw.pop("multi", version_gte("saas~11.5"))
+        size = kw.pop("size", None)
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
-        if not values:
-            raise ValueError("`create` cannot be called with an empty `values` argument")
+        if not (values is None) ^ (query is None):
+            raise ValueError("`create` needs to be called using exactly one of `values` or `query` arguments")
 
         if self._size:
             raise ValueError("`create` can only called on empty `browse_record` objects.")
 
-        ids = []
-        size = len(values)
+        if query:
+            size, values = self._values_query(query)
+
+        if size is None:
+            try:
+                size = len(values)
+            except TypeError:
+                raise ValueError("When passing a generator of values, the size kwarg is mandatory")
+
         it = chunks(values, self._chunk_size, fmt=list)
         if self._logger:
             sz = (size + self._chunk_size - 1) // self._chunk_size
             qualifier = "env[%r].create([:%d])" % (self._model._name, self._chunk_size)
             it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
+        ids = []
         self._patch = no_selection_cache_validation()
         for sub_values in it:
             self._patch.start()
