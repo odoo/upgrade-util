@@ -502,6 +502,19 @@ class iter_browse(object):
 
         self._ids = get_ids()
 
+    def _values_query(self, query):
+        cr = self._model.env.cr
+        cr.execute(format_query(cr, "WITH query AS ({}) SELECT count(*) FROM query", query))
+        size = cr.fetchone()[0]
+
+        def get_values():
+            with named_cursor(cr, itersize=self._chunk_size) as ncr:
+                ncr.execute(query)
+                for row in ncr.iterdict():
+                    yield row
+
+        return size, get_values()
+
     def _browse(self, ids):
         next(self._end(), None)
         args = self._cr_uid + (list(ids),)
@@ -593,6 +606,7 @@ class iter_browse(object):
                            `True` from Odoo 12 and above
         """
         multi = kw.pop("multi", version_gte("saas~11.5"))
+        size = kw.pop("size", None)
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
@@ -605,7 +619,15 @@ class iter_browse(object):
         if self._strategy == "multiprocessing" and not multi:
             raise ValueError("The multiprocessing strategy only supports the multi version of `create`")
 
-        size = len(values)
+        if isinstance(values, SQLStr):
+            size, values = self._values_query(values)
+
+        if size is None:
+            try:
+                size = len(values)
+            except TypeError:
+                raise ValueError("When passing values as a generator, the size kwarg is mandatory")
+
         chunk_size = self._superchunk_size if self._strategy == "multiprocessing" else self._chunk_size
         it = chunks(values, chunk_size, fmt=list)
         if self._logger:
