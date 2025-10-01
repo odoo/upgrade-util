@@ -1156,6 +1156,65 @@ class TestField(UnitTestCase):
 
         self.assertEqual(new_default, "en_US")
 
+    @unittest.skipIf(not util.version_gte("saas~17.5"), "Company dependent fields are stored as jsonb since saas~17.5")
+    def test_convert_field_to_company_dependent(self):
+        cr = self.env.cr
+
+        partner_model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        self.env["ir.model.fields"].create(
+            [
+                {
+                    "name": "x_test_cd_1",
+                    "ttype": "char",
+                    "model_id": partner_model.id,
+                },
+                {
+                    "name": "x_test_cd_2",
+                    "ttype": "char",
+                    "model_id": partner_model.id,
+                },
+            ]
+        )
+
+        c1 = self.env["res.company"].create({"name": "Flancrest"})
+        c2 = self.env["res.company"].create({"name": "Flancrest2"})
+
+        test_partners = self.env["res.partner"].create(
+            [
+                {"name": "Homer", "x_test_cd_1": "A", "x_test_cd_2": "A", "company_id": c1.id},
+                {"name": "Marjorie", "x_test_cd_1": "B", "x_test_cd_2": "B"},
+                {"name": "Bartholomew"},
+            ]
+        )
+        test_partners.invalidate_recordset(["x_test_cd_1", "x_test_cd_2"])
+
+        # Using company_id as default, only records with company set are updated
+        util.make_field_company_dependent(cr, "res.partner", "x_test_cd_1", "char")
+        util.make_field_company_dependent(cr, "res.partner", "x_test_cd_2", "char", company_field=False)
+
+        # make the ORM re-read the info about these manual fields from the DB
+        setup_models = (
+            self.registry.setup_models if hasattr(self.registry, "setup_models") else self.registry._setup_models__
+        )
+        args = (["res.partner"],) if util.version_gte("saas~18.4") else ()
+        setup_models(cr, *args)
+
+        test_partners_c1 = test_partners.with_company(c1.id)
+        self.assertEqual(test_partners_c1[0].x_test_cd_1, "A")
+        self.assertFalse(test_partners_c1[1].x_test_cd_1)
+        self.assertFalse(test_partners_c1[2].x_test_cd_1)
+        self.assertEqual(test_partners_c1[0].x_test_cd_2, "A")
+        self.assertEqual(test_partners_c1[1].x_test_cd_2, "B")
+        self.assertFalse(test_partners_c1[2].x_test_cd_2)
+
+        test_partners_c2 = test_partners.with_company(c2.id)
+        self.assertFalse(test_partners_c2[0].x_test_cd_1)
+        self.assertFalse(test_partners_c2[1].x_test_cd_1)
+        self.assertFalse(test_partners_c2[2].x_test_cd_1)
+        self.assertEqual(test_partners_c2[0].x_test_cd_2, "A")
+        self.assertEqual(test_partners_c2[1].x_test_cd_2, "B")
+        self.assertFalse(test_partners_c2[2].x_test_cd_2)
+
 
 class TestHelpers(UnitTestCase):
     def test_model_table_conversion(self):
