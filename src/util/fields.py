@@ -1223,17 +1223,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
             [model, field, [k for k in mapping if k not in mapping.values()]],
         )
 
-    if table_exists(cr, "ir_values"):
-        query = """
-            UPDATE ir_values
-               SET value = %(json)s::jsonb->>value
-             WHERE model = %(model)s
-               AND name = %(name)s
-               AND key = 'default'
-               AND value IN %(keys)s
-        """
-        dumped_map = {pickle.dumps(k): pickle.dumps(v) for k, v in mapping.items()}
-    else:
+    if table_exists(cr, "ir_default"):
         query = """
             UPDATE ir_default d
                SET json_value = (%(json)s::jsonb->>d.json_value)
@@ -1244,6 +1234,17 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
                AND d.json_value IN %(keys)s
         """
         dumped_map = {json.dumps(k): json.dumps(v) for k, v in mapping.items()}
+    else:
+        query = """
+            UPDATE ir_values
+               SET value = %(json)s::jsonb->>value
+             WHERE model = %(model)s
+               AND name = %(name)s
+               AND key = 'default'
+               AND value IN %(keys)s
+        """
+        dumped_map = {pickle.dumps(k): pickle.dumps(v) for k, v in mapping.items()}
+
     data = {
         "keys": tuple(dumped_map),
         "json": json.dumps(dumped_map),
