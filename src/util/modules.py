@@ -549,20 +549,25 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
                                            already installed
     :return str: the *new* state of the module
     """
-    try:
-        return _force_install_module(cr, module, if_installed, reason)
-    except UnknownModuleError:
-        if version_gte("saas~14.5"):
-            # We must delay until the modules actually exists. They are added by the auto discovery process.
+    if version_gte("saas~14.5"):
+        if if_installed:
+            _assert_modules_exists(cr, *if_installed)
+        if not if_installed or modules_installed(cr, *if_installed):
             ENVIRON["__modules_auto_discovery_force_installs"].add(module)
-            return None
-        else:
-            raise
+        return None
+    else:
+        return _force_install_module(cr, module, if_installed, reason)
 
 
 def _force_install_module(cr, module, if_installed=None, reason="it has been explicitly asked for"):
     """Strict implementation of force_install: raise errors for missing modules."""
     _assert_modules_exists(cr, module)
+
+    cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [module])
+    mod_state = cr.fetchone()[0]
+    if mod_state in INSTALLED_MODULE_STATES:
+        return mod_state
+
     subquery = ""
     params = [module]
     if if_installed:
@@ -675,7 +680,7 @@ def _force_install_module(cr, module, if_installed=None, reason="it has been exp
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
         for (mod,) in cr.fetchall():
-            force_install_module(
+            _force_install_module(
                 cr,
                 mod,
                 reason=(
@@ -716,13 +721,14 @@ def new_module_dep(cr, module, new_dep):
         [new_dep, module, new_dep],
     )
 
-    # Update new_dep state depending on module state
-    cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [module])
-    mod_state = (cr.fetchone() or ["n/a"])[0]
-    if mod_state in INSTALLED_MODULE_STATES:
-        # Module was installed, need to install all its deps, recursively,
-        # to make sure the new dep is installed
-        force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
+    if not version_gte("saas~14.5"):
+        # Update new_dep state depending on module state
+        cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [module])
+        mod_state = (cr.fetchone() or ["n/a"])[0]
+        if mod_state in INSTALLED_MODULE_STATES:
+            # Module was installed, need to install all its deps, recursively,
+            # to make sure the new dep is installed
+            _force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
 
 
 def remove_module_deps(cr, module, old_deps):
@@ -1025,8 +1031,25 @@ def _trigger_auto_discovery(cr):
             _set_module_countries(cr, module, countries)
             module_auto_install(cr, module, auto_install)
 
-        if module in force_installs:
-            _force_install_module(cr, module)
+    cr.execute(
+        """
+        SELECT d.name, STRING_AGG(m.name, ', ' ORDER BY m.name)
+          FROM ir_module_module_dependency d
+          JOIN ir_module_module m
+            ON d.module_id = m.id
+          JOIN ir_module_module dm
+            ON dm.name = d.name
+         WHERE m.state IN %(installed_state)s
+           AND dm.state NOT IN %(installed_state)s
+      GROUP BY d.name
+        """,
+        {"installed_state": INSTALLED_MODULE_STATES},
+    )
+    for new_dep, modules in cr.fetchall():
+        _force_install_module(cr, new_dep, reason="it's a new dependency of {}".format(modules))
+
+    for module in force_installs:
+        _force_install_module(cr, module)
 
     for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
         _force_upgrade_of_fresh_module(cr, module, init, version)
