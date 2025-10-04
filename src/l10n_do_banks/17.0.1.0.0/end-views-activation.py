@@ -173,8 +173,9 @@ def migrate(cr, version):
     ]
     delete_views_list = [
         'warranty_registration_extra_features.warranty_case_claims_form_view1_inherit',
-        'studio_customization.odoo_studio_warranty_5e101e7c-e388-4589-b9b8-628b03ca43f1'
-        'studio_customization.odoo_studio_warranty_64540003-0f78-4e15-8bba-6d3475418fed'
+        'studio_customization.odoo_studio_warranty_5e101e7c-e388-4589-b9b8-628b03ca43f1',
+        'studio_customization.odoo_studio_warranty_64540003-0f78-4e15-8bba-6d3475418fed',
+        'product_product_price_widget.product_product_tree_view_inherit_widget',
     ]
 
     activate_database_views(cr, activate_views_list)
