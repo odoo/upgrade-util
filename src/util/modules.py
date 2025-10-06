@@ -55,6 +55,8 @@ from .records import ref, remove_group, remove_menus, remove_records, remove_vie
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
 
+ENVIRON.setdefault("AUTO_DISCOVERY_RAN", False)
+
 if version_gte("15.0"):
     AUTO_INSTALL = os.getenv("UPG_AUTOINSTALL")
     _NO_AUTOINSTALL = os.getenv("UPG_NO_AUTOINSTALL")
@@ -553,6 +555,14 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
         if if_installed:
             _assert_modules_exists(cr, *if_installed)
         if not if_installed or modules_installed(cr, *if_installed):
+            cr.execute("SELECT 1 FROM ir_module_module WHERE name = 'base' AND state != 'to upgrade'")
+            if cr.rowcount:
+                if not ENVIRON.get("AUTO_DISCOVERY_RAN"):
+                    # run the autodiscovery once to allow to force install _new_ modules
+                    _trigger_auto_discovery(cr)
+                elif ENVIRON.get("AUTO_DISCOVERY_UPGRADE"):
+                    raise MigrationError("`force_install_module` can only be called from pre/post of `base`")
+                return _force_install_module(cr, module, reason="{} (done outside of a major upgrade)".format(reason))
             ENVIRON["__modules_auto_discovery_force_installs"].add(module)
         return None
     else:
@@ -994,6 +1004,8 @@ def _trigger_auto_discovery(cr):
     # low level implementation.
     # Called by `base/0.0.0/post-modules-auto-discovery.py` script.
     # Use accumulated values for the auto_install and force_upgrade modules.
+
+    ENVIRON["AUTO_DISCOVERY_RAN"] = True
 
     force_installs = ENVIRON["__modules_auto_discovery_force_installs"]
 
