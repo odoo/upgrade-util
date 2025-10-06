@@ -15,9 +15,11 @@ try:
 except ImportError:
     from collections import Sequence, Set
 
+import functools
 import itertools
 import logging
 import os
+import warnings
 from inspect import currentframe
 from operator import itemgetter
 
@@ -43,7 +45,7 @@ except ImportError:
         from openerp.addons.web.controllers.main import module_topological_sort as topological_sort
 
 from .const import ENVIRON, NEARLYWARN
-from .exceptions import MigrationError, SleepyDeveloperError, UnknownModuleError
+from .exceptions import MigrationError, SleepyDeveloperError, UnknownModuleError, UpgradeWarning
 from .fields import remove_field
 from .helpers import _validate_model, table_of_model
 from .misc import on_CI, parse_version, str2bool, version_gte
@@ -85,6 +87,28 @@ except NameError:
     basestring = str
 
 
+if version_gte("16.0"):
+    from odoo.modules.registry import Registry as _Registry
+
+    def _warn_usage_outside_base(f):
+        @functools.wraps(f)
+        def wrapper(cr, *args, **kwargs):
+            if "base" in _Registry(cr.dbname)._init_modules:
+                warnings.warn(
+                    "Calling `{}` outside the module base can lead to unexpected results".format(f.__name__),
+                    UpgradeWarning,
+                    stacklevel=2,
+                )
+            return f(cr, *args, **kwargs)
+
+        return wrapper
+
+else:
+    # deactivated on old versions, to avoid modification of legacy upgrade scripts.
+    def _warn_usage_outside_base(f):
+        return f
+
+
 def modules_installed(cr, *modules):
     """
     Return whether *all* given modules are installed.
@@ -122,6 +146,7 @@ def module_installed(cr, module):
     return modules_installed(cr, module)
 
 
+@_warn_usage_outside_base
 def uninstall_module(cr, module):
     """
     Uninstall and remove all records owned by a module.
@@ -283,9 +308,11 @@ def uninstall_theme(cr, theme, base_theme=None):
         for website in websites:
             IrModuleModule._theme_remove(website)
     flush(env_["base"])
-    uninstall_module(cr, theme)
+    with warnings.catchwarnings(action="ignore", category=UpgradeWarning):
+        uninstall_module(cr, theme)
 
 
+@_warn_usage_outside_base
 def remove_module(cr, module):
     """
     Completely remove a module.
@@ -351,6 +378,7 @@ def _update_view_key(cr, old, new):
     )
 
 
+@_warn_usage_outside_base
 def rename_module(cr, old, new):
     """
     Rename a module and all references to it.
@@ -387,6 +415,7 @@ def rename_module(cr, old, new):
         fu[new] = fu.pop(old)
 
 
+@_warn_usage_outside_base
 def merge_module(cr, old, into, update_dependers=True):
     """
     Merge a module into another.
@@ -703,6 +732,7 @@ def _assert_modules_exists(cr, *modules):
         raise UnknownModuleError(*sorted(unexisting_modules))
 
 
+@_warn_usage_outside_base
 def new_module_dep(cr, module, new_dep):
     assert isinstance(new_dep, basestring)
     _assert_modules_exists(cr, module, new_dep)
@@ -731,6 +761,7 @@ def new_module_dep(cr, module, new_dep):
             _force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
 
 
+@_warn_usage_outside_base
 def remove_module_deps(cr, module, old_deps):
     assert isinstance(old_deps, (Sequence, Set)) and not isinstance(old_deps, basestring)
     # As the goal is to have dependencies removed, the objective is reached even when they don't exist.
@@ -748,6 +779,7 @@ def remove_module_deps(cr, module, old_deps):
     )
 
 
+@_warn_usage_outside_base
 def module_deps_diff(cr, module, plus=(), minus=()):
     for new_dep in plus:
         new_module_dep(cr, module, new_dep)
@@ -755,6 +787,7 @@ def module_deps_diff(cr, module, plus=(), minus=()):
         remove_module_deps(cr, module, tuple(minus))
 
 
+@_warn_usage_outside_base
 def module_auto_install(cr, module, auto_install):
     if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
         params = []
@@ -780,6 +813,7 @@ def module_auto_install(cr, module, auto_install):
     cr.execute("UPDATE ir_module_module SET auto_install = %s WHERE name = %s", [auto_install is not False, module])
 
 
+@_warn_usage_outside_base
 def trigger_auto_install(cr, module):
     _assert_modules_exists(cr, module)
     if AUTO_INSTALL == "none":
@@ -871,6 +905,7 @@ def _set_module_countries(cr, module, countries):
     cr.execute(insert_query, [module, tuple(c.upper() for c in countries)])
 
 
+@_warn_usage_outside_base
 def new_module(cr, module, deps=(), auto_install=False, category=None, countries=()):
     if deps:
         _assert_modules_exists(cr, *deps)
@@ -920,7 +955,7 @@ def new_module(cr, module, deps=(), auto_install=False, category=None, countries
     trigger_auto_install(cr, module)
 
 
-def _caller_version(depth=2):
+def _caller_version(depth=3):
     frame = currentframe()
     version = "util"
     while version == "util":
@@ -931,6 +966,7 @@ def _caller_version(depth=2):
     return version
 
 
+@_warn_usage_outside_base
 def force_upgrade_of_fresh_module(cr, module, init=True):
     """
     Force the execution of upgrade scripts for a module that is being installed.
@@ -1055,6 +1091,7 @@ def _trigger_auto_discovery(cr):
         _force_upgrade_of_fresh_module(cr, module, init, version)
 
 
+@_warn_usage_outside_base
 def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
     # Cursor, Optional[Set[str]], Optional[Set[str]] -> None
 
