@@ -57,6 +57,7 @@ def uninstall_modules(cr):
         'sale_mrp_link',
         'bim',
         'component',
+        'sh_restrict_pricelist',
     ]
 
     for module_name in modules_to_uninstall:
