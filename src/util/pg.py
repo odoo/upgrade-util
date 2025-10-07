@@ -1411,13 +1411,22 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
     for orig_m2m_table in get_m2m_tables(cr, new_table):
         if orig_m2m_table in ignored_m2ms:
             continue
-        m = re.match(r"^(\w+)_{0}_rel|{0}_(\w+)_rel$".format(re.escape(old_table)), orig_m2m_table)
+        m = re.match(r"^(x_|)(?:(\w+)_{0}|{0}_(\w+))_rel$".format(re.escape(old_table)), orig_m2m_table)
         if m:
-            m2m_table = "{}_{}_rel".format(*sorted([m.group(1) or m.group(2), new_table]))
+            m2m_table = "{}{}_{}_rel".format(m.group(1), *sorted([m.group(2) or m.group(3), new_table]))
             # Due to the 63 chars limit in generated constraint names, for long table names the FK
             # constraint is dropped when renaming the table. We need the constraint to correctly
             # identify the FK targets. The FK constraints will be dropped and recreated below.
             rename_table(cr, orig_m2m_table, m2m_table, remove_constraints=False)
+            cr.execute(
+                """
+                UPDATE ir_model_fields
+                   SET relation_table = %s
+                 WHERE relation_table = %s
+                   AND state = 'manual'
+                """,
+                [m2m_table, orig_m2m_table],
+            )
             _logger.info("Renamed m2m table %s to %s", orig_m2m_table, m2m_table)
         else:
             m2m_table = orig_m2m_table

@@ -1057,6 +1057,46 @@ class TestPG(UnitTestCase):
         self.assertEqual("res_groups_res_users_rel", auto_generated_m2m_table_name)
         self.assertTrue(util.table_exists(cr, auto_generated_m2m_table_name))
 
+    def test_rename_m2m(self):
+        cr = self.env.cr
+
+        self.env["ir.model"].create({"model": "x_new.model", "name": "Custom test model"})
+        manual_model_id = self.env["ir.model"].create({"model": "x_manual.model", "name": "Manual model"}).id
+
+        field_regular = self.env["ir.model.fields"].create(
+            {
+                "name": "x_m2m_field_regular",
+                "ttype": "many2many",
+                "model_id": manual_model_id,
+                "relation": "x_new.model",
+                "relation_table": "x_x_manual_model_x_new_model_rel",
+            }
+        )
+        field_custom = self.env["ir.model.fields"].create(
+            {
+                "name": "x_m2m_field_custom",
+                "ttype": "many2many",
+                "model_id": manual_model_id,
+                "relation": "x_new.model",
+                "relation_table": "x_x_manual_model_x_new_model_rel_2",
+            }
+        )
+        old_regular_table = field_regular.relation_table
+        old_custom_table = field_custom.relation_table
+
+        util.pg_rename_table(cr, "x_new_model", "new_special_model")
+        util.update_m2m_tables(cr, "x_new_model", "new_special_model")
+        util.invalidate(field_regular)
+
+        new_regular_table = field_regular.relation_table
+        self.assertEqual(new_regular_table, "x_new_special_model_x_manual_model_rel")
+        self.assertEqual(field_custom.relation_table, old_custom_table)
+        self.assertEqual(field_regular.column2, "new_special_model_id")
+        self.assertEqual(field_custom.column2, "new_special_model_id")
+        self.assertTrue(util.table_exists(cr, new_regular_table))
+        self.assertTrue(util.table_exists(cr, old_custom_table))
+        self.assertFalse(util.table_exists(cr, old_regular_table))
+
 
 class TestORM(UnitTestCase):
     def test_create_cron(self):
