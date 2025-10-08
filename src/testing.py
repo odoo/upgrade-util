@@ -442,7 +442,7 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
         if not abstract and not hasattr(cls, "invariant"):
             _logger.error("%s (IntegrityCase) must define an invariant method", cls.__name__)
 
-    # IntegrityCase should not alterate database:
+    # IntegrityCase should not alter database:
     # TODO give a test cursor, don't commit after prepare, use a protected cursor to set_value
 
     def prepare(self):
