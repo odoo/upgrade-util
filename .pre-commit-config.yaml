@@ -14,7 +14,7 @@ repos:
         files: '^src/\w+/(tests|0\.0\.0)/.*\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.13.0
+    rev: v0.14.0
     hooks:
     - id: ruff
       name: Check code with Ruff, apply automatic fixes
@@ -22,7 +22,7 @@ repos:
     - id: ruff-format
       name: Format code with Ruff
   - repo: https://github.com/crate-ci/typos
-    rev: v1.36.2
+    rev: v1.38.1
     hooks:
       - id: typos
   - repo: https://github.com/pre-commit/pre-commit-hooks
