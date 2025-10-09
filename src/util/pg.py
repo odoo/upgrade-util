@@ -1287,13 +1287,14 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
               FROM information_schema.table_constraints
              WHERE table_name = %s
                AND constraint_name !~ '^[0-9_]+_not_null$'
+               AND constraint_name != %s
                AND (  constraint_type NOT IN ('PRIMARY KEY', 'FOREIGN KEY')
                    -- For long table names the constraint name is shortened by PG to fit 63 chars, in such cases
                    -- it's better to drop the constraint, even if it's a foreign key, and let the ORM re-create it.
                    OR (constraint_type = 'FOREIGN KEY' AND constraint_name NOT LIKE %s)
                    )
             """,
-            [new_table, old_table.replace("_", r"\_") + r"\_%"],
+            [new_table, '%s_id_not_null' % old_table, old_table.replace("_", r"\_") + r"\_%"],
         )
         for (const,) in cr.fetchall():
             _logger.info("Dropping constraint %s on table %s", const, new_table)
