@@ -5,6 +5,7 @@ import collections
 import logging
 import os
 import re
+import string
 import threading
 import time
 import uuid
@@ -220,6 +221,43 @@ def format_query(cr, query, *args, **kwargs):
     return SQLStr(sql.SQL(query).format(*args, **kwargs).as_string(cr._cnx))
 
 
+class _ExplodeFormatter(string.Formatter):
+    """
+    Retro-compatible parallel filter formatter.
+
+    Any input that didn't fail before satisfies:
+    1. There is no replacement in the string other than `{parallel_filter}`.
+    2. Any literal brace was escaped --by doubling them.
+
+    For any input that didn't fail before this new implementation returns the same output
+    as `str.format`.
+
+    The main change here, and the goal of this class, is to now make former invalid input
+    valid. Thus this formatter will _only_ replace `{parallel_filter}` while keeping any
+    other `{str}` or `{int}` elements. Double braces will still be formatted into
+    single ones.
+
+    :meta private: exclude from online docs
+    """
+
+    def parse(self, format_string):
+        for literal_text, field_name, format_spec, conversion in super(_ExplodeFormatter, self).parse(format_string):
+            if field_name is not None and field_name != "parallel_filter":
+                yield literal_text + "{", None, None, None
+                composed = (
+                    field_name
+                    + (("!" + conversion) if conversion else "")
+                    + ((":" + format_spec) if format_spec else "")
+                    + "}"
+                )
+                yield composed, None, None, None
+            else:
+                yield literal_text, field_name, format_spec, conversion
+
+
+_explode_format = _ExplodeFormatter().format
+
+
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     """
     Explode a query to multiple queries that can be executed in parallel.
@@ -256,7 +294,7 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     if num_buckets < 1:
         raise ValueError("num_buckets should be greater than zero")
     parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
-    query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
+    query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
@@ -294,7 +332,7 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
             # Even if there are any records, return one query to be executed to validate its correctness and avoid
             # scripts that pass the CI but fail in production.
             parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
-            return [query.format(parallel_filter=parallel_filter)]
+            return [_explode_format(query, parallel_filter=parallel_filter)]
         else:
             return []
 
@@ -335,10 +373,11 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         # Still, since the query may only be valid if there is no split, we force the usage of `prefix` in the query to
         # validate its correctness and avoid scripts that pass the CI but fail in production.
         parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
-        return [query.format(parallel_filter=parallel_filter)]
+        return [_explode_format(query, parallel_filter=parallel_filter)]
 
     parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
-    query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
+    query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
+
     return [
         cr.mogrify(query, {"lower-bound": ids[i], "upper-bound": ids[i + 1] - 1}).decode() for i in range(len(ids) - 1)
     ]
