@@ -255,6 +255,9 @@ class _ExplodeFormatter(string.Formatter):
                 yield literal_text, field_name, format_spec, conversion
 
 
+_explode_format = _ExplodeFormatter().format
+
+
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     """
     Explode a query to multiple queries that can be executed in parallel.
@@ -291,7 +294,7 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     if num_buckets < 1:
         raise ValueError("num_buckets should be greater than zero")
     parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
-    query = _ExplodeFormatter().format(query.replace("%", "%%"), parallel_filter=parallel_filter)
+    query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
@@ -321,8 +324,6 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
 
-    fmt = _ExplodeFormatter().format
-
     cr.execute(format_query(cr, "SELECT min(id), max(id) FROM {}", table))
     min_id, max_id = cr.fetchone()
     if min_id is None:
@@ -331,7 +332,7 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
             # Even if there are any records, return one query to be executed to validate its correctness and avoid
             # scripts that pass the CI but fail in production.
             parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
-            return [fmt(query, parallel_filter=parallel_filter)]
+            return [_explode_format(query, parallel_filter=parallel_filter)]
         else:
             return []
 
@@ -372,10 +373,10 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         # Still, since the query may only be valid if there is no split, we force the usage of `prefix` in the query to
         # validate its correctness and avoid scripts that pass the CI but fail in production.
         parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
-        return [fmt(query, parallel_filter=parallel_filter)]
+        return [_explode_format(query, parallel_filter=parallel_filter)]
 
     parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
-    query = fmt(query.replace("%", "%%"), parallel_filter=parallel_filter)
+    query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
 
     return [
         cr.mogrify(query, {"lower-bound": ids[i], "upper-bound": ids[i + 1] - 1}).decode() for i in range(len(ids) - 1)
