@@ -768,6 +768,42 @@ class TestPG(UnitTestCase):
         result = cr.fetchone()[0]
         self.assertEqual(result, expected)
 
+    @parametrize(
+        [
+            ("{parallel_filter}", "…"),
+            ("{{parallel_filter}}", "{parallel_filter}"),
+            ("{}", "{}"),
+            ("{0}", "{0}"),
+            ("{{0}}", "{0}"),
+            ("{x}", "{x}"),
+            ("{{x}}", "{x}"),
+            ("{{}}", "{}"),
+            ("{{", "{"),
+            ("test", "test"),
+            ("", ""),
+            ("WHERE {parallel_filter} AND true", "WHERE … AND true"),
+            ("WHERE {parallel_filter} AND {other}", "WHERE … AND {other}"),
+            ("WHERE {parallel_filter} AND {other!r}", "WHERE … AND {other!r}"),
+            ("WHERE {parallel_filter} AND {{other}}", "WHERE … AND {other}"),
+            ("WHERE {parallel_filter} AND {}", "WHERE … AND {}"),
+            ("WHERE {parallel_filter} AND {{}}", "WHERE … AND {}"),
+            ("WHERE {parallel_filter} AND {parallel_filter}", "WHERE … AND …"),
+            ("using { with other things inside } and {parallel_filter}", "using { with other things inside } and …"),
+        ]
+    )
+    def test_ExplodeFormatter(self, value, expected):
+        formatted = util.pg._ExplodeFormatter().format(value, parallel_filter="…")
+        self.assertEqual(formatted, expected)
+        # retro-compatibility test
+        try:
+            std_formatted = value.format(parallel_filter="…")
+        except (IndexError, KeyError):
+            # ignore string that weren't valid
+            pass
+        else:
+            # assert that the new formatted output match the old one.
+            self.assertEqual(formatted, std_formatted)
+
     def _get_cr(self):
         cr = self.registry.cursor()
         self.addCleanup(cr.close)
