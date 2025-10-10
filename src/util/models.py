@@ -175,6 +175,18 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
         for tbl in ["base_action_rule", "base_automation", "google_drive_config"]:
             if column_exists(cr, tbl, "model_id"):
                 cr.execute("DELETE FROM {0} WHERE model_id=%s".format(tbl), [mod_id])
+
+        if not version_gte("17.0") and column_exists(cr, "base_automation", "action_server_id"):
+            cr.execute(
+                """
+                DELETE FROM base_automation b_a
+                 USING ir_act_server action
+                 WHERE b_a.action_server_id = action.id
+                   AND action.binding_model_id = %s
+                """,
+                [mod_id],
+            )
+
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
 
         # remove m2m tables
