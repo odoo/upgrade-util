@@ -497,9 +497,14 @@ def get_value_or_en_translation(cr, table, column):
 
 def _column_info(cr, table, column):
     _validate_table(table)
+    # NOTE: usage of both `CONCAT` and `||` in the query below is done on purpose to take advantage of their NULL handling.
+    #       NULLS propagate with `||` and are ignored by `CONCAT`.
     cr.execute(
         """
-        SELECT COALESCE(bt.typname, t.typname) AS udt_name,
+        SELECT CONCAT(
+                 COALESCE(bt.typname, t.typname),
+                 '(' || information_schema._pg_char_max_length(information_schema._pg_truetypid(a.*, t.*), information_schema._pg_truetypmod(a.*, t.*)) || ')'
+               ) AS udt_name,
                NOT (a.attnotnull OR t.typtype = 'd' AND t.typnotnull) AS is_nullable,
                (   c.relkind IN ('r','p','v','f')
                AND pg_column_is_updatable(c.oid::regclass, a.attnum, false)
