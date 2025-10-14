@@ -718,11 +718,31 @@ class TestIterBrowse(UnitTestCase):
 
 
 class TestPG(UnitTestCase):
+    @parametrize(
+        [
+            ("res_country", "name", "jsonb" if util.version_gte("16.0") else "varchar"),  # translated field
+            ("res_country", "code", "varchar(2)"),
+            ("res_currency", "active", "bool"),
+            ("res_country", "create_date", "timestamp"),
+            ("res_currency", "create_uid", "int4"),
+            ("res_country", "name_position", "varchar"),
+            ("res_country", "address_format", "text"),
+            ("res_partner", "does_not_exists", None),
+        ]
+    )
+    def test_column_type(self, table, column, expected):
+        value = util.column_type(self.env.cr, table, column)
+        if expected is None:
+            self.assertIsNone(value)
+        else:
+            self.assertEqual(value, expected)
+
     def test_alter_column_type(self):
         cr = self.env.cr
         cr.execute(
             """
             ALTER TABLE res_partner_bank ADD COLUMN x bool;
+            ALTER TABLE res_partner_bank ADD COLUMN y varchar(4);
 
             UPDATE res_partner_bank
                SET x = CASE id % 3
@@ -741,6 +761,12 @@ class TestPG(UnitTestCase):
             all(x == 1 or (x == 2 and id_ % 3 == 2) for id_, x in data),
             "Some values where not casted correctly via USING",
         )
+
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar(4)")
+        util.alter_column_type(cr, "res_partner_bank", "y", "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar")
+        util.alter_column_type(cr, "res_partner_bank", "y", "varchar(12)")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar(12)")
 
     @parametrize(
         [
