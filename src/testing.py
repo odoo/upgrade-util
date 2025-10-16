@@ -150,16 +150,22 @@ def parametrize(argvalues):
     Parametrize a test function.
 
     Decorator for upgrade test functions to parametrize and generate multiple tests from
-    it.
+    it. The new test functions are injected in the containing class. Inspired by the
+    `parameterized <https://pypi.org/project/parameterized/>`_ package.
 
-    Usage::
+    .. example::
 
-        @parametrize([(1, 2), (2, 4), (-1, -2), (0, 0)])
-        def test_double(self, input, expected):
-            self.assertEqual(input * 2, expected)
+       .. code-block:: python
 
-    Works by injecting test functions in the containing class.
-    Inspired by the `parameterized <https://pypi.org/project/parameterized/>`_ package.
+          @parametrize([(1, 2), (2, 4), (-1, -2), (0, 0)])
+          def test_double(self, input, expected):
+              self.assertEqual(input * 2, expected)
+
+       This will generate four test methods: ``test_double__0``, ``test_double__1``,
+       ``test_double__2``, and ``test_double__3``, each with different argument values.
+
+    :param list(tuple) argvalues: Arguments for each test case. Each tuple will be
+                                  unpacked and passed as arguments to the test function.
     """
 
     def make_func(func, name, args):
@@ -521,7 +527,7 @@ def get_previous_major(major, minor):
 # pylint: disable=inherit-non-class
 class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
     """
-    Test case to verify that the upgrade scripts correctly upgrade data.
+    Test case to verify the upgrade flow.
 
     Override:
 
@@ -572,16 +578,15 @@ class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
 # pylint: disable=inherit-non-class
 class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
     """
-    Test case for validating invariants across upgrades.
+    Test case for validating upgrade invariants.
 
     Override:
 
     * ``invariant`` to return a JSON-serializable value representing
       the invariant to check.
 
-    The ``invariant`` method is called both before and after the upgrade,
-    and the results are compared.
-
+    The ``invariant`` method is called both before and after the upgrade, and the results
+    are compared. If there is any difference the test fails.
 
     .. example::
 
