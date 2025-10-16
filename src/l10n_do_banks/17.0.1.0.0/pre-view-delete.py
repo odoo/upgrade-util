@@ -15,10 +15,12 @@ def migrate(cr, version):
     env = api.Environment(cr, SUPERUSER_ID, {})
 
     views_to_delete = [
+        'bi_warranty_registration.warranty_details_form_view'
+        'bi_warranty_registration.warranty_case_claims_form_view1',
         'product_product_price_widget.product_product_tree_view_inherit_widget',
         'sale_stock_product_price_widget.sale_price_widgets_view', 
         'sale_stock_qty_date_widgets.sale_stock_qty_date_widgets_view',
-        'product_stock_qty_date_widget.product_product_tree_view_inherit_widget_qty'
+        'product_stock_qty_date_widget.product_product_tree_view_inherit_widget_qty',
         'warranty_registration_extra_features.warranty_case_claims_form_view1_inherit',
         'studio_customization.odoo_studio_warranty_5e101e7c-e388-4589-b9b8-628b03ca43f1',
         'studio_customization.odoo_studio_warranty_64540003-0f78-4e15-8bba-6d3475418fed',
