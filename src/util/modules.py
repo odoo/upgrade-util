@@ -310,7 +310,8 @@ def uninstall_theme(cr, theme, base_theme=None):
         for website in websites:
             IrModuleModule._theme_remove(website)
     flush(env_["base"])
-    with warnings.catchwarnings(action="ignore", category=UpgradeWarning):
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", category=UpgradeWarning)
         uninstall_module(cr, theme)
 
 
