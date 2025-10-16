@@ -166,6 +166,8 @@ def migrate(cr, version):
         'tss_report.tss_report_form_wizard',
         'tss_report.view_hr_payslip_form',
         'website_stock_availability.res_config_settings_view_form_inherit',
+        'operating_unit.view_user_form',
+        'sale_discount_display_amount.sale_order_view_form_display_discount',
     ]
 
     remove_inherit_views_list = [
