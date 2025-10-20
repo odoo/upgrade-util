@@ -44,7 +44,7 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import AUTO, Sentinel, get_max_workers, log_progress, on_CI, version_gte
+from .misc import AUTO, Sentinel, get_max_workers, get_modules, log_progress, on_CI, version_gte
 
 try:
     from odoo.tools.sql import make_identifier
@@ -1698,6 +1698,7 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
     if old_table == new_table or not version_gte("10.0"):
         return
     ignored_m2ms = set(ignored_m2ms)
+    standard_modules = set(get_modules()) - {"studio_customization", "__cloc_exclude__"}
     for orig_m2m_table, _, _, other_table in get_m2m_on(cr, new_table):
         if orig_m2m_table in ignored_m2ms:
             continue
@@ -1719,12 +1720,23 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
             rename_table(cr, orig_m2m_table, m2m_table, remove_constraints=False)
             cr.execute(
                 """
+                WITH _f AS (
+                    SELECT f.id
+                      FROM ir_model_fields f
+                 LEFT JOIN ir_model_data d
+                        ON d.model = 'ir.model.fields'
+                       AND d.res_id = f.id
+                       AND d.module NOT IN %s
+                     WHERE f.relation_table = %s
+                       AND (d.id IS NOT NULL OR f.state = 'manual')
+                  GROUP BY f.id
+                )
                 UPDATE ir_model_fields
                    SET relation_table = %s
-                 WHERE relation_table = %s
-                   AND state = 'manual'
+                  FROM _f
+                 WHERE _f.id = ir_model_fields.id
                 """,
-                [m2m_table, orig_m2m_table],
+                [tuple(standard_modules), orig_m2m_table, m2m_table],
             )
             _logger.info("Renamed m2m table %s to %s", orig_m2m_table, m2m_table)
         else:
@@ -1776,23 +1788,45 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
 
             cr.execute(
                 """
+                WITH _f AS (
+                    SELECT f.id
+                      FROM ir_model_fields f
+                 LEFT JOIN ir_model_data d
+                        ON d.model = 'ir.model.fields'
+                       AND d.res_id = f.id
+                       AND d.module NOT IN %s
+                     WHERE f.relation_table = %s
+                       AND f.column1 = %s
+                       AND (d.id IS NOT NULL OR f.state = 'manual')
+                  GROUP BY f.id
+                )
                 UPDATE ir_model_fields
                    SET column1 = %s
-                 WHERE relation_table = %s
-                   AND column1 = %s
-                   AND state = 'manual'
+                  FROM _f
+                 WHERE _f.id = ir_model_fields.id
                 """,
-                [new_col, m2m_table, old_col],
+                [tuple(standard_modules), m2m_table, old_col, new_col],
             )
             cr.execute(
                 """
+                WITH _f AS (
+                    SELECT f.id
+                      FROM ir_model_fields f
+                 LEFT JOIN ir_model_data d
+                        ON d.model = 'ir.model.fields'
+                       AND d.res_id = f.id
+                       AND d.module NOT IN %s
+                     WHERE f.relation_table = %s
+                       AND f.column2 = %s
+                       AND (d.id IS NOT NULL OR f.state = 'manual')
+                  GROUP BY f.id
+                )
                 UPDATE ir_model_fields
                    SET column2 = %s
-                 WHERE relation_table = %s
-                   AND column2 = %s
-                   AND state = 'manual'
+                  FROM _f
+                 WHERE _f.id = ir_model_fields.id
                 """,
-                [new_col, m2m_table, old_col],
+                [tuple(standard_modules), m2m_table, old_col, new_col],
             )
 
             _logger.info("Renamed m2m column of table %s from %s to %s", m2m_table, old_col, new_col)
