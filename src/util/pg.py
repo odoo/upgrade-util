@@ -1467,7 +1467,6 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
                 UPDATE ir_model_fields
                    SET relation_table = %s
                  WHERE relation_table = %s
-                   AND state = 'manual'
                 """,
                 [m2m_table, orig_m2m_table],
             )
@@ -1525,7 +1524,6 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
                    SET column1 = %s
                  WHERE relation_table = %s
                    AND column1 = %s
-                   AND state = 'manual'
                 """,
                 [new_col, m2m_table, old_col],
             )
@@ -1535,7 +1533,6 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
                    SET column2 = %s
                  WHERE relation_table = %s
                    AND column2 = %s
-                   AND state = 'manual'
                 """,
                 [new_col, m2m_table, old_col],
             )
