@@ -53,6 +53,7 @@ from .inherit import for_each_inherit
 from .misc import AUTO, log_progress, safe_eval, version_gte
 from .orm import env, invalidate
 from .pg import (
+    PGRegexp,
     SQLStr,
     alter_column_type,
     column_exists,
@@ -64,6 +65,7 @@ from .pg import (
     get_columns,
     get_value_or_en_translation,
     parallel_execute,
+    pg_replace,
     pg_text2html,
     remove_column,
     table_exists,
@@ -1409,11 +1411,11 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             _validate_model(model)
 
     p = {
-        "old": r"\y%s\y" % (re.escape(old),),
-        "old_pattern": r"""[.'"]{0}\y""".format(re.escape(old)),
+        "old": PGRegexp(r"\y{}\y".format(re.escape(old))),
+        "old_pattern": PGRegexp(r"""[.'"]{0}\y""".format(re.escape(old))),
         "new": new,
-        "def_old": r"\ydefault_%s\y" % (re.escape(old),),
-        "def_new": "default_%s" % (new,),
+        "def_old": PGRegexp(r"\ydefault_{}\y".format(re.escape(old))),
+        "def_new": "default_{}".format(new),
         "models": tuple(only_models) if only_models else (),
     }
 
@@ -1520,26 +1522,26 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         col_prefix = ""
         if not column_exists(cr, "ir_filters", "sort"):
             col_prefix = "--"  # sql comment the line
-        q = """
-            UPDATE ir_filters
-               SET {col_prefix} sort = regexp_replace(sort, %(old)s, %(new)s, 'g'),
-                   context = regexp_replace(regexp_replace(context,
-                                                           %(old)s, %(new)s, 'g'),
-                                                           %(def_old)s, %(def_new)s, 'g')
-        """
 
-        if only_models:
-            q += " WHERE model_id IN %(models)s AND "
-        else:
-            q += " WHERE "
-        q += """
-            (
+        q = format_query(
+            cr,
+            """
+            UPDATE ir_filters
+               SET {col_prefix} sort = {sort_repl},
+                   context = {context_repl}
+             WHERE {cond}
+               AND (
                 context ~ %(old)s
                 OR context ~ %(def_old)s
                 {col_prefix} OR sort ~ %(old)s
-            )
-        """
-        cr.execute(q.format(col_prefix=col_prefix), p)
+               )
+            """,
+            col_prefix=SQLStr(col_prefix),
+            sort_repl=pg_replace("sort", [(p["old"], p["new"])]),
+            context_repl=pg_replace("context", [(p["old"], p["new"]), (p["def_old"], p["def_new"])]),
+            cond=SQLStr("model_id IN %(models)s") if only_models else SQLStr("true"),
+        )
+        cr.execute(q, p)
 
         # ir.exports.line, base_import.mapping # noqa
         if only_models:

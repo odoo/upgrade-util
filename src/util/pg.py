@@ -438,7 +438,12 @@ def pg_array_uniq(a, drop_null=False):
 
 def pg_replace(s, replacements):
     q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode("utf-8")
-    return SQLStr(reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s))
+
+    def replace(s, r):
+        func = "regexp_replace({}, {}, {}, 'g')" if isinstance(r[0], PGRegexp) else "replace({}, {}, {})"
+        return func.format(s, q(r[0]), q(r[1]))
+
+    return SQLStr(reduce(replace, replacements, s))
 
 
 def pg_html_escape(s, quote=True):
