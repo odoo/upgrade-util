@@ -616,6 +616,7 @@ def column_updatable(cr, table, column):
 
 
 def _normalize_pg_type(type_):
+    main_type, suffix = re.match(r"(.+?)((?:\[\]|\([0-9]+\))*)$", type_).groups()
     aliases = {
         "boolean": "bool",
         "smallint": "int2",
@@ -627,7 +628,7 @@ def _normalize_pg_type(type_):
         "timestamp with time zone": "timestamptz",
         "timestamp without time zone": "timestamp",
     }
-    return aliases.get(type_.lower(), type_)
+    return aliases.get(main_type.strip().lower(), main_type) + suffix
 
 
 def create_column(cr, table, column, definition, **kwargs):

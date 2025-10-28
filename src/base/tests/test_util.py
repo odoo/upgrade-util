@@ -720,6 +720,36 @@ class TestIterBrowse(UnitTestCase):
 class TestPG(UnitTestCase):
     @parametrize(
         [
+            # explicit conversions
+            ("boolean", "bool"),
+            ("smallint", "int2"),
+            ("integer", "int4"),
+            ("bigint", "int8"),
+            ("real", "float4"),
+            ("double precision", "float8"),
+            ("character varying", "varchar"),
+            ("timestamp with time zone", "timestamptz"),
+            ("timestamp without time zone", "timestamp"),
+            # noop for existing types
+            ("bool", "bool"),
+            ("int4", "int4"),
+            ("varchar", "varchar"),
+            # and unspecified/unknown types
+            ("jsonb", "jsonb"),
+            ("foo", "foo"),
+            # keep suffix (for arrays and sized limited varchar)
+            ("int4[]", "int4[]"),
+            ("varchar(2)", "varchar(2)"),
+            # but also convert types
+            ("integer[]", "int4[]"),
+            ("character varying(16)", "varchar(16)"),
+        ]
+    )
+    def test__normalize_pg_type(self, type_, expected):
+        self.assertEqual(util.pg._normalize_pg_type(type_), expected)
+
+    @parametrize(
+        [
             ("res_country", "name", False, "jsonb" if util.version_gte("16.0") else "varchar"),  # translated field
             ("res_country", "code", False, "varchar"),
             ("res_country", "code", True, "varchar(2)"),
