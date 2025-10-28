@@ -720,18 +720,21 @@ class TestIterBrowse(UnitTestCase):
 class TestPG(UnitTestCase):
     @parametrize(
         [
-            ("res_country", "name", "jsonb" if util.version_gte("16.0") else "varchar"),  # translated field
-            ("res_country", "code", "varchar(2)"),
-            ("res_currency", "active", "bool"),
-            ("res_country", "create_date", "timestamp"),
-            ("res_currency", "create_uid", "int4"),
-            ("res_country", "name_position", "varchar"),
-            ("res_country", "address_format", "text"),
-            ("res_partner", "does_not_exists", None),
+            ("res_country", "name", False, "jsonb" if util.version_gte("16.0") else "varchar"),  # translated field
+            ("res_country", "code", False, "varchar"),
+            ("res_country", "code", True, "varchar(2)"),
+            ("res_currency", "active", False, "bool"),
+            ("res_currency", "active", True, "bool"),
+            ("res_country", "create_date", False, "timestamp"),
+            ("res_currency", "create_uid", False, "int4"),
+            ("res_country", "name_position", False, "varchar"),
+            ("res_country", "name_position", True, "varchar"),
+            ("res_country", "address_format", False, "text"),
+            ("res_partner", "does_not_exists", False, None),
         ]
     )
-    def test_column_type(self, table, column, expected):
-        value = util.column_type(self.env.cr, table, column)
+    def test_column_type(self, table, column, sized, expected):
+        value = util.column_type(self.env.cr, table, column, sized=sized)
         if expected is None:
             self.assertIsNone(value)
         else:
@@ -762,11 +765,14 @@ class TestPG(UnitTestCase):
             "Some values where not casted correctly via USING",
         )
 
-        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar(4)")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y", sized=True), "varchar(4)")
         util.alter_column_type(cr, "res_partner_bank", "y", "varchar")
         self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y", sized=True), "varchar")
         util.alter_column_type(cr, "res_partner_bank", "y", "varchar(12)")
-        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar(12)")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y", sized=True), "varchar(12)")
 
     @parametrize(
         [
