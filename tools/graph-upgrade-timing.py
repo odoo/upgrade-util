@@ -2,6 +2,7 @@
 # ruff: noqa: RET503
 
 # /// script
+# requires-python = ">=3.11"
 # dependencies = [
 #   "pygal[png]",
 # ]
@@ -11,19 +12,24 @@ import argparse
 import os
 import re
 import sys
+from datetime import datetime
 
 import pygal  # also need cairosvg for png output
+
+DT_PAT = r"((\d{4}-\d{2}-\d{2} \d{2}:\d{2}):\d{2},\d{3}) "
 
 
 def process(options):
     pie = pygal.Pie()
     dt = None
     others = 0.0
+    end_st = None
+    end_mod = None
     for line in sys.stdin.readlines():
         if dt is None:
-            match = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}):\d{2},\d{3} ", line)
+            match = re.match(DT_PAT, line)
             if match:
-                dt = match.group(1)
+                dt = match.group(2)
 
         match = re.search(r"Module ([a-zA-Z0-9_]+) loaded in (\d+\.\d\d)s, \d+ queries", line)
         if match:
@@ -32,6 +38,34 @@ def process(options):
                 pie.add(match.group(1), time)
             else:
                 others += time
+            continue
+
+        match = re.search(r"module ([a-zA-Z0-9_]+): Running migration \[\$", line)
+        if match:
+            mod = match.group(1)
+            match = re.match(DT_PAT, line)
+            if end_mod is None:
+                end_mod = mod
+                end_st = match.group(1)
+            elif mod != end_mod:
+                time = (datetime.fromisoformat(match.group(1)) - datetime.fromisoformat(end_st)).total_seconds()
+                if time > options.min_time:
+                    pie.add(f"{end_mod} [end]", time)
+                else:
+                    others += time
+                end_mod = mod
+                end_st = match.group(1)
+
+        elif end_st:
+            if " odoo.modules.loading:" in line or " odoo.addons.base.models.ir_model: Deleting " in line:
+                # last `end-` script finished.
+                match = re.match(DT_PAT, line)
+                time = (datetime.fromisoformat(match.group(1)) - datetime.fromisoformat(end_st)).total_seconds()
+                if time > options.min_time:
+                    pie.add(f"{end_mod} [end]", time)
+                else:
+                    others += time
+                end_st = None
 
     if options.min_time and others:
         pie.add("Other modules", others)
