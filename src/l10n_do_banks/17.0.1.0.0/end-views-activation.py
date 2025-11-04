@@ -29,11 +29,11 @@ def activate_database_views(cr, xml_ids):
         except Exception as e:
             _logger.warning(f"Error finding view {xml_id}: {e}")
 
-def delete_database_views(cr, xml_ids):
+def delete_database_views(cr, refs):
     env = api.Environment(cr, SUPERUSER_ID, {})
-    for xml_id in xml_ids:
+    for ref in refs:
         try:
-            view = env.ref(xml_id)
+            view = env.ref(ref)
             if view:
                 # First, recursively find and delete all inherited views
                 def delete_inherited_views_recursive(view_id):
