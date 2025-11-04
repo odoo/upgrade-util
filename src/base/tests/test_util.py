@@ -507,6 +507,9 @@ class TestRemoveFieldDomains(UnitTestCase):
         ]
     )
     def test_remove_field(self, domain, expected):
+        self._test_remove_field(domain, expected)
+
+    def _test_remove_field(self, domain, expected, **kw):
         cr = self.env.cr
         cr.execute(
             "INSERT INTO ir_filters(name, model_id, domain, context, sort)"
@@ -515,12 +518,16 @@ class TestRemoveFieldDomains(UnitTestCase):
         )
         (filter_id,) = cr.fetchone()
 
-        util.remove_field(cr, "base.module.update", "updated")
+        util.remove_field(cr, "base.module.update", "updated", **kw)
 
         cr.execute("SELECT domain FROM ir_filters WHERE id = %s", [filter_id])
         altered_domain = literal_eval(cr.fetchone()[0])
 
         self.assertEqual(altered_domain, expected)
+
+    def test_remove_field_no_update_references(self):
+        domain = [("updated", "=", 0)]
+        self._test_remove_field(domain, domain, update_references=False)
 
 
 class TestIrExports(UnitTestCase):
