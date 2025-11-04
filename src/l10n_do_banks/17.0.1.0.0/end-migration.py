@@ -54,17 +54,16 @@ def deactivate_studio_views(cr):
             ])
             
             for inherited in inherited_views:
-                inherited.write({'active': False})
+                inherited.write({'active': False, 'inherit_id': False})
                 _logger.info(f"Inherited View Deactivated: {inherited.name} (ID: {inherited.id})")
             
-            view_obj.write({'active': False})
-            _logger.info(f"View Deactivated: {view['name']} (ID: {view['id']})")            
+            view_obj.write({'active': False, 'inherit_id': False})
+            _logger.info(f"View Deactivated and Inherited Deactivated: {view['name']} (ID: {view['id']})")            
             env.cr.commit()
             
         except Exception as e:
             _logger.warning(f"Error deactivating view {view['name']} (ID: {view['id']}): {e}")
     
-
 def deactivate_automated_actions(cr):
     """
     Script on end-migration to deactivate automated actions.
