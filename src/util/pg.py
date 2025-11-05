@@ -36,9 +36,11 @@ from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
 try:
+    from odoo.modules import get_modules
     from odoo.modules import module as odoo_module
     from odoo.sql_db import db_connect
 except ImportError:
+    from openerp.modules import get_modules
     from openerp.sql_db import db_connect
 
     odoo_module = None
@@ -1462,6 +1464,7 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
     if old_table == new_table or not version_gte("10.0"):
         return
     ignored_m2ms = set(ignored_m2ms)
+    standard_modules = set(get_modules()) - {"studio_customization", "__cloc_exclude__"}
     for orig_m2m_table in get_m2m_tables(cr, new_table):
         if orig_m2m_table in ignored_m2ms:
             continue
@@ -1474,12 +1477,18 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
             rename_table(cr, orig_m2m_table, m2m_table, remove_constraints=False)
             cr.execute(
                 """
-                UPDATE ir_model_fields
+                UPDATE ir_model_fields f
                    SET relation_table = %s
-                 WHERE relation_table = %s
-                   AND state = 'manual'
+                  FROM ir_model_data d
+                 WHERE f.relation_table = %s
+                   AND (
+                       f.state = 'manual'
+                    OR d.model = 'ir.model.fields'
+                   AND d.res_id = f.id
+                   AND d.module NOT IN %s
+                       )
                 """,
-                [m2m_table, orig_m2m_table],
+                [m2m_table, orig_m2m_table, tuple(standard_modules)],
             )
             _logger.info("Renamed m2m table %s to %s", orig_m2m_table, m2m_table)
         else:
@@ -1531,23 +1540,35 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
 
             cr.execute(
                 """
-                UPDATE ir_model_fields
+                UPDATE ir_model_fields f
                    SET column1 = %s
-                 WHERE relation_table = %s
-                   AND column1 = %s
-                   AND state = 'manual'
+                  FROM ir_model_data d
+                 WHERE f.relation_table = %s
+                   AND f.column1 = %s
+                   AND (
+                       f.state = 'manual'
+                    OR d.model = 'ir.model.fields'
+                   AND d.res_id = f.id
+                   AND d.module NOT IN %s
+                       )
                 """,
-                [new_col, m2m_table, old_col],
+                [new_col, m2m_table, old_col, tuple(standard_modules)],
             )
             cr.execute(
                 """
-                UPDATE ir_model_fields
+                UPDATE ir_model_fields f
                    SET column2 = %s
-                 WHERE relation_table = %s
-                   AND column2 = %s
-                   AND state = 'manual'
+                  FROM ir_model_data d
+                 WHERE f.relation_table = %s
+                   AND f.column2 = %s
+                   AND (
+                       f.state = 'manual'
+                    OR d.model = 'ir.model.fields'
+                   AND d.res_id = f.id
+                   AND d.module NOT IN %s
+                       )
                 """,
-                [new_col, m2m_table, old_col],
+                [new_col, m2m_table, old_col, tuple(standard_modules)],
             )
 
             _logger.info("Renamed m2m column of table %s from %s to %s", m2m_table, old_col, new_col)
