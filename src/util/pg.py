@@ -698,6 +698,37 @@ def create_column(cr, table, column, definition, **kwargs):
     return True
 
 
+def copy_column(cr, table, column, new_name=AUTO):
+    """
+    Copy a column.
+
+    This function copies a column if it exists. It raises an error otherwise.
+
+    :param str table: table of the column
+    :param str column: name of the column
+    :param str new_name: name of the new column, if not passed the original column name
+                         will be used with suffix ``_upg_copy``.
+    :return: new column name
+    :rtype: str
+    """
+    if not column_exists(cr, table, column):
+        raise MigrationError("column {} doesn't exists".format(column))
+    if new_name is AUTO:
+        new_name = column + "_upg_copy"
+    if column_exists(cr, table, new_name):
+        raise MigrationError("column {} already exists".format(new_name))
+    create_column(cr, table, new_name, column_type(cr, table, column))
+    query = format_query(
+        cr,
+        "UPDATE {table} SET {new_name} = {column} WHERE {column} IS NOT NULL",
+        table=table,
+        new_name=new_name,
+        column=column,
+    )
+    explode_execute(cr, query, table=table)
+    return new_name
+
+
 def create_fk(cr, table, column, fk_table, on_delete_action="NO ACTION"):
     assert on_delete_action in ON_DELETE_ACTIONS
     current_target = target_of(cr, table, column)
