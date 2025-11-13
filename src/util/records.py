@@ -408,7 +408,7 @@ def remove_records(cr, model, ids):
         if inh.via:
             table = table_of_model(cr, inh.model)
             if not column_exists(cr, table, inh.via):
-                # column may not exists in case of a partially unintalled module that left only *magic columns* in tables
+                # column may not exists in case of a partially uninstalled module that left only *magic columns* in tables
                 continue
             cr.execute('SELECT id FROM "{}" WHERE "{}" IN %s'.format(table, inh.via), [ids])
             if inh.model == "ir.ui.menu":
