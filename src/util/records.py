@@ -49,6 +49,7 @@ from .pg import (
     format_query,
     get_columns,
     get_fk,
+    get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
     table_exists,
@@ -1282,11 +1283,14 @@ def delete_unused(cr, *xmlids, **kwargs):
     :param bool keep_xmlids: whether to keep the xml_ids of records that cannot be
                              removed. By default `True` for versions up to 18.0,
                              `False` from `saas~18.1` on.
+    :param list(str) or str include_m2m: list of m2m tables to include in the search.
+                                         `"*"` for all.
     :return: list of ids of removed records, if any
     :rtype: list(int)
     """
     deactivate = kwargs.pop("deactivate", False)
     keep_xmlids = kwargs.pop("keep_xmlids", not version_gte("saas~18.1"))
+    include_m2m = kwargs.pop("include_m2m", ())
     if kwargs:
         raise TypeError("delete_unused() got an unexpected keyword argument %r" % kwargs.popitem()[0])
 
@@ -1358,12 +1362,14 @@ def delete_unused(cr, *xmlids, **kwargs):
         else:
             kids_query = format_query(cr, "SELECT id, ARRAY[id] AS children FROM {0} WHERE id = ANY(%(ids)s)", table)
 
+        m2m_tables = include_m2m if include_m2m != "*" else get_m2m_tables(cr, table)
+
         sub = " UNION ALL ".join(
             [
                 format_query(cr, "SELECT 1 FROM {} x WHERE x.{} = ANY(s.children)", fk_tbl, fk_col)
                 for fk_tbl, fk_col, _, fk_act in get_fk(cr, table, quote_ident=False)
                 # ignore "on delete cascade" fk (they are indirect dependencies (lines or m2m))
-                if fk_act != "c"
+                if (fk_act != "c" or fk_tbl in m2m_tables)
                 # ignore children records unless the deletion is restricted
                 if not (fk_tbl == table and fk_act != "r")
             ]
