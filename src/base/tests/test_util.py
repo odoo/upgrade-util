@@ -1942,6 +1942,24 @@ class TestRecords(UnitTestCase):
         self.assertTrue(cat_2.exists())
         self.assertTrue(cat_3.exists())
 
+    def test_delete_unused_include_m2m(self):
+        cat_1, cat_2, cat_3 = self._prepare_test_delete_unused()
+
+        cr = self.env.cr
+        cr.execute(
+            "INSERT INTO res_partner_res_partner_category_rel(partner_id, category_id) VALUES(%s, %s)",
+            [util.ref(cr, "base.partner_root"), cat_2.id],
+        )
+
+        deleted = util.delete_unused(
+            self.env.cr, f"base.{cat_1.name}", f"base.{cat_2.name}", f"base.{cat_3.name}", include_m2m="*"
+        )
+
+        self.assertEqual(deleted, [f"base.{cat_3.name}"])
+        self.assertTrue(cat_1.exists())
+        self.assertTrue(cat_2.exists())
+        self.assertFalse(cat_3.exists())
+
 
 class TestEditView(UnitTestCase):
     @parametrize(
