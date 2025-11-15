@@ -1364,14 +1364,14 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
         )
 
     if remove_constraints:
-        # DELETE all constraints, except Primary/Foreign keys, they will be re-created by the ORM
-        # NOTE: Custom constraints will instead be lost
+        # DELETE all constraints, except Primary/Foreign keys/not null checks, they will be re-created by the ORM
+        # NOTE: Custom constraints will instead be lost, except for not null ones
         cr.execute(
-            """
+            r"""
             SELECT constraint_name
               FROM information_schema.table_constraints
              WHERE table_name = %s
-               AND constraint_name !~ '^[0-9_]+_not_null$'
+               AND constraint_name !~ '^\w+_not_null$'
                AND (  constraint_type NOT IN ('PRIMARY KEY', 'FOREIGN KEY')
                    -- For long table names the constraint name is shortened by PG to fit 63 chars, in such cases
                    -- it's better to drop the constraint, even if it's a foreign key, and let the ORM re-create it.
@@ -1384,24 +1384,29 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
             _logger.info("Dropping constraint %s on table %s", const, new_table)
             remove_constraint(cr, new_table, const, warn=False)
 
-    # rename fkeys
+    # rename constraints
     cr.execute(
         """
         SELECT constraint_name
           FROM information_schema.table_constraints
          WHERE table_name = %s
-           AND constraint_type = 'FOREIGN KEY'
-           AND constraint_name LIKE %s
+           AND (
+               constraint_name ~ %s
+               OR (
+                   constraint_type = 'FOREIGN KEY'
+                   AND constraint_name LIKE %s
+                  )
+               )
         """,
-        [new_table, old_table.replace("_", r"\_") + r"\_%"],
+        [new_table, "^" + re.escape(old_table) + r"_\w+_not_null$", old_table.replace("_", r"\_") + r"\_%"],
     )
     old_table_length = len(old_table)
-    for (old_fkey,) in cr.fetchall():
-        new_fkey = new_table + old_fkey[old_table_length:]
-        _logger.info("Renaming FK %r to %r", old_fkey, new_fkey)
+    for (old_const,) in cr.fetchall():
+        new_const = new_table + old_const[old_table_length:]
+        _logger.info("Renaming constraint %r to %r", old_const, new_const)
         cr.execute(
             sql.SQL("ALTER TABLE {} RENAME CONSTRAINT {} TO {}").format(
-                sql.Identifier(new_table), sql.Identifier(old_fkey), sql.Identifier(new_fkey)
+                sql.Identifier(new_table), sql.Identifier(old_const), sql.Identifier(new_const)
             )
         )
 
