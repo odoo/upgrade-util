@@ -148,6 +148,42 @@ def module_installed(cr, module):
     return modules_installed(cr, module)
 
 
+def dependent_modules(cr, modules, states=INSTALLED_MODULE_STATES):
+    """Return all modules that depend (directly or indirectly) on the given module(s).
+
+    :param tuple(str) modules: name or tuple of names of the module(s)
+    :param tuple(str) states: return modules only in these states (default: INSTALLED_MODULE_STATES)
+    :return: list of names of the dependent modules
+    :rtype: list(str)
+    """
+    cr.execute(
+        """
+        WITH RECURSIVE dependents AS (
+            SELECT m.name
+              FROM ir_module_module m
+              JOIN ir_module_module_dependency d
+                ON d.module_id = m.id
+             WHERE d.name IN %(modules)s
+               AND m.state IN %(states)s
+
+             UNION
+
+            SELECT m2.name
+              FROM ir_module_module m2
+              JOIN ir_module_module_dependency d2
+                ON d2.module_id = m2.id
+              JOIN dependents dep
+                ON d2.name = dep.name
+             WHERE m2.state IN %(states)s
+        )
+        SELECT ARRAY_AGG(DISTINCT name ORDER BY name) FROM dependents
+        """,
+        {"modules": modules, "states": states},
+    )
+    result = cr.fetchone()[0]
+    return result or []
+
+
 @_warn_usage_outside_base
 def uninstall_module(cr, module):
     """
