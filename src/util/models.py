@@ -27,6 +27,7 @@ from .pg import (
     get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
+    query_ids,
     table_exists,
     update_m2m_tables,
     view_exists,
@@ -128,17 +129,17 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                 'SELECT id FROM "{}" r WHERE {}'.format(ir.table, ir.model_filter(prefix="r.")), [model]
             ).decode()
 
-        cr.execute(query)
-        if ir.table == "ir_ui_view":
-            for (view_id,) in cr.fetchall():
-                remove_view(cr, view_id=view_id, silent=True)
-        else:
-            # remove in batch
-            size = (cr.rowcount + chunk_size - 1) / chunk_size
-            it = chunks([id for (id,) in cr.fetchall()], chunk_size, fmt=tuple)
-            for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
-                remove_records(cr, ref_model, sub_ids)
-                _rm_refs(cr, ref_model, sub_ids)
+        with query_ids(cr, query, itersize=chunk_size) as ids_:
+            if ir.table == "ir_ui_view":
+                for view_id in ids_:
+                    remove_view(cr, view_id=view_id, silent=True)
+            else:
+                # remove in batch
+                size = (len(ids_) + chunk_size - 1) / chunk_size
+                it = chunks(ids_, chunk_size, fmt=tuple)
+                for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
+                    remove_records(cr, ref_model, sub_ids)
+                    _rm_refs(cr, ref_model, sub_ids)
 
         if ir.set_unknown:
             # Link remaining records not linked to a XMLID
