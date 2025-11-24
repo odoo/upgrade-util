@@ -18,6 +18,11 @@ except ImportError:
 from odoo import modules
 from odoo.tools import mute_logger
 
+try:
+    from odoo.sql_db import db_connect
+except ImportError:
+    from openerp.sql_db import db_connect
+
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
 from odoo.addons.base.maintenance.migrations.util import snippets
@@ -1493,6 +1498,27 @@ class TestNamedCursors(UnitTestCase):
         with util.named_cursor(self.env.cr) as ncr:
             result = list(self.exec(ncr, "__iter__"))
         self.assertEqual(result, expected)
+
+
+class TestQueryIds(UnitTestCase):
+    def test_straight(self):
+        result = list(util.query_ids(self.env.cr, "SELECT * FROM (VALUES (1), (2)) AS x(x)", itersize=2))
+        self.assertEqual(result, [1, 2])
+
+    def test_chunks(self):
+        with util.query_ids(self.env.cr, "SELECT * FROM (VALUES (1), (2)) AS x(x)") as ids:
+            result = list(util.chunks(ids, 100, fmt=list))
+        self.assertEqual(result, [[1, 2]])
+
+    def test_destructor(self):
+        ids = util.query_ids(self.env.cr, "SELECT id from res_users")
+        del ids
+
+    def test_pk_violation(self):
+        with db_connect(self.env.cr.dbname).cursor() as cr, mute_logger("odoo.sql_db"), self.assertRaises(
+            ValueError
+        ), util.query_ids(cr, "SELECT * FROM (VALUES (1), (1)) AS x(x)") as ids:
+            list(ids)
 
 
 class TestRecords(UnitTestCase):
