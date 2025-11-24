@@ -42,7 +42,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_between, version_gte
-from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor
+from .pg import SQLStr, column_exists, format_query, get_columns, query_ids
 
 # python3 shims
 try:
@@ -288,27 +288,16 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
 
-    if ids is None:
-        query = format_query(cr, "SELECT id FROM {}", table_of_model(cr, model)) if query is None else SQLStr(query)
-        cr.execute(
-            format_query(cr, "CREATE UNLOGGED TABLE _upgrade_rf(id) AS (WITH query AS ({}) SELECT * FROM query)", query)
+    ids_ = ids
+    if ids_ is None:
+        ids_ = query_ids(
+            cr,
+            format_query(cr, "SELECT id FROM {}", table_of_model(cr, model)) if query is None else SQLStr(query),
+            itersize=2**20,
         )
-        count = cr.rowcount
-        cr.execute("ALTER TABLE _upgrade_rf ADD CONSTRAINT pk_upgrade_rf_id PRIMARY KEY (id)")
 
-        def get_ids():
-            with named_cursor(cr, itersize=2**20) as ncr:
-                ncr.execute("SELECT id FROM _upgrade_rf ORDER BY id")
-                for (id_,) in ncr:
-                    yield id_
-
-        ids_ = get_ids()
-    else:
-        count = len(ids)
-        ids_ = ids
-
+    count = len(ids_)
     if not count:
-        cr.execute("DROP TABLE IF EXISTS _upgrade_rf")
         return
 
     _logger.info("Computing fields %s of %r on %d records", fields, model, count)
@@ -338,7 +327,6 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         else:
             flush(records)
         invalidate(records)
-    cr.execute("DROP TABLE IF EXISTS _upgrade_rf")
 
 
 class iter_browse(object):
