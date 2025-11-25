@@ -184,3 +184,34 @@ class SpreadsheetTokenizeTest(UnitTestCase):
             tokenize("=''!A1"),
             [("OPERATOR", "="), ("SYMBOL", "''!A1")],
         )
+
+    def test_literal_array(self):
+        self.assertEqual(
+            tokenize("={1,2;3,4}"),
+            [
+                ("OPERATOR", "="),
+                ("LEFT_BRACE", "{"),
+                ("NUMBER", "1"),
+                ("ARG_SEPARATOR", ","),
+                ("NUMBER", "2"),
+                ("ARRAY_ROW_SEPARATOR", ";"),
+                ("NUMBER", "3"),
+                ("ARG_SEPARATOR", ","),
+                ("NUMBER", "4"),
+                ("RIGHT_BRACE", "}"),
+            ],
+        )
+        self.assertEqual(
+            tokenize("=SUM({1,2})"),
+            [
+                ("OPERATOR", "="),
+                ("SYMBOL", "SUM"),
+                ("LEFT_PAREN", "("),
+                ("LEFT_BRACE", "{"),
+                ("NUMBER", "1"),
+                ("ARG_SEPARATOR", ","),
+                ("NUMBER", "2"),
+                ("RIGHT_BRACE", "}"),
+                ("RIGHT_PAREN", ")"),
+            ],
+        )

@@ -87,7 +87,9 @@ def tokenize(string, locale=DEFAULT_LOCALE):
         while not chars.is_over():
             token = (
                 tokenize_space(chars)
+                or tokenize_array_row_separator(chars, locale)
                 or tokenize_args_separator(chars, locale)
+                or tokenize_braces(chars)
                 or tokenize_parenthesis(chars)
                 or tokenize_operator(chars)
                 or tokenize_string(chars)
@@ -123,6 +125,17 @@ def tokenize_parenthesis(chars):
     return None
 
 
+braces = {"{": ("LEFT_BRACE", "{"), "}": ("RIGHT_BRACE", "}")}
+
+
+def tokenize_braces(chars):
+    value = chars.current
+    if value in braces:
+        chars.shift()
+        return braces[value]
+    return None
+
+
 def tokenize_args_separator(chars, locale):
     if chars.current == locale["formulaArgSeparator"]:
         value = chars.shift()
@@ -139,6 +152,16 @@ def tokenize_operator(chars):
 
 
 FIRST_POSSIBLE_NUMBER_CHARS = set("0123456789")
+
+
+def tokenize_array_row_separator(chars, locale):
+    row_separator = "\\" if locale["formulaArgSeparator"] == ";" else ";"
+    if not row_separator:
+        return None
+    if chars.current == row_separator:
+        chars.shift()
+        return "ARRAY_ROW_SEPARATOR", row_separator
+    return None
 
 
 def tokenize_number(chars, locale):
