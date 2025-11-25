@@ -583,7 +583,10 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
     """
     if version_gte("saas~14.5"):
         if if_installed:
-            _assert_modules_exists(cr, *if_installed)
+            try:
+                _assert_modules_exists(cr, *if_installed)
+            except UnknownModuleError as e:
+                _logger.warning("Unknown 'if_installed' modules: %s; consider them as uninstalled.", ", ".join(e.args))
         if not if_installed or modules_installed(cr, *if_installed):
             cr.execute("SELECT 1 FROM ir_module_module WHERE name = 'base' AND state != 'to upgrade'")
             if cr.rowcount:
