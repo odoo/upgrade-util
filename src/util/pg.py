@@ -1770,6 +1770,7 @@ def get_m2m_tables(cr, table):
 
 class named_cursor(object):
     def __init__(self, cr, itersize=None):
+        self._ncr = None
         self._ncr = cr._cnx.cursor("upg_nc_" + uuid.uuid4().hex, withhold=True)
         if itersize:
             self._ncr.itersize = itersize
@@ -1790,18 +1791,25 @@ class named_cursor(object):
     def iterdict(self):
         return map(self.__dictrow, self._ncr)
 
+    def _close(self):
+        if self._ncr and not self._ncr.closed:
+            self._ncr.close()
+
     def __iter__(self):
         return self._ncr.__iter__()
 
     def __enter__(self):
-        self._ncr.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        return self._ncr.__exit__(exc_type, exc_value, traceback)
+        self._close()
+        return False
 
     def __getattr__(self, name):
         return getattr(self._ncr, name)
+
+    def __del__(self):
+        self._close()
 
 
 def create_id_sequence(cr, table, set_as_default=True):
