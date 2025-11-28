@@ -1770,6 +1770,7 @@ def get_m2m_tables(cr, table):
 
 class named_cursor(object):
     def __init__(self, cr, itersize=None):
+        self._ncr = None
         self._ncr = cr._cnx.cursor("upg_nc_" + uuid.uuid4().hex, withhold=True)
         if itersize:
             self._ncr.itersize = itersize
@@ -1790,18 +1791,25 @@ class named_cursor(object):
     def iterdict(self):
         return map(self.__dictrow, self._ncr)
 
+    def _close(self):
+        if self._ncr and not self._ncr.closed:
+            self._ncr.close()
+
     def __iter__(self):
         return self._ncr.__iter__()
 
     def __enter__(self):
-        self._ncr.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        return self._ncr.__exit__(exc_type, exc_value, traceback)
+        self._close()
+        return False
 
     def __getattr__(self, name):
         return getattr(self._ncr, name)
+
+    def __del__(self):
+        self._close()
 
 
 def create_id_sequence(cr, table, set_as_default=True):
@@ -1932,3 +1940,80 @@ def bulk_update_table(cr, table, columns, mapping, key_col="id"):
         key_col=key_col,
     )
     cr.execute(query, [Json(mapping)])
+
+
+class query_ids(object):
+    """
+    Iterator over ids returned by a query.
+
+    This iterator can memory efficiently query a potentially huge number of ids.
+
+    :param str query: the query that returns the ids. It can be DML, e.g. `UPDATE table WHERE ... RETURNING id`.
+    :param int itersize: passed to a named_cursor, determines the number of rows fetched from PG at once.
+    """
+
+    def __init__(self, cr, query, itersize=None):
+        self._ncr = None
+        self._cr = cr
+        self._tmp_tbl = "_upgrade_query_ids_{}".format(uuid.uuid4().hex)
+        cr.execute(
+            format_query(
+                cr,
+                "CREATE UNLOGGED TABLE {}(id) AS (WITH query AS ({}) SELECT * FROM query)",
+                self._tmp_tbl,
+                SQLStr(query),
+            )
+        )
+        self._len = cr.rowcount
+        try:
+            cr.execute(
+                format_query(
+                    cr,
+                    "ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY (id)",
+                    self._tmp_tbl,
+                    "pk_{}_id".format(self._tmp_tbl),
+                )
+            )
+        except psycopg2.IntegrityError as e:
+            if e.pgcode == errorcodes.UNIQUE_VIOLATION:
+                cr.rollback()
+                raise ValueError("The query for ids is producing duplicate values: {}", query)
+            raise
+        self._ncr = named_cursor(cr, itersize)
+        self._ncr.execute(format_query(cr, "SELECT id FROM {} ORDER BY id", self._tmp_tbl))
+        self._it = iter(self._ncr)
+
+    def _close(self):
+        if self._ncr:
+            if self._ncr.closed:
+                return
+            self._ncr.close()
+        self._cr.execute(format_query(self._cr, "DROP TABLE IF EXISTS {}", self._tmp_tbl))
+
+    def __len__(self):
+        return self._len
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._ncr.closed:
+            raise StopIteration
+        try:
+            return next(self._it)[0]
+        except StopIteration:
+            self._close()
+            raise
+
+    def next(self):
+        return self.__next__()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self._close()
+        return False
+
+    def __del__(self):
+        self._close()
