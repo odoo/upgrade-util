@@ -333,10 +333,11 @@ class TestAdaptOneDomain(UnitTestCase):
         self.assertEqual(new_domain, expected)
 
         # test it also works recursively
-        domain = [("partner_id", "any", [("bank_ids", "not any", [("acc_number", "like", "S.A.")])])]
+        account_number = "account_number" if util.version_gte("saas~19.2") else "acc_number"
+        domain = [("partner_id", "any", [("bank_ids", "not any", [(account_number, "like", "S.A.")])])]
         expected = [("partner_id", "any", [("bank_ids", "not any", [("acc_nbr", "like", "S.A.")])])]
 
-        new_domain = _adapt_one_domain(self.cr, "res.partner.bank", "acc_number", "acc_nbr", "res.company", domain)
+        new_domain = _adapt_one_domain(self.cr, "res.partner.bank", account_number, "acc_nbr", "res.company", domain)
         self.assertEqual(new_domain, expected)
 
 
@@ -2612,8 +2613,8 @@ class TestAssertUpdated(UnitTestCase):
         with self.assertUpdated("res_partner", ids=[]):
             p1.city = "Underground"
             util.flush(p1)
-        with self.assertRaises(AssertionError), self.assertUpdated("res_bank", ids=[]):
-            self.env["res.bank"].create({"name": "Annie Leonhart"})
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Annie Leonhart"})
 
         # when ids has multiple records, all records should be updated
         with self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
@@ -2646,8 +2647,8 @@ class TestAssertUpdated(UnitTestCase):
             self.env["res.partner"].create({"name": "Bertolt Hoover"})
 
         # when ids is [], assert no record is updated
-        with self.assertNotUpdated("res_bank", ids=[]):
-            self.env["res.bank"].create({"name": "Marco Bodt"})
+        with self.assertNotUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Marco Bodt"})
         with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[]):
             p2.city = "Shiganshina"
             util.flush(p2)
