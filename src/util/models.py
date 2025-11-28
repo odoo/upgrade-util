@@ -193,6 +193,30 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
         if ignore_m2m != "*":
             tables = get_m2m_tables(cr, table_of_model(cr, model))
             ignore = set(ignore_m2m)
+            if tables:
+                cr.execute(
+                    """
+                    SELECT name, model
+                      FROM ir_model_fields
+                     WHERE relation_table IN %s
+                       AND state = 'manual'
+                    """,
+                    [tuple(tables)],
+                )
+
+                if cr.rowcount:
+                    affected_fields = cr.fetchall()
+                    for field, field_model in affected_fields:
+                        remove_field(cr, field_model, field, drop_column=False)
+                    msg = "The following fields have been removed because their related model {} ({}) was removed:\n{}".format(
+                        mod_label, model, "\n".join(" - field {} of model {}".format(*r) for r in affected_fields)
+                    )
+                    add_to_migration_reports(
+                        message=msg,
+                        category="Removed Fields",
+                        format="md",
+                    )
+
             for table_name in tables:
                 if table_name in ignore:
                     _logger.info("remove_model(%r): m2m table %r explicitly ignored", model, table_name)
