@@ -1258,7 +1258,7 @@ def get_common_columns(cr, table1, table2, ignore=("id",)):
     :param str table1: first table name whose columns are retrieved
     :param str table2: second table name whose columns are retrieved
     :param list(str) ignore: list of column names to ignore in the returning list
-    :return: a list of column names present in both tables
+    :return: a list of column names with same data type present in both tables
     :rtype: :class:`~odoo.upgrade.util.pg.ColumnList`
     """
     _validate_table(table1)
@@ -1272,7 +1272,7 @@ def get_common_columns(cr, table1, table2, ignore=("id",)):
                  WHERE table_schema = 'public'
                    AND table_name IN %s
                    AND column_name != ALL(%s)
-              GROUP BY column_name
+              GROUP BY column_name, data_type
                 HAVING count(table_name) = 2
             )
             SELECT coalesce(array_agg(column_name::varchar ORDER BY column_name), ARRAY[]::varchar[]),
