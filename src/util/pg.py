@@ -1251,14 +1251,15 @@ def get_columns(cr, table, ignore=("id",)):
     return ColumnList(*cr.fetchone())
 
 
-def get_common_columns(cr, table1, table2, ignore=("id",)):
+def get_common_columns(cr, table1, table2, ignore=("id",), type_check=True):
     """
     Return a list of columns present in both tables.
 
     :param str table1: first table name whose columns are retrieved
     :param str table2: second table name whose columns are retrieved
     :param list(str) ignore: list of column names to ignore in the returning list
-    :return: a list of column names present in both tables
+    :param bool type_check: only returns common columns with compatible data type
+    :return: a list of column names present in both table
     :rtype: :class:`~odoo.upgrade.util.pg.ColumnList`
     """
     _validate_table(table1)
@@ -1266,22 +1267,46 @@ def get_common_columns(cr, table1, table2, ignore=("id",)):
 
     cr.execute(
         """
-            WITH _common AS (
-                SELECT column_name
-                  FROM information_schema.columns
-                 WHERE table_schema = 'public'
-                   AND table_name IN %s
-                   AND column_name != ALL(%s)
-              GROUP BY column_name
-                HAVING count(table_name) = 2
-            )
-            SELECT coalesce(array_agg(column_name::varchar ORDER BY column_name), ARRAY[]::varchar[]),
-                   coalesce(array_agg(quote_ident(column_name) ORDER BY column_name), ARRAY[]::varchar[])
-              FROM _common
+            SELECT c.column_name,
+                   quote_ident(c.column_name),
+                   count(DISTINCT t.oid) = 1 AS same_type,
+                   count(DISTINCT t.typcategory) = 1 AS compatible
+              FROM information_schema.columns c
+              JOIN pg_type t
+                ON c.udt_name = t.typname
+             WHERE c.table_schema = 'public'
+               AND c.table_name IN %s
+               AND c.column_name != ALL(%s)
+          GROUP BY c.column_name
+            HAVING count(c.table_name) = 2
+          ORDER BY c.column_name
         """,
         [(table1, table2), list(ignore)],
     )
-    return ColumnList(*cr.fetchone())
+    cols_info = cr.fetchall()
+
+    if type_check:
+        incompatible_cols = [qname for _, qname, _, compatible in cols_info if not compatible]
+        if incompatible_cols:
+            _logger.warning(
+                "Common columns with incompatible types between %s and %s: %s",
+                table1,
+                table2,
+                ", ".join(incompatible_cols),
+            )
+        compatible_cols = [qname for _, qname, same_type, compatible in cols_info if not same_type and compatible]
+        if compatible_cols:
+            _logger.warning(
+                "Common columns with types that can be implicitly converted between %s and %s: %s",
+                table1,
+                table2,
+                ", ".join(compatible_cols),
+            )
+
+    common_columns, quoted_common_columns = zip(
+        *((name, qname) for name, qname, _, compatible in cols_info if not type_check or compatible)
+    )
+    return ColumnList(common_columns, quoted_common_columns)
 
 
 def rename_table(cr, old_table, new_table, remove_constraints=True):
