@@ -2682,3 +2682,58 @@ class TestAssertUpdated(UnitTestCase):
         ):
             p2.city = "Niflheim"
             util.flush(p2)
+
+
+class TestReportUtils(UnitTestCase):
+    def test_report_simple(self):
+        self.assertEqual(
+            util.report_with_list(
+                summary="Simple test with minimal arguments and no data.",
+                data=[],
+                columns=("id", "name"),
+                row_format="Partner {name} has id {id}",
+            ),
+            "<summary>Simple test with minimal arguments and no data.</summary>",
+        )
+
+    def test_report_links(self):
+        self.assertEqual(
+            util.report_with_list(
+                summary="Testing links.",
+                data=[],
+                columns=("id", "name"),
+                row_format="Partner {partner_link}",
+                links={"partner_link": ("res.partner", "id", "name")},
+            ),
+            "<summary>Testing links.</summary>",
+        )
+
+    def test_report_data_minimal(self):
+        self.assertEqual(
+            util.report_with_list(
+                summary="Test with minimal data.",
+                data=[(1, "Partner One")],
+                columns=("id", "name"),
+                row_format="Partner {partner_link}",
+                links={"partner_link": ("res.partner", "id", "name")},
+            ),
+            "<summary>Test with minimal data.<details><i>The total number of affected records is 1.</i><ul>\n"
+            '<li>Partner <a target="_blank" href="/odoo/res.partner/1?debug=1">Partner One</a></li>\n'
+            "</ul></details></summary>",
+        )
+
+    def test_report_data_limited(self):
+        self.assertEqual(
+            util.report_with_list(
+                summary="Test with limited data.",
+                data=[(1, "Partner One"), (2, "Partner Two"), (3, "Partner Three")],
+                columns=("id", "name"),
+                row_format="Partner {partner_link}.",
+                links={"partner_link": ("res.partner", "id", "name")},
+                limit=2,
+            ),
+            "<summary>Test with limited data.<details><i>The total number of affected records is 3. This list is limited to 2 records.</i><ul>\n"
+            '<li>Partner <a target="_blank" href="/odoo/res.partner/1?debug=1">Partner One</a>.</li>\n'
+            '<li>Partner <a target="_blank" href="/odoo/res.partner/2?debug=1">Partner Two</a>.</li>\n'
+            "</ul></details></summary>",
+        )
