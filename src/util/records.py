@@ -1744,11 +1744,12 @@ def replace_record_references_batch(
                          -- there is no target already present within the same constraint
                         NOT EXISTS(SELECT 1 FROM {table} WHERE {res_model_whr} AND {jmap_expr} AND {where_clause})
                          -- there is no other entry with the same target within the same constraint
-                        AND NOT (t2 IS NOT NULL AND {where_clause2})
+                        AND NOT (t2.{res_id} IS NOT NULL AND {where_clause2})
                         """,
                         table=ir.table,
                         res_model_whr=res_model_whr,
                         jmap_expr=jmap_expr,
+                        res_id=ir.res_id,
                         where_clause=SQLStr(" AND ".join(format_query(cr, "{0}=t.{0}", col) for col in uniq_cols))
                         if uniq_cols
                         else SQLStr("True"),
