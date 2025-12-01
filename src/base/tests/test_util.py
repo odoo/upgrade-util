@@ -2712,3 +2712,104 @@ class TestAssertUpdated(UnitTestCase):
         ):
             p2.city = "Niflheim"
             util.flush(p2)
+
+
+class TestReportUtils(UnitTestCase):
+    def test_report_simple(self):
+        self.assertEqual(
+            util.report_with_list(
+                summary="Simple test with minimal arguments and no data.",
+                data=[],
+                columns=("id", "name"),
+                row_format="Partner {name} has id {id}.",
+            ),
+            "<summary>Simple test with minimal arguments and no data.</summary>",
+        )
+
+    def test_report_links(self):
+        self.assertEqual(
+            util.report_with_list(
+                summary="Testing links.",
+                data=[],
+                columns=("id", "name"),
+                row_format="Partner {partner_link}.",
+                links={"partner_link": ("res.partner", "id", "name")},
+            ),
+            "<summary>Testing links.</summary>",
+        )
+
+    def test_report_data_minimal(self):
+        href = (
+            "/odoo/res.partner/1?debug=1"
+            if util.version_gte("18.0")
+            else "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=1"
+        )
+        expected = (
+            "<summary>Test with minimal data.<details><i></i><ul>\n"
+            '<li>Partner <a target="_blank" href="{}">Partner One</a>.</li>\n'
+            "</ul></details></summary>"
+        ).format(href)
+        self.assertEqual(
+            util.report_with_list(
+                summary="Test with minimal data.",
+                data=[(1, "Partner One")],
+                columns=("id", "name"),
+                row_format="Partner {partner_link}.",
+                links={"partner_link": ("res.partner", "id", "name")},
+            ),
+            expected,
+        )
+
+    def test_report_data_limited(self):
+        if util.version_gte("18.0"):
+            href1 = "/odoo/res.partner/1?debug=1"
+            href2 = "/odoo/res.partner/2?debug=1"
+        else:
+            href1 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=1"
+            href2 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=2"
+        expected = (
+            "<summary>Test with limited data.<details><i>The total number of affected records is 3. This list is showing the first 2 records.</i><ul>\n"
+            '<li>Partner <a target="_blank" href="{}">Partner One</a>.</li>\n'
+            '<li>Partner <a target="_blank" href="{}">Partner Two</a>.</li>\n'
+            "</ul></details></summary>"
+        ).format(href1, href2)
+        self.assertEqual(
+            util.report_with_list(
+                summary="Test with limited data.",
+                data=[(1, "Partner One"), (2, "Partner Two"), (3, "Partner Three")],
+                columns=("id", "name"),
+                row_format="Partner {partner_link}.",
+                links={"partner_link": ("res.partner", "id", "name")},
+                total=3,
+                limit=2,
+            ),
+            expected,
+        )
+
+    def test_report_data_limitless(self):
+        if util.version_gte("18.0"):
+            href1 = "/odoo/res.partner/1?debug=1"
+            href2 = "/odoo/res.partner/2?debug=1"
+            href3 = "/odoo/res.partner/3?debug=1"
+        else:
+            href1 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=1"
+            href2 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=2"
+            href3 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=3"
+        expected = (
+            "<summary>Test with limitless data.<details><i></i><ul>\n"
+            '<li>Partner <a target="_blank" href="{}">Partner One</a>.</li>\n'
+            '<li>Partner <a target="_blank" href="{}">Partner Two</a>.</li>\n'
+            '<li>Partner <a target="_blank" href="{}">Partner Three</a>.</li>\n'
+            "</ul></details></summary>"
+        ).format(href1, href2, href3)
+        self.assertEqual(
+            util.report_with_list(
+                summary="Test with limitless data.",
+                data=[(1, "Partner One"), (2, "Partner Two"), (3, "Partner Three")],
+                columns=("id", "name"),
+                row_format="Partner {partner_link}.",
+                links={"partner_link": ("res.partner", "id", "name")},
+                limit=-1,
+            ),
+            expected,
+        )
