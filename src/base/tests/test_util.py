@@ -661,6 +661,19 @@ class TestIterBrowse(UnitTestCase):
         expected = (len(ids) + chunk_size - 1) // chunk_size
         self.assertEqual(read.call_count, expected)
 
+    def test_iter_browse_iter_chunks(self):
+        cr = self.env.cr
+        cr.execute("SELECT id FROM res_country")
+        ids = [c for (c,) in cr.fetchall()]
+        chunk_size = 10
+
+        res_chunks = list(
+            util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size, yield_chunks=True)
+        )
+        no_chunks = (len(ids) + chunk_size - 1) // chunk_size
+        self.assertEqual(len(res_chunks), no_chunks)
+        self.assertEqual(len(res_chunks[0]), chunk_size)
+
     def test_iter_browse_call(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
