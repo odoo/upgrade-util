@@ -377,6 +377,8 @@ class iter_browse(object):
     :param list(int) ids: list of IDs of the records to iterate
     :param int chunk_size: number of records to load in each iteration chunk, `200` by
                            default
+    :param bool yield_chunks: when iterating, yield records in chunks of `chunk_size` instead of one by one.
+                              Default is `False`
     :param logger: logger used to report the progress, by default
                    :data:`~odoo.upgrade.util.orm._logger`
     :type logger: :class:`logging.Logger`
@@ -387,7 +389,7 @@ class iter_browse(object):
     See also :func:`~odoo.upgrade.util.orm.env`
     """
 
-    __slots__ = ("_chunk_size", "_cr_uid", "_it", "_logger", "_model", "_patch", "_size", "_strategy")
+    __slots__ = ("_chunk_size", "_cr_uid", "_it", "_logger", "_model", "_patch", "_size", "_strategy", "_yield_chunks")
 
     def __init__(self, model, *args, **kw):
         assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
@@ -396,6 +398,7 @@ class iter_browse(object):
         ids = args[-1]
         self._size = len(ids)
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
+        self._yield_chunks = kw.pop("yield_chunks", False)
         self._logger = kw.pop("logger", _logger)
         self._strategy = kw.pop("strategy", "flush")
         assert self._strategy in {"flush", "commit"}
@@ -429,9 +432,10 @@ class iter_browse(object):
         if self._it is None:
             raise RuntimeError("%r ran twice" % (self,))
 
-        it = chain.from_iterable(self._it)
+        it = self._it if self._yield_chunks else chain.from_iterable(self._it)
+        sz = (self._size + self._chunk_size - 1) // self._chunk_size if self._yield_chunks else self._size
         if self._logger:
-            it = log_progress(it, self._logger, qualifier=self._model._name, size=self._size)
+            it = log_progress(it, self._logger, qualifier=self._model._name, size=sz)
         self._it = None
         return chain(it, self._end())
 
