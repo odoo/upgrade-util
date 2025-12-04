@@ -178,6 +178,20 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     remove_records(cr, "ir.ui.view", [view_id])
 
 
+def disable_view(cr, xml_id=None, view_id=None):
+    """
+    Disable a view with a query.
+
+    Either xml_id or view_id is required to change the state of the view.
+
+    :param str xmlid: optional, xml_id of the view edit
+    :param int view_id: optional, ID of the view to edit
+    """
+    record_id = xml_id or view_id
+    if record_id:
+        cr.execute("UPDATE ir_ui_view SET active='f' WHERE id = %s", [record_id])
+
+
 @contextmanager
 def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active="auto"):
     """
@@ -1279,7 +1293,7 @@ def delete_unused(cr, *xmlids, **kwargs):
 
     :param list(str) xmlids: list of xml_ids to check for removal
     :param bool deactivate: whether to deactivate records that cannot be removed because
-                            they are referenced, `False` by default
+                            they are referenced, `False` by defaultdeactivate
     :param bool keep_xmlids: whether to keep the xml_ids of records that cannot be
                              removed. By default `True` for versions up to 18.0,
                              `False` from `saas~18.1` on.
