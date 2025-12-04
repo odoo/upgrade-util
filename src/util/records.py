@@ -178,6 +178,34 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     remove_records(cr, "ir.ui.view", [view_id])
 
 
+def disable_views(cr, view_ids):
+    """
+    Disable views with a query.
+
+    :param view_ids: a list of view ids or a singular view id.
+    """
+    if not view_ids:
+        return
+    if isinstance(view_ids, int):
+        cr.execute("UPDATE ir_ui_view SET active='f' WHERE id = %s", [view_ids])
+    else:
+        cr.execute("UPDATE ir_ui_view SET active='f' WHERE id IN %s", [view_ids])
+
+
+def activate_views(cr, view_ids):
+    """
+    Activate views with a query.
+
+    :param view_ids: a list of view ids or a singular view id.
+    """
+    if not view_ids:
+        return
+    if isinstance(view_ids, int):
+        cr.execute("UPDATE ir_ui_view SET active='t' WHERE id = %s", [view_ids])
+    else:
+        cr.execute("UPDATE ir_ui_view SET active='t' WHERE id IN %s", [view_ids])
+
+
 @contextmanager
 def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active="auto"):
     """
