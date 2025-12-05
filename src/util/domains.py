@@ -147,7 +147,7 @@ def _get_domain_fields(cr):
             )
         ]
 
-    if column_exists(cr, "base_automation", "action_server_id"):
+    if not version_gte("17.0") and column_exists(cr, "base_automation", "action_server_id"):
         result += [
             DomainField(
                 "base_automation",
