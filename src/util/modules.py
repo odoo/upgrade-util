@@ -340,7 +340,7 @@ def remove_module(cr, module):
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
 
-    ENVIRON["__modules_auto_discovery_force_installs"].discard(module)
+    ENVIRON["__modules_auto_discovery_force_installs"].pop(module, None)
     ENVIRON["__modules_auto_discovery_force_upgrades"].pop(module, None)
 
 
@@ -360,7 +360,7 @@ def remove_theme(cr, theme, base_theme=None):
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
 
-    ENVIRON["__modules_auto_discovery_force_installs"].discard(theme)
+    ENVIRON["__modules_auto_discovery_force_installs"].pop(theme, None)
     ENVIRON["__modules_auto_discovery_force_upgrades"].pop(theme, None)
 
 
@@ -411,8 +411,7 @@ def rename_module(cr, old, new):
 
     fi = ENVIRON["__modules_auto_discovery_force_installs"]
     if old in fi:
-        fi.remove(old)
-        fi.add(new)
+        fi[new] = fi.pop(old)
     fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
     if old in fu:
         fu[new] = fu.pop(old)
@@ -440,8 +439,7 @@ def merge_module(cr, old, into, update_dependers=True):
 
     fi = ENVIRON["__modules_auto_discovery_force_installs"]
     if old in fi:
-        fi.remove(old)
-        fi.add(into)
+        fi[into] = fi.pop(old)
     fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
     if old in fu:
         if into not in fu:
@@ -596,7 +594,7 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
                 elif ENVIRON.get("AUTO_DISCOVERY_UPGRADE"):
                     raise MigrationError("`force_install_module` can only be called from pre/post of `base`")
                 return _force_install_module(cr, module, reason="{} (done outside of a major upgrade)".format(reason))
-            ENVIRON["__modules_auto_discovery_force_installs"].add(module)
+            ENVIRON["__modules_auto_discovery_force_installs"][module] = reason
         return None
     else:
         return _force_install_module(cr, module, if_installed, reason)
@@ -1100,8 +1098,9 @@ def _trigger_auto_discovery(cr):
     for new_dep, modules in cr.fetchall():
         _force_install_module(cr, new_dep, reason="it's a new dependency of {}".format(modules))
 
-    for module in force_installs:
-        _force_install_module(cr, module)
+    for module, reason in force_installs.items():
+        kwargs = {"reason": reason} if reason else {}
+        _force_install_module(cr, module, **kwargs)
 
     for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
         _force_upgrade_of_fresh_module(cr, module, init, version)
@@ -1115,6 +1114,8 @@ def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
     # The actual auto discovery is delayed in `base/0.0.0/post-modules-auto-discovery.py`
 
     if force_installs:
+        if not isinstance(force_installs, dict):
+            force_installs = dict.fromkeys(force_installs, None)
         ENVIRON["__modules_auto_discovery_force_installs"].update(force_installs)
     if force_upgrades:
         version = _caller_version()
