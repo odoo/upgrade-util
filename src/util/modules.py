@@ -342,6 +342,7 @@ def remove_module(cr, module):
 
     ENVIRON["__modules_auto_discovery_force_installs"].pop(module, None)
     ENVIRON["__modules_auto_discovery_force_upgrades"].pop(module, None)
+    ENVIRON["__modules_to_skip_autoinstall"].discard(module)
 
 
 def remove_theme(cr, theme, base_theme=None):
@@ -362,6 +363,7 @@ def remove_theme(cr, theme, base_theme=None):
 
     ENVIRON["__modules_auto_discovery_force_installs"].pop(theme, None)
     ENVIRON["__modules_auto_discovery_force_upgrades"].pop(theme, None)
+    ENVIRON["__modules_to_skip_autoinstall"].discard(theme)
 
 
 def _update_view_key(cr, old, new):
@@ -415,6 +417,10 @@ def rename_module(cr, old, new):
     fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
     if old in fu:
         fu[new] = fu.pop(old)
+    si = ENVIRON["__modules_to_skip_autoinstall"]
+    if old in si:
+        si.discard(old)
+        si.add(new)
 
 
 @_warn_usage_outside_base
@@ -450,6 +456,10 @@ def merge_module(cr, old, into, update_dependers=True):
             version = fu[old][1] if parse_version(fu[old][1]) < parse_version(fu[into][1]) else fu[into][1]
             del fu[old]
             fu[into] = (init, version)
+    si = ENVIRON["__modules_to_skip_autoinstall"]
+    if old not in si and into in si:
+        si.discard(into)
+    si.discard(old)
 
     if old not in mod_ids:
         # this can happen in case of temp modules added after a release if the database does not
@@ -721,14 +731,24 @@ def _force_install_module(cr, module, if_installed=None, reason="it has been exp
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
         for (mod,) in cr.fetchall():
-            _force_install_module(
-                cr,
-                mod,
-                reason=(
-                    "it is an auto install module that got all its auto install dependencies installed "
-                    "by the force install of {!r}"
-                ).format(module),
-            )
+            if mod in ENVIRON["__modules_to_skip_autoinstall"]:
+                _logger.info(
+                    (
+                        "Module %r won't be auto installed because its original dependencies were already installed. "
+                        "Yet all its auto install dependencies became installed by the force install of %r."
+                    ),
+                    mod,
+                    module,
+                )
+            else:
+                _force_install_module(
+                    cr,
+                    mod,
+                    reason=(
+                        "it is an auto install module that got all its auto install dependencies installed "
+                        "by the force install of {!r}"
+                    ).format(module),
+                )
 
     # TODO handle module exclusions
 
@@ -828,8 +848,19 @@ def module_auto_install(cr, module, auto_install):
 @_warn_usage_outside_base
 def trigger_auto_install(cr, module):
     _assert_modules_exists(cr, module)
+    to_autoinstall = _get_autoinstallable_modules(cr, module)
+    if to_autoinstall:
+        if module in ENVIRON["__modules_to_skip_autoinstall"]:
+            _logger.info("Skipping the auto installation of module %r because it was previously uninstalled.", module)
+            return False
+        force_install_module(cr, module, reason="it's an auto install module and all its dependencies are installed")
+        return True
+    return False
+
+
+def _get_autoinstallable_modules(cr, module=None):
     if AUTO_INSTALL == "none":
-        return False
+        return set()
 
     dep_match = "true"
     if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
@@ -863,13 +894,19 @@ def trigger_auto_install(cr, module):
         hidden = ref(cr, "base.module_category_hidden")
         cat_match = cr.mogrify("m.category_id = %s", [hidden]).decode()
 
-    query = """
-            SELECT m.id
+    name_match = "true"
+    if module:
+        name_match = cr.mogrify("m.name = %s", [module]).decode()
+
+    query = format_query(
+        cr,
+        """
+            SELECT m.name
               FROM ir_module_module_dependency d
               JOIN ir_module_module m ON m.id = d.module_id
               JOIN ir_module_module md ON md.name = d.name
                 {}
-             WHERE m.name = %s
+             WHERE {}
                AND m.state = 'uninstalled'
                AND m.auto_install = true
                AND {}
@@ -877,13 +914,16 @@ def trigger_auto_install(cr, module):
           GROUP BY m.id
             HAVING bool_and(md.state IN %s)
                 {}
-    """.format(country_join, dep_match, cat_match, country_match)
+            """,
+        SQLStr(country_join),
+        SQLStr(name_match),
+        SQLStr(dep_match),
+        SQLStr(cat_match),
+        SQLStr(country_match),
+    )
 
-    cr.execute(query, [module, INSTALLED_MODULE_STATES])
-    if cr.rowcount:
-        force_install_module(cr, module, reason="it's an auto install module and all its dependencies are installed")
-        return True
-    return False
+    cr.execute(query, [INSTALLED_MODULE_STATES])
+    return {m[0] for m in cr.fetchall()}
 
 
 def _set_module_category(cr, module, category):
