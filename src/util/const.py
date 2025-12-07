@@ -13,6 +13,7 @@ ENVIRON = {
     "__renamed_fields": collections.defaultdict(dict),
     "__modules_auto_discovery_force_installs": {},
     "__modules_auto_discovery_force_upgrades": {},
+    "__modules_to_skip_autoinstall": set(),
     "__fix_fk_allowed_cascade": [],
     "__no_model_data_delete": {},
 }
