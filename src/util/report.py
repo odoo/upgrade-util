@@ -126,6 +126,79 @@ def add_to_migration_reports(message, category="Other", format="text"):
         _logger.warning("Upgrade report is growing suspiciously long: %s characters so far.", migration_reports_length)
 
 
+report = add_to_migration_reports
+
+
+def report_with_summary(summary, details, category="Other"):
+    """Append the upgrade report with a new entry.
+
+    :param str summary: Description of a report entry.
+    :param str details: Detailed description that is going to be folded by default.
+    :param str category: Title of a report entry.
+    """
+    msg = (
+        "<summary>{}<details>{}</details></summary>".format(summary, details)
+        if details
+        else "<summary>{}</summary>".format(summary)
+    )
+    report(message=msg, category=category, format="html")
+
+
+def report_with_list(summary, data, columns, row_format, links=None, total=None, limit=100, category="Other"):
+    """Append the upgrade report with a new entry that displays a list of records.
+
+    The entry consists of a category (title) and a summary (body).
+    The entry displays a list of records previously returned by an SQL query, or any list as long as it's passed as a Python List of Tuples.
+
+    .. example::
+
+        .. code-block:: python
+
+            util.report_with_list(summary="The following records were altered.",
+                                  data=cr.fetchall(),
+                                  columns=("id", "name", "city", "comment", "company_id", "company_name")
+                                  row_format="Partner with id {partner_link} works at company {company_link} in {city}, ({comment})",
+                                  links={"company_link": ("res.company", "company_id", "company_name"), "partner_link": ("res.partner", "id", "name")},
+                                  category="Accounting"
+                                  )
+
+    :param str summary: description of a report entry.
+    :param list(tuple) data: data to report, each entry would be a row in the report.
+                             It could be empty, in which case only the summary is rendered.
+    :param tuple(str) columns: names for each column in "data", can be referenced in "row_format".
+    :param str row_format: the way a row in a list is formatted, using named placeholders, e.g.:
+                           "Partner {partner_link} that lives in {city} works at company {company_link}."
+    :param dict(str, tuple(str, str, str)) links: optional model/record links spec,
+                                                  the keys can be referenced in "row_format".
+    :param int total: if the original list was limited prior to calling this method, the original, total number of
+                      records, can be provided with this parameter.
+    :param int limit: the maximum number of records that are going to be displayed in the report.
+    :param str category: title of a report entry.
+    """
+
+    def row_to_html(row):
+        row_dict = dict(zip(columns, row))
+        row_dict.update(
+            {
+                link: get_anchor_link_to_record(rec_model, row_dict[id_col], row_dict[name_col])
+                for link, (rec_model, id_col, name_col) in links.items()
+            }
+        )
+        return "<li>{}</li>".format(row_format.format(**row_dict))
+
+    if not data:
+        row_to_html(columns)  # Validate the format is correct, including links
+        return report_with_summary(summary=summary, details="", category=category)
+
+    total = total or len(data)
+    disclaimer = "The total number of affected records is {}.".format(total)
+    if total > limit:
+        disclaimer += " This list is limited to {} records.".format(limit)
+
+    rows = "<ul>\n" + "\n".join([row_to_html(row) for row in data[:limit]]) + "\n</ul>"
+    return report_with_summary(summary, "<i>{}</i>{}".format(disclaimer, rows), category)
+
+
 def announce_release_note(cr):
     filepath = os.path.join(os.path.dirname(__file__), "release-note.xml")
     with open(filepath, "rb") as fp:
