@@ -16,6 +16,7 @@ ENVIRON = {
     "__modules_to_skip_autoinstall": set(),
     "__fix_fk_allowed_cascade": [],
     "__no_model_data_delete": {},
+    "__force_installed_modules": set(),
 }
 
 NEARLYWARN = 25  # between info and warning; appear on runbot build page

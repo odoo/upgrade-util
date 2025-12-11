@@ -149,6 +149,16 @@ def module_installed(cr, module):
     return modules_installed(cr, module)
 
 
+def module_force_installed(cr, module):
+    """
+    Return whether a module was marked for force installation.
+
+    :param str module: name of the module to check
+    :rtype: bool
+    """
+    return module in ENVIRON["__force_installed_modules"] and module_installed(cr, module)
+
+
 @_warn_usage_outside_base
 def uninstall_module(cr, module):
     """
@@ -665,6 +675,8 @@ def _force_install_module(cr, module, if_installed=None, reason="it has been exp
 
     states = dict(cr.fetchall())
     toinstall = [m for m in states if states[m] == "to install"]
+
+    ENVIRON["__force_installed_modules"].update(toinstall)
 
     if module in toinstall:
         _logger.info(
