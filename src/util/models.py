@@ -193,7 +193,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
         if ignore_m2m != "*":
             tables = get_m2m_tables(cr, table_of_model(cr, model))
             ignore = set(ignore_m2m)
-            if tables:
+            if tables and column_exists(cr, "ir_model_fields", "relation_table"):
                 cr.execute(
                     """
                     SELECT name, model
