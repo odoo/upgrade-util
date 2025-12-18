@@ -1506,7 +1506,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             """
 <details>
   <summary>
-    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions and compute methods of other fields may need an update:
+    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions and compute methods of other fields may need an update.
     If a server action or a field is a standard one and you haven't made any modifications, you may ignore them.
   </summary>
   <ul>{li}</ul>
