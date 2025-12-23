@@ -81,6 +81,7 @@ def uninstall_modules(cr):
         'stock_account_product_cost_security',
         'product_code_unique',
         'account_ecf_auto_post',
+        'cecomsa_account_followup',
     ]
 
     for module_name in modules_to_uninstall:
