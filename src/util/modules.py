@@ -629,9 +629,9 @@ def _force_install_module(cr, module, if_installed=None, reason="it has been exp
         cr,
         """
         WITH RECURSIVE deps (mod_id, dep_name) AS (
-              SELECT m.id, d.name from ir_module_module_dependency d
-              JOIN ir_module_module m on (d.module_id = m.id)
-              WHERE m.name = %s
+              SELECT m.id, m.name
+                FROM ir_module_module m
+               WHERE m.name = %s
             UNION
               SELECT m.id, d.name from ir_module_module m
               JOIN deps ON deps.dep_name = m.name
@@ -645,7 +645,7 @@ def _force_install_module(cr, module, if_installed=None, reason="it has been exp
                demo=(select demo from ir_module_module where name='base')
           FROM deps d
          WHERE m.id = d.mod_id
-           {0}
+           {}
      RETURNING m.name, m.state
         """,
         SQLStr(subquery),
@@ -833,7 +833,7 @@ def trigger_auto_install(cr, module):
 
     dep_match = "true"
     if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
-        dep_match = "d.auto_install_required = true"
+        dep_match = "COALESCE(d.auto_install_required, true) = true"
 
     country_match = country_join = ""
     if table_exists(cr, "module_country"):
@@ -865,9 +865,11 @@ def trigger_auto_install(cr, module):
 
     query = """
             SELECT m.id
-              FROM ir_module_module_dependency d
-              JOIN ir_module_module m ON m.id = d.module_id
-              JOIN ir_module_module md ON md.name = d.name
+              FROM ir_module_module m
+         LEFT JOIN ir_module_module_dependency d
+                ON m.id = d.module_id
+         LEFT JOIN ir_module_module md
+                ON md.name = d.name
                 {}
              WHERE m.name = %s
                AND m.state = 'uninstalled'
@@ -875,7 +877,7 @@ def trigger_auto_install(cr, module):
                AND {}
                AND {}
           GROUP BY m.id
-            HAVING bool_and(md.state IN %s)
+            HAVING (bool_and(md.state IN %s) OR count(d.id) = 0)
                 {}
     """.format(country_join, dep_match, cat_match, country_match)
 
