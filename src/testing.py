@@ -1,3 +1,112 @@
+r"""
+There are two main classes used testing during the upgrade.
+
+* :class:`~odoo.upgrade.testing.UpgradeCase` for testing upgrade scripts,
+* :class:`~odoo.upgrade.testing.UpgradeCase` for testing invariants across versions.
+
+Subclasses must implement:
+
+* For ``UpgradeCase``:
+
+  - ``prepare`` method: prepare data before upgrade,
+  - ``check`` method: check data was correctly upgraded.
+
+* For ``IntegrityCase``:
+
+  - ``invariant`` method: compute an invariant to check.
+
+Put your test classes in a ``tests`` Python module (folder) in any of the folders
+containing the upgrade scripts of your modules. The script containing your tests must
+have a `test_` prefix. The ``tests`` module must contain an ``__init__.py`` file to be
+detected by Odoo.
+
+Example directory structure::
+
+   myupgrades/
+   └── mymodule1/
+       ├── 18.0.1.1.2/
+       │   └── pre-myupgrade.py
+       └── tests/
+           ├── __init__.py
+           └── test_myupgrade.py
+
+.. note::
+
+   The tests in the example above will be loaded only if ``mymodule1`` is being
+   **upgraded.**
+
+Running Upgrade Tests
+---------------------
+
+After receiving an upgraded database with all standard Odoo modules already upgraded to
+their target version, you can test the upgrade of custom modules by following a three-step
+process:
+
+1. Prepare the test data
+
+   .. code-block:: bash
+
+      $ ~/odoo/$version/odoo-bin -d DB --test-tags=$prepare_test_tag \
+        --upgrade-path=~/upgrade-util/src,~/myupgrades \
+        --addons=~/odoo/$version/addons,~/enterprise/$version,~/mymodules --stop
+
+2. Upgrade the modules
+
+   .. code-block:: bash
+
+      $ ~/odoo/$version/odoo-bin -d DB -u mymodule1,mymodule2 \
+        --upgrade-path=~/upgrade-util/src,~/myupgrades \
+        --addons=~/odoo/$version/addons,~/enterprise/$version,~/mymodules --stop
+
+3. Check the upgraded data
+
+   .. code-block:: bash
+
+      $ ~/odoo/$version/odoo-bin -d DB --test-tags=$check_test_tag \
+        --upgrade-path=~/upgrade-util/src,~/myupgrades \
+        --addons=~/odoo/$version/addons,~/enterprise/$version,~/mymodules --stop
+
+The example above assumes that ``$version`` is the target version of your upgrade (e.g.
+``18.0``), ``DB`` is the name of your database, and ``mymodule1,mymodule2`` are the
+modules you want to upgrade. The directory structure assumes that ``~/odoo/$version`` and
+``~/enterprise/$version`` contain the Community and Enterprise source code for the target
+Odoo version, respectively. ``~/mymodules`` contains the code of your custom modules
+(``mymodule1``, ...), ``~/myupgrades`` contains your custom upgrade scripts, and
+``~/upgrade-util`` contains the `upgrade utils <https://github.com/odoo/upgrade-util/>`_
+repo.
+
+The variables ``$prepare_test_tag`` and ``$check_test_tag`` must be set according to:
+
+.. list-table::
+   :header-rows: 1
+   :stub-columns: 1
+
+   * - Variable
+     - ``UpgradeCase``
+     - ``IntegrityCase``
+   * - ``$prepare_test_tag``
+     - ``upgrade.test_prepare``
+     - ``integrity_case.test_prepare``
+   * - ``$check_test_tag``
+     - ``upgrade.test_check``
+     - ``integrity_test.test_check``
+
+.. note::
+
+   `upgrade.test_prepare` also runs ``IntegrityCase`` tests, so you can prepare data
+   for both ``UpgradeCase`` and ``IntegrityCase`` tests with only this tag.
+
+.. warning::
+
+   Do **not** run any ``prepare`` method of an ``UpgradeCase`` before sending your
+   database for a **production** upgrade to `upgrade.odoo.com
+   <https://upgrade.odoo.com>`_. Doing so may risk your upgrade being blocked and marked
+   as failed.
+
+API documentation
+-----------------
+"""
+
 import functools
 import inspect
 import logging
@@ -40,22 +149,23 @@ def parametrize(argvalues):
     """
     Parametrize a test function.
 
-    Decorator for UnitTestCase test functions to parametrize the decorated test.
+    Decorator for upgrade test functions to parametrize and generate multiple tests from
+    it. The new test functions are injected in the containing class. Inspired by the
+    `parameterized <https://pypi.org/project/parameterized/>`_ package.
 
-    Usage:
-    ```python
-    @parametrize([
-        (1, 2),
-        (2, 4),
-        (-1, -2),
-        (0, 0),
-    ])
-    def test_double(self, input, expected):
-        self.assertEqual(input * 2, expected)
-    ```
+    .. example::
 
-    It works by injecting test functions in the containing class.
-    Idea taken from the `parameterized` package (https://pypi.org/project/parameterized/).
+       .. code-block:: python
+
+          @parametrize([(1, 2), (2, 4), (-1, -2), (0, 0)])
+          def test_double(self, input, expected):
+              self.assertEqual(input * 2, expected)
+
+       This will generate four test methods: ``test_double__0``, ``test_double__1``,
+       ``test_double__2``, and ``test_double__3``, each with different argument values.
+
+    :param list(tuple) argvalues: Arguments for each test case. Each tuple will be
+                                  unpacked and passed as arguments to the test function.
     """
 
     def make_func(func, name, args):
@@ -116,6 +226,8 @@ def _create_meta(sequence: int, *tags: str) -> type:
 
 
 class UnitTestCase(TransactionCase, _create_meta(10, "upgrade_unit")):
+    """:meta private: exclude from online docs."""
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -211,6 +323,8 @@ class UnitTestCase(TransactionCase, _create_meta(10, "upgrade_unit")):
 
 
 class UpgradeCommon(BaseCase):
+    """:meta private: exclude from online docs."""
+
     __initialized = False
 
     change_version = (None, None)
@@ -224,39 +338,63 @@ class UpgradeCommon(BaseCase):
     def _set_value(self, key, value):
         self._init_db()
         value = json.dumps(value, sort_keys=True)
-        query = """
-            INSERT INTO {} (key, value) VALUES (%s, %s)
-            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
-        """.format(DATA_TABLE)
-        self._data_table_cr.execute(query, (key, value))
-        self._data_table_cr._cnx.commit()
+        klass = None
+        for mro in type(self).mro():
+            if mro.__module__ in ("odoo.upgrade.testing", "odoo.addons.base.maintenance.migrations.testing"):
+                klass = mro.__name__
+                break
+
+        cr = self._data_table_cr
+        query = util.format_query(
+            cr,
+            """
+            INSERT INTO {} (key, class, value) VALUES (%s, %s, %s)
+            ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, class=EXCLUDED.class
+            """,
+            DATA_TABLE,
+        )
+        cr.execute(query, (key, klass, value))
+        cr._cnx.commit()
 
     def _get_value(self, key):
         self._init_db()
-        query = "SELECT value FROM {} WHERE key = %s".format(DATA_TABLE)
-        self._data_table_cr.execute(query, [key])
-        result = self._data_table_cr.fetchone()
+        cr = self._data_table_cr
+        query = util.format_query(cr, "SELECT value FROM {} WHERE key = %s", DATA_TABLE)
+        cr.execute(query, [key])
+        result = cr.fetchone()
         if not result:
             raise KeyError(key)
         return result[0]
 
     def _key_exists(self, key):
         self._init_db()
-        query = "SELECT 1 FROM {} WHERE key = %s".format(DATA_TABLE)
-        self._data_table_cr.execute(query, [key])
-        return bool(self._data_table_cr.rowcount)
+        cr = self._data_table_cr
+        query = util.format_query(cr, "SELECT 1 FROM {} WHERE key = %s", DATA_TABLE)
+        cr.execute(query, [key])
+        return bool(cr.rowcount)
 
     def _init_db(self):
         if not UpgradeCommon.__initialized:
-            self._data_table_cr.execute("SELECT 1 FROM pg_class WHERE relname=%s", [DATA_TABLE])
-            if not self._data_table_cr.rowcount:
+            cr = self._data_table_cr
+            cr.execute("SELECT 1 FROM pg_class WHERE relname=%s", [DATA_TABLE])
+            if not cr.rowcount:
                 _logger.info("Creating table %s", DATA_TABLE)
-                query = """ CREATE TABLE {} (
-                    key VARCHAR(255) PRIMARY KEY,
-                    value JSONB NOT NULL
-                )""".format(DATA_TABLE)
-                self._data_table_cr.execute(query)
-                self._data_table_cr._cnx.commit()
+                query = util.format_query(
+                    cr,
+                    """
+                    CREATE TABLE {} (
+                        key VARCHAR(255) PRIMARY KEY,
+                        class varchar,
+                        value JSONB NOT NULL
+                    )
+                    """,
+                    DATA_TABLE,
+                )
+                cr.execute(query)
+            else:
+                # upgrade existing table
+                util.create_column(cr, DATA_TABLE, "class", "varchar")
+            cr._cnx.commit()
             UpgradeCommon.__initialized = True
 
     def _setup_registry(self):
@@ -332,6 +470,25 @@ class UpgradeCommon(BaseCase):
 
 
 def change_version(version_str):
+    """
+    Class decorator to specify the version on which a test is relevant.
+
+    Using ``@change_version(version)`` indicates:
+
+    * ``test_prepare`` will only run if the current Odoo version is in the range
+      ``[next_major_version-1, version)``.
+    * ``test_check`` will only run if the current Odoo version is in the range ``[version,
+      next_major_version)``.
+
+    ``next_major_version`` is the next major version after ``version``, e.g. for
+    ``saas~17.2`` it is ``18.0``.
+
+    .. note::
+
+       Do not use this decorator if your upgrade is in the same major version. Otherwise,
+       your tests will not run.
+    """
+
     def version_decorator(obj):
         match = VERSION_RE.match(version_str)
         if not match:
@@ -370,24 +527,42 @@ def get_previous_major(major, minor):
 # pylint: disable=inherit-non-class
 class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
     """
-    Test case to modify data in origin version, and assert in target version.
+    Test case to verify the upgrade flow.
 
-    User must define a "prepare" and a "check" method.
-    - prepare method can write in database, return value will be stored in a dedicated table and
-      passed as argument to check.
-    - check method can assert that the received argument is the one expected,
-      executing any code to retrieve equivalent information in migrated database.
-      Note: check argument is a loaded json dump, meaning that tuple are converted to list.
-      convert_check can be used to normalise the right part of the comparison.
+    Override:
 
-    check method is only called if corresponding prepared was run in previous version
+    * ``prepare`` to set up data,
+    * ``check`` to assert expectations after the upgrade.
 
-    prepare and check implementation may contains version conditional code to match api changes.
+    The ORM can be used in these methods to perform the functional flow under test. The
+    return value of ``prepare`` is persisted and passed as an argument to ``check``. It
+    must be JSON-serializable.
 
-    using @change_version class decorator can indicate with script version is tested here if any:
-    Example: to test a saas~12.3 script, using @change_version('saas-12,3') will only run prepare if
-    version in [12.0, 12.3[ and run check if version is in [12.3, 13]
+    .. note::
 
+       Since ``prepare`` injects or modifies data, this type of test is intended **only
+       for development**. Use it to test upgrade scripts while developing them. **Do not**
+       run these tests for a production upgrade. To verify that upgrades preserved
+       important invariants in production, use ``IntegrityCase`` tests instead.
+
+    .. example::
+
+       .. code-block:: python
+
+          from odoo.upgrade.testing import UpgradeCase, change_version
+
+
+          class DeactivateBobUsers(UpgradeCase):
+
+              def prepare(self):
+                  u = self.env["res.users"].create({"login": "bob", "name": "Bob"})
+                  return u.id  # will be passed to check
+
+              def check(self, uid):  # uid is the value returned by prepare
+                  self.env.cr.execute(
+                      "SELECT * FROM res_users WHERE id=%s AND NOT active", [uid]
+                  )
+                  self.assertEqual(self.env.cr.rowcount, 1)
     """
 
     def __init_subclass__(cls, abstract=False):
@@ -403,12 +578,26 @@ class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
 # pylint: disable=inherit-non-class
 class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
     """
-    Test case to check invariant through any version.
+    Test case for validating upgrade invariants.
 
-    User must define a "invariant" method.
-    invariant return value will be compared between the two version.
+    Override:
 
-    invariant implementation may contains version conditional code to match api changes.
+    * ``invariant`` to return a JSON-serializable value representing
+      the invariant to check.
+
+    The ``invariant`` method is called both before and after the upgrade, and the results
+    are compared. If there is any difference the test fails.
+
+    .. example::
+
+       .. code-block:: python
+
+          from odoo.upgrade.testing import IntegrityCase
+
+
+          class NoNewUsers(IntegrityCase):
+              def invariant(self):
+                  return self.env["res.users"].search_count([])
     """
 
     message = "Invariant check fail"
@@ -418,7 +607,7 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
         if not abstract and not hasattr(cls, "invariant"):
             _logger.error("%s (IntegrityCase) must define an invariant method", cls.__name__)
 
-    # IntegrityCase should not alterate database:
+    # IntegrityCase should not alter the database:
     # TODO give a test cursor, don't commit after prepare, use a protected cursor to set_value
 
     def prepare(self):
@@ -438,6 +627,7 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
             self.addCleanup(self.registry.leave_test_mode)
 
     def setUp(self):
+        """:meta private: exclude from online docs."""
         super(IntegrityCase, self).setUp()
 
         def commit(self):

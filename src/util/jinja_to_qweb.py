@@ -3,6 +3,7 @@ import functools
 import html
 import logging
 import re
+from multiprocessing import Process, Queue
 
 import babel
 import lxml
@@ -56,8 +57,6 @@ JINJA_REGEX = re.compile(
     """,
     re.X | re.DOTALL,
 )
-
-templates_to_check = {}
 
 
 def _remove_safe(expression):
@@ -226,6 +225,48 @@ def _replace_endif(string):
     return reg.sub(r"\1</t>", string)
 
 
+def setup_templates_to_check(cr):
+    if table_exists(cr, "_upgrade_jinja_to_qweb"):
+        return
+    cr.execute(
+        """
+        CREATE UNLOGGED TABLE _upgrade_jinja_to_qweb(
+            table_name          varchar,
+            template_type       varchar,
+            table_id            int4,
+            template_field      varchar,
+            model_name          varchar,
+            template_name       varchar,
+            template_name_field varchar,
+            template_converted  varchar,
+            PRIMARY KEY(table_name, template_type, table_id, template_field)
+        )
+        """
+    )
+
+
+def insert_templates_to_check(cr, *args):
+    cr.execute(
+        """
+        INSERT INTO _upgrade_jinja_to_qweb (
+            table_name,
+            template_type,
+            table_id,
+            template_field,
+            model_name,
+            template_name,
+            template_name_field,
+            template_converted
+        ) VALUES(%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        args,
+    )
+
+
+def cleanup_templates_to_check(cr):
+    cr.execute("DROP TABLE _upgrade_jinja_to_qweb")
+
+
 def upgrade_jinja_fields(
     cr,
     table_name,
@@ -246,32 +287,59 @@ def upgrade_jinja_fields(
     sql_where_qweb_fields = [field + r"~ '(\$\{|%\s*(if|for))'" for field in qweb_fields]
     sql_where_fields = " OR ".join(sql_where_inline_fields + sql_where_qweb_fields)
 
-    templates_to_check[table_name] = []
+    setup_templates_to_check(cr)
     model = model_of_table(cr, table_name)
 
     cr.commit()  # ease the processing for PG
-    cr.execute(
+    ncr = named_cursor(cr, 100)
+    ncr.execute(
         f"""
         SELECT id, {name_field}, {sql_fields}
           FROM {table_name}
          WHERE {sql_where_fields}
         """
     )
-    for data in cr.dictfetchall():
+    for data in ncr.iterdict():
         _logger.info("process %s(%s) %s", table_name, data["id"], data[name_field])
+
+        # only for mailing.mailing
+        if fetch_model_name:
+            cr.execute(
+                """
+                SELECT model FROM ir_model WHERE id=%s
+            """,
+                [data[table_model_name]],
+            )
+            model_name = cr.fetchone()[0]
+        else:
+            model_name = model_name or data[table_model_name]
 
         # convert the fields
         templates_converted = {}
-
         for field in inline_template_fields:
             _logger.info(" `- convert inline field %s", field)
-            template = data[field]
-            templates_converted[field] = convert_jinja_to_inline(template) if template else ""
+            converted = convert_jinja_to_inline(data[field]) if data[field] else ""
+            templates_converted[field] = converted
+            if data[field]:
+                insert_templates_to_check(
+                    cr,
+                    table_name,
+                    "inline_template",
+                    data["id"],
+                    field,
+                    model_name,
+                    data[name_field],
+                    name_field,
+                    converted,
+                )
 
         for field in qweb_fields:
             _logger.info(" `- convert qweb field %s", field)
-            template = data[field]
-            templates_converted[field] = convert_jinja_to_qweb(template) if template else ""
+            converted = convert_jinja_to_qweb(data[field]) if data[field] else ""
+            templates_converted[field] = converted
+            insert_templates_to_check(
+                cr, table_name, "qweb", data["id"], field, model_name, data[name_field], name_field, converted
+            )
 
         fields = [f for f in (inline_template_fields + qweb_fields) if data[f] != templates_converted[f]]
         if fields:
@@ -286,30 +354,7 @@ def upgrade_jinja_fields(
                 """,
                 field_values + [data["id"]],
             )
-        # prepare data to check later
-
-        # only for mailing.mailing
-        if fetch_model_name:
-            cr.execute(
-                """
-                SELECT model FROM ir_model WHERE id=%s
-            """,
-                [data[table_model_name]],
-            )
-            model_name = cr.fetchone()[0]
-        else:
-            model_name = model_name or data[table_model_name]
-
-        templates_to_check[table_name].append(
-            (
-                data,
-                name_field,
-                model_name,
-                inline_template_fields,
-                qweb_fields,
-                templates_converted,
-            )
-        )
+    ncr.close()
 
     if not table_exists(cr, "ir_translation"):
         return
@@ -402,49 +447,58 @@ def upgrade_jinja_fields(
 
 def verify_upgraded_jinja_fields(cr):
     env = get_env(cr)
-    for table_name, template_data in templates_to_check.items():
+    cr.execute("SELECT DISTINCT(table_name) FROM _upgrade_jinja_to_qweb")
+    for (table_name,) in cr.fetchall():
         field_errors = {}
         missing_records = []
+        ncr = named_cursor(cr, 100)
+        ncr.execute(
+            """
+              SELECT template_type,
+                     table_id,
+                     template_field,
+                     model_name,
+                     template_name,
+                     template_name_field,
+                     template_converted
+                FROM _upgrade_jinja_to_qweb
+               WHERE table_name = %s
+            ORDER BY template_type,
+                     template_field
+            """,
+            [table_name],
+        )
         for (
-            data,
-            name_field,
+            template_type,
+            table_id,
+            template_field,
             model_name,
-            inline_template_fields,
-            qweb_fields,
-            templates_converted,
-        ) in template_data:
+            template_name,
+            template_name_field,
+            template_converted,
+        ) in ncr:
             if model_name not in env:
                 # custom model not loaded yet. Ignore
                 continue
             model = env[model_name]
             record = model.with_context({"active_test": False}).search([], limit=1, order="id")
 
-            key = (data["id"], data[name_field])
+            key = (table_id, template_name, template_name_field)
             field_errors[key] = []
 
             if not record:
                 missing_records.append(key)
 
-            for field in inline_template_fields:
-                if not data[field]:
-                    continue
-                is_valid = is_converted_template_valid(
-                    env, data[field], templates_converted[field], model_name, record.id, engine="inline_template"
-                )
-                if not is_valid:
-                    field_errors[key].append(field)
-
-            for field in qweb_fields:
-                is_valid = is_converted_template_valid(
-                    env, data[field], templates_converted[field], model_name, record.id, engine="qweb"
-                )
-                if not is_valid:
-                    field_errors[key].append(field)
+            is_valid = is_converted_template_valid(
+                env, template_field, template_converted, model_name, record.id, engine=template_type
+            )
+            if not is_valid:
+                field_errors[key].append(template_field)
 
         if missing_records:
             list_items = "\n".join(
                 f'<li>id: "{id}", {html_escape(name_field)}: "{html_escape(name)}" </li>'
-                for id, name in missing_records
+                for id, name, name_field in missing_records
             )
             add_to_migration_reports(
                 f"""
@@ -464,7 +518,7 @@ def verify_upgraded_jinja_fields(cr):
 
         if field_errors:
             string = []
-            for (id, name), fields in field_errors.items():
+            for (id, name, name_field), fields in field_errors.items():
                 fields_string = "\n".join(f"<li>{html_escape(field)}</li>" for field in fields)
                 string.append(
                     f"""<li>id: {id}, {html_escape(name_field)}: {html_escape(name)},
@@ -486,35 +540,47 @@ def verify_upgraded_jinja_fields(cr):
                 "Jinja upgrade",
                 format="html",
             )
+        ncr.close()
+    cleanup_templates_to_check(cr)
 
 
 def is_converted_template_valid(env, template_before, template_after, model_name, record_id, engine="inline_template"):
-    render_before = None
-    with contextlib.suppress(Exception):
-        render_before = _render_template_jinja(env, template_before, model_name, record_id)
+    def callback(q):
+        render_before = None
+        with contextlib.suppress(Exception):
+            render_before = _render_template_jinja(env, template_before, model_name, record_id)
 
-    render_after = None
-    if render_before is not None:
-        try:
-            with mute_logger("odoo.addons.mail.models.mail_render_mixin"):
-                render_after = env["mail.render.mixin"]._render_template(
-                    template_after, model_name, [record_id], engine=engine
-                )[record_id]
-        except Exception:
-            pass
+        render_after = None
+        if render_before is not None:
+            try:
+                with mute_logger("odoo.addons.mail.models.mail_render_mixin"):
+                    render_after = env["mail.render.mixin"]._render_template(
+                        template_after, model_name, [record_id], engine=engine
+                    )[record_id]
+            except Exception:
+                pass
 
-    # post process qweb render to remove comments from the rendered jinja in
-    # order to avoid false negative because qweb never render comments.
-    if render_before and render_after and engine == "qweb":
-        element_before = lxml.html.fragment_fromstring(render_before, create_parent="div")
-        for comment_element in element_before.xpath("//comment()"):
-            comment_element.getparent().remove(comment_element)
-        render_before = lxml.html.tostring(element_before, encoding="unicode")
-        render_after = lxml.html.tostring(
-            lxml.html.fragment_fromstring(render_after, create_parent="div"), encoding="unicode"
-        )
+        # post process qweb render to remove comments from the rendered jinja in
+        # order to avoid false negative because qweb never render comments.
+        if render_before and render_after and engine == "qweb":
+            element_before = lxml.html.fragment_fromstring(render_before, create_parent="div")
+            for comment_element in element_before.xpath("//comment()"):
+                comment_element.getparent().remove(comment_element)
+            render_before = lxml.html.tostring(element_before, encoding="unicode")
+            render_after = lxml.html.tostring(
+                lxml.html.fragment_fromstring(render_after, create_parent="div"), encoding="unicode"
+            )
 
-    return render_before is not None and render_before == render_after
+        q.put(render_before is not None and render_before == render_after)
+
+    # to avoid memory leaks in external C libraries (lxml/libxml2), process in a forked child
+    queue = Queue()
+    proc = Process(target=callback, args=[queue])
+    proc.start()
+    res = queue.get(timeout=60)
+    if proc.is_alive():
+        proc.kill()
+    return res
 
 
 # jinja render

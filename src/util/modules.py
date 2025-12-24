@@ -15,9 +15,11 @@ try:
 except ImportError:
     from collections import Sequence, Set
 
+import functools
 import itertools
 import logging
 import os
+import warnings
 from inspect import currentframe
 from operator import itemgetter
 
@@ -43,17 +45,19 @@ except ImportError:
         from openerp.addons.web.controllers.main import module_topological_sort as topological_sort
 
 from .const import ENVIRON, NEARLYWARN
-from .exceptions import MigrationError, SleepyDeveloperError
+from .exceptions import MigrationError, SleepyDeveloperError, UnknownModuleError, UpgradeWarning
 from .fields import remove_field
 from .helpers import _validate_model, table_of_model
-from .misc import on_CI, str2bool, version_gte
+from .misc import on_CI, parse_version, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
-from .pg import column_exists, table_exists, target_of
+from .pg import SQLStr, column_exists, format_query, table_exists, target_of
 from .records import ref, remove_group, remove_menus, remove_records, remove_view, replace_record_references_batch
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
+
+ENVIRON.setdefault("AUTO_DISCOVERY_RAN", False)
 
 if version_gte("15.0"):
     AUTO_INSTALL = os.getenv("UPG_AUTOINSTALL")
@@ -83,6 +87,28 @@ try:
     basestring  # noqa: B018
 except NameError:
     basestring = str
+
+
+if version_gte("16.0"):
+    from odoo.modules.registry import Registry as _Registry
+
+    def _warn_usage_outside_base(f):
+        @functools.wraps(f)
+        def wrapper(cr, *args, **kwargs):
+            if "base" in _Registry(cr.dbname)._init_modules:
+                warnings.warn(
+                    "Calling `{}` outside the module base can lead to unexpected results".format(f.__name__),
+                    UpgradeWarning,
+                    stacklevel=2,
+                )
+            return f(cr, *args, **kwargs)
+
+        return wrapper
+
+else:
+    # deactivated on old versions, to avoid modification of legacy upgrade scripts.
+    def _warn_usage_outside_base(f):
+        return f
 
 
 def modules_installed(cr, *modules):
@@ -122,6 +148,7 @@ def module_installed(cr, module):
     return modules_installed(cr, module)
 
 
+@_warn_usage_outside_base
 def uninstall_module(cr, module):
     """
     Uninstall and remove all records owned by a module.
@@ -283,9 +310,12 @@ def uninstall_theme(cr, theme, base_theme=None):
         for website in websites:
             IrModuleModule._theme_remove(website)
     flush(env_["base"])
-    uninstall_module(cr, theme)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", category=UpgradeWarning)
+        uninstall_module(cr, theme)
 
 
+@_warn_usage_outside_base
 def remove_module(cr, module):
     """
     Completely remove a module.
@@ -310,6 +340,9 @@ def remove_module(cr, module):
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
 
+    ENVIRON["__modules_auto_discovery_force_installs"].pop(module, None)
+    ENVIRON["__modules_auto_discovery_force_upgrades"].pop(module, None)
+
 
 def remove_theme(cr, theme, base_theme=None):
     """
@@ -326,6 +359,9 @@ def remove_theme(cr, theme, base_theme=None):
     if cr.rowcount:
         [mod_id] = cr.fetchone()
         cr.execute("DELETE FROM ir_model_data WHERE model='ir.module.module' AND res_id=%s", [mod_id])
+
+    ENVIRON["__modules_auto_discovery_force_installs"].pop(theme, None)
+    ENVIRON["__modules_auto_discovery_force_upgrades"].pop(theme, None)
 
 
 def _update_view_key(cr, old, new):
@@ -345,6 +381,7 @@ def _update_view_key(cr, old, new):
     )
 
 
+@_warn_usage_outside_base
 def rename_module(cr, old, new):
     """
     Rename a module and all references to it.
@@ -372,7 +409,15 @@ def rename_module(cr, old, new):
         [mod_new, mod_old, "base", "ir.module.module"],
     )
 
+    fi = ENVIRON["__modules_auto_discovery_force_installs"]
+    if old in fi:
+        fi[new] = fi.pop(old)
+    fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
+    if old in fu:
+        fu[new] = fu.pop(old)
 
+
+@_warn_usage_outside_base
 def merge_module(cr, old, into, update_dependers=True):
     """
     Merge a module into another.
@@ -392,12 +437,28 @@ def merge_module(cr, old, into, update_dependers=True):
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
 
+    fi = ENVIRON["__modules_auto_discovery_force_installs"]
+    if old in fi:
+        fi[into] = fi.pop(old)
+    fu = ENVIRON["__modules_auto_discovery_force_upgrades"]
+    if old in fu:
+        if into not in fu:
+            fu[into] = fu.pop(old)
+        else:
+            init = fu[old][0] or fu[into][0]  # keep init flag
+            # keep the min version, this controls which upgrade scripts run
+            version = fu[old][1] if parse_version(fu[old][1]) < parse_version(fu[into][1]) else fu[into][1]
+            del fu[old]
+            fu[into] = (init, version)
+
     if old not in mod_ids:
         # this can happen in case of temp modules added after a release if the database does not
         # know about this module, i.e: account_full_reconcile in 9.0
-        # `into` should be know. Let it crash if not
         _logger.log(NEARLYWARN, "Unknown module %s. Skip merge into %s.", old, into)
         return
+
+    if into not in mod_ids:
+        raise UnknownModuleError(into)
 
     def _up(table, old, new):
         cr.execute(
@@ -478,8 +539,8 @@ def merge_module(cr, old, into, update_dependers=True):
 
     _up("constraint", mod_ids[old], mod_ids[into])
     _up("relation", mod_ids[old], mod_ids[into])
-    _update_view_key(cr, old, into)
     _up("data", old, into)
+    _update_view_key(cr, old, into)
     if table_exists(cr, "ir_translation"):
         cr.execute("UPDATE ir_translation SET module=%s WHERE module=%s", [into, old])
 
@@ -518,15 +579,54 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
                                            already installed
     :return str: the *new* state of the module
     """
+    if version_gte("saas~14.5"):
+        if if_installed:
+            try:
+                _assert_modules_exists(cr, *if_installed)
+            except UnknownModuleError as e:
+                _logger.warning("Unknown 'if_installed' modules: %s; consider them as uninstalled.", ", ".join(e.args))
+        if not if_installed or modules_installed(cr, *if_installed):
+            cr.execute("SELECT 1 FROM ir_module_module WHERE name = 'base' AND state != 'to upgrade'")
+            if cr.rowcount:
+                if not ENVIRON.get("AUTO_DISCOVERY_RAN"):
+                    # run the autodiscovery once to allow to force install _new_ modules
+                    _trigger_auto_discovery(cr)
+                elif ENVIRON.get("AUTO_DISCOVERY_UPGRADE"):
+                    raise MigrationError("`force_install_module` can only be called from pre/post of `base`")
+                return _force_install_module(cr, module, reason="{} (done outside of a major upgrade)".format(reason))
+            ENVIRON["__modules_auto_discovery_force_installs"][module] = reason
+        return None
+    else:
+        return _force_install_module(cr, module, if_installed, reason)
+
+
+def _force_install_module(cr, module, if_installed=None, reason="it has been explicitly asked for"):
+    """Strict implementation of force_install: raise errors for missing modules."""
+    _assert_modules_exists(cr, module)
+
+    cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [module])
+    mod_state = cr.fetchone()[0]
+    if mod_state in INSTALLED_MODULE_STATES:
+        return mod_state
+
     subquery = ""
-    subparams = ()
+    params = [module]
     if if_installed:
+        try:
+            _assert_modules_exists(cr, *if_installed)
+        except UnknownModuleError as e:
+            # Warn about unknown modules (can help track typos in the call).
+            # we don't care about missing modules, as by definition, they are not installed.
+            _logger.log(
+                NEARLYWARN, "Unknown 'if_installed' modules: %s; consider them as uninstalled.", ", ".join(e.args)
+            )
         subquery = """AND EXISTS(SELECT 1 FROM ir_module_module
                                   WHERE name IN %s
                                     AND state IN %s)"""
-        subparams = (tuple(if_installed), INSTALLED_MODULE_STATES)
+        params.extend((tuple(if_installed), INSTALLED_MODULE_STATES))
 
-    cr.execute(
+    query = format_query(
+        cr,
         """
         WITH RECURSIVE deps (mod_id, dep_name) AS (
               SELECT m.id, d.name from ir_module_module_dependency d
@@ -547,9 +647,10 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
          WHERE m.id = d.mod_id
            {0}
      RETURNING m.name, m.state
-    """.format(subquery),
-        (module,) + subparams,
+        """,
+        SQLStr(subquery),
     )
+    cr.execute(query, params)
 
     states = dict(cr.fetchall())
     toinstall = [m for m in states if states[m] == "to install"]
@@ -620,10 +721,13 @@ def force_install_module(cr, module, if_installed=None, reason="it has been expl
             [toinstall, list(INSTALLED_MODULE_STATES)],
         )
         for (mod,) in cr.fetchall():
-            force_install_module(
+            _force_install_module(
                 cr,
                 mod,
-                reason="it is an auto install module and its dependency {!r} has been force installed".format(module),
+                reason=(
+                    "it is an auto install module that got all its auto install dependencies installed "
+                    "by the force install of {!r}"
+                ).format(module),
             )
 
     # TODO handle module exclusions
@@ -637,9 +741,10 @@ def _assert_modules_exists(cr, *modules):
     existing_modules = {m[0] for m in cr.fetchall()}
     unexisting_modules = set(modules) - existing_modules
     if unexisting_modules:
-        raise AssertionError("Unexisting modules: {}".format(", ".join(unexisting_modules)))
+        raise UnknownModuleError(*sorted(unexisting_modules))
 
 
+@_warn_usage_outside_base
 def new_module_dep(cr, module, new_dep):
     assert isinstance(new_dep, basestring)
     _assert_modules_exists(cr, module, new_dep)
@@ -658,15 +763,17 @@ def new_module_dep(cr, module, new_dep):
         [new_dep, module, new_dep],
     )
 
-    # Update new_dep state depending on module state
-    cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [module])
-    mod_state = (cr.fetchone() or ["n/a"])[0]
-    if mod_state in INSTALLED_MODULE_STATES:
-        # Module was installed, need to install all its deps, recursively,
-        # to make sure the new dep is installed
-        force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
+    if not version_gte("saas~14.5"):
+        # Update new_dep state depending on module state
+        cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [module])
+        mod_state = (cr.fetchone() or ["n/a"])[0]
+        if mod_state in INSTALLED_MODULE_STATES:
+            # Module was installed, need to install all its deps, recursively,
+            # to make sure the new dep is installed
+            _force_install_module(cr, new_dep, reason="it's a new dependency of {!r}".format(module))
 
 
+@_warn_usage_outside_base
 def remove_module_deps(cr, module, old_deps):
     assert isinstance(old_deps, (Sequence, Set)) and not isinstance(old_deps, basestring)
     # As the goal is to have dependencies removed, the objective is reached even when they don't exist.
@@ -684,6 +791,7 @@ def remove_module_deps(cr, module, old_deps):
     )
 
 
+@_warn_usage_outside_base
 def module_deps_diff(cr, module, plus=(), minus=()):
     for new_dep in plus:
         new_module_dep(cr, module, new_dep)
@@ -691,6 +799,7 @@ def module_deps_diff(cr, module, plus=(), minus=()):
         remove_module_deps(cr, module, tuple(minus))
 
 
+@_warn_usage_outside_base
 def module_auto_install(cr, module, auto_install):
     if column_exists(cr, "ir_module_module_dependency", "auto_install_required"):
         params = []
@@ -716,6 +825,7 @@ def module_auto_install(cr, module, auto_install):
     cr.execute("UPDATE ir_module_module SET auto_install = %s WHERE name = %s", [auto_install is not False, module])
 
 
+@_warn_usage_outside_base
 def trigger_auto_install(cr, module):
     _assert_modules_exists(cr, module)
     if AUTO_INSTALL == "none":
@@ -807,6 +917,7 @@ def _set_module_countries(cr, module, countries):
     cr.execute(insert_query, [module, tuple(c.upper() for c in countries)])
 
 
+@_warn_usage_outside_base
 def new_module(cr, module, deps=(), auto_install=False, category=None, countries=()):
     if deps:
         _assert_modules_exists(cr, *deps)
@@ -856,7 +967,7 @@ def new_module(cr, module, deps=(), auto_install=False, category=None, countries
     trigger_auto_install(cr, module)
 
 
-def _caller_version(depth=2):
+def _caller_version(depth=3):
     frame = currentframe()
     version = "util"
     while version == "util":
@@ -867,6 +978,7 @@ def _caller_version(depth=2):
     return version
 
 
+@_warn_usage_outside_base
 def force_upgrade_of_fresh_module(cr, module, init=True):
     """
     Force the execution of upgrade scripts for a module that is being installed.
@@ -897,26 +1009,26 @@ def _force_upgrade_of_fresh_module(cr, module, init, version):
     # Low level implementation
     # Force module state to be in `to upgrade`.
     # Needed for migration script execution. See http://git.io/vnF7f
-    if version_gte("saas~18.2") and init:
-        env_ = env(cr)
-        env_.registry._force_upgrade_scripts.add(module)
-        return
-
+    state = "to install" if init and version_gte("saas~18.2") else "to upgrade"
     cr.execute(
         """
             UPDATE ir_module_module
-               SET state='to upgrade',
+               SET state=%s,
                    latest_version=%s
              WHERE name=%s
                AND state='to install'
          RETURNING id
     """,
-        [version, module],
+        [state, version, module],
     )
     if init and cr.rowcount:
-        # Force module in `init` mode beside its state is forced to `to upgrade`
-        # See http://git.io/vnF7O
-        odoo.tools.config["init"][module] = "oh yeah!"
+        if version_gte("saas~18.2"):
+            env_ = env(cr)
+            env_.registry._force_upgrade_scripts.add(module)
+        else:
+            # Force module in `init` mode beside its state is forced to `to upgrade`
+            # See http://git.io/vnF7O
+            odoo.tools.config["init"][module] = "oh yeah!"
 
 
 # for compatibility
@@ -930,6 +1042,8 @@ def _trigger_auto_discovery(cr):
     # low level implementation.
     # Called by `base/0.0.0/post-modules-auto-discovery.py` script.
     # Use accumulated values for the auto_install and force_upgrade modules.
+
+    ENVIRON["AUTO_DISCOVERY_RAN"] = True
 
     force_installs = ENVIRON["__modules_auto_discovery_force_installs"]
 
@@ -967,13 +1081,32 @@ def _trigger_auto_discovery(cr):
             _set_module_countries(cr, module, countries)
             module_auto_install(cr, module, auto_install)
 
-        if module in force_installs:
-            force_install_module(cr, module)
+    cr.execute(
+        """
+        SELECT d.name, STRING_AGG(m.name, ', ' ORDER BY m.name)
+          FROM ir_module_module_dependency d
+          JOIN ir_module_module m
+            ON d.module_id = m.id
+          JOIN ir_module_module dm
+            ON dm.name = d.name
+         WHERE m.state IN %(installed_state)s
+           AND dm.state NOT IN %(installed_state)s
+      GROUP BY d.name
+        """,
+        {"installed_state": INSTALLED_MODULE_STATES},
+    )
+    for new_dep, modules in cr.fetchall():
+        _force_install_module(cr, new_dep, reason="it's a new dependency of {}".format(modules))
+
+    for module, reason in force_installs.items():
+        kwargs = {"reason": reason} if reason else {}
+        _force_install_module(cr, module, **kwargs)
 
     for module, (init, version) in ENVIRON["__modules_auto_discovery_force_upgrades"].items():
         _force_upgrade_of_fresh_module(cr, module, init, version)
 
 
+@_warn_usage_outside_base
 def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
     # Cursor, Optional[Set[str]], Optional[Set[str]] -> None
 
@@ -981,6 +1114,8 @@ def modules_auto_discovery(cr, force_installs=None, force_upgrades=None):
     # The actual auto discovery is delayed in `base/0.0.0/post-modules-auto-discovery.py`
 
     if force_installs:
+        if not isinstance(force_installs, dict):
+            force_installs = dict.fromkeys(force_installs, None)
         ENVIRON["__modules_auto_discovery_force_installs"].update(force_installs)
     if force_upgrades:
         version = _caller_version()

@@ -4,9 +4,12 @@ import ast
 import collections
 import datetime
 import functools
+import hashlib
+import inspect
 import logging
 import os
 import re
+import sys
 import textwrap
 import uuid
 from contextlib import contextmanager
@@ -21,7 +24,7 @@ except ImportError:
     from openerp.modules.module import get_module_path
     from openerp.tools.parse_version import parse_version
 
-from .exceptions import SleepyDeveloperError
+from .exceptions import MigrationError, SleepyDeveloperError
 
 # python3 shim
 try:
@@ -55,6 +58,9 @@ class Sentinel:
 
     def __repr__(self):
         return self.name
+
+
+AUTO = AUTOMATIC = Sentinel("AUTO")
 
 
 def _cached(func):
@@ -130,7 +136,8 @@ def has_enterprise():
     if os.getenv("ODOO_HAS_ENTERPRISE"):
         return True
     # XXX maybe we will need to change this for version > 9
-    return bool(get_module_path("delivery_fedex", downloaded=False, display_warning=False))
+    kw = {} if version_gte("saas~18.5") else {"downloaded": False}
+    return bool(get_module_path("delivery_fedex", display_warning=False, **kw))
 
 
 @_cached
@@ -142,7 +149,8 @@ def has_design_themes():
     """
     if os.getenv("ODOO_HAS_DESIGN_THEMES"):
         return True
-    return bool(get_module_path("theme_yes", downloaded=False, display_warning=False))
+    kw = {} if version_gte("saas~18.5") else {"downloaded": False}
+    return bool(get_module_path("theme_yes", display_warning=False, **kw))
 
 
 @_cached
@@ -187,7 +195,8 @@ def expand_braces(s):
 
 
 def split_osenv(name, default=""):
-    return re.split(r"\W+", os.getenv(name, default).strip())
+    value = os.getenv(name, default).strip()
+    return re.split(r"\W+", value) if value else []
 
 
 try:
@@ -388,6 +397,31 @@ def log_chunks(it, logger, chunk_size, qualifier="items"):
         log(i // chunk_size + 1, i % chunk_size)
 
 
+def make_pickleable_callback(callback):
+    """
+    Make a callable importable.
+
+    `ProcessPoolExecutor.map` arguments needs to be pickleable
+    Functions can only be pickled if they are importable.
+    However, the callback's file is not importable due to the dash in the filename.
+    We should then put the executed function in its own importable file.
+
+    :meta private: exclude from online docs
+    """
+    callback_filepath = inspect.getfile(callback)
+    name = "_upgrade_" + hashlib.sha256(callback_filepath.encode()).hexdigest()
+    if name not in sys.modules:
+        sys.modules[name] = import_script(callback_filepath, name=name)
+    try:
+        return getattr(sys.modules[name], callback.__name__)
+    except AttributeError:
+        error_msg = (
+            "The converter callback `{}` is a nested function in `{}`.\n"
+            "Move it outside the `migrate()` function to make it top-level."
+        ).format(callback.__name__, callback.__module__)
+        raise MigrationError(error_msg)
+
+
 class SelfPrint(object):
     """
     Class that will return a self representing string. Used to evaluate domains.
@@ -543,7 +577,12 @@ if version_gte("saas~18.4"):
         assert isinstance(expr, (str, bytes))
         assert isinstance(context, SelfPrintEvalContext)
 
-        c = _safe_eval_mod.test_expr(expr, _safe_eval_mod._SAFE_OPCODES, mode="eval", filename=None)
+        if version_gte("saas~18.5"):
+            c = _safe_eval_mod.compile_codeobj(expr, filename=None, mode="eval")
+            _safe_eval_mod.assert_valid_codeobj(_safe_eval_mod._SAFE_OPCODES, c, expr)
+        else:
+            c = _safe_eval_mod.test_expr(expr, _safe_eval_mod._SAFE_OPCODES, mode="eval", filename=None)
+
         context["__builtins__"] = dict(_safe_eval_mod._BUILTINS)
         try:
             return _safe_eval_mod.unsafe_eval(c, context, None)

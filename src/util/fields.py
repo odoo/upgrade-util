@@ -38,28 +38,38 @@ except ImportError:
         return "%s_%s_index" % (table_name, column_name)
 
 
+try:
+    from odoo.tools import pickle
+except ImportError:
+    import pickle
+
+
 from . import json
 from .const import ENVIRON
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
-from .exceptions import SleepyDeveloperError
+from .exceptions import SleepyDeveloperError, UpgradeError
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path, table_of_model
 from .inherit import for_each_inherit
-from .misc import log_progress, safe_eval, version_gte
+from .misc import AUTO, log_progress, safe_eval, version_gte
 from .orm import env, invalidate
 from .pg import (
+    PGRegexp,
     SQLStr,
     alter_column_type,
     column_exists,
     column_type,
+    create_m2m,
     explode_execute,
     explode_query_range,
     format_query,
     get_columns,
     get_value_or_en_translation,
     parallel_execute,
+    pg_replace,
     pg_text2html,
     remove_column,
     table_exists,
+    target_of,
 )
 from .records import _remove_import_export_paths
 from .report import add_to_migration_reports, get_anchor_link_to_record
@@ -221,8 +231,17 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             return [FALSE_LEAF]
         return [TRUE_LEAF]
 
-    # clean domains
-    adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
+    related = None
+    if column_exists(cr, "ir_model_fields", "related"):
+        cr.execute("SELECT related FROM ir_model_fields WHERE model=%s AND name=%s", [model, fieldname])
+        if cr.rowcount:
+            related = cr.fetchone()[0]
+
+    if related:
+        update_field_usage(cr, model, fieldname, related, skip_inherit=skip_inherit)
+    else:
+        # clean domains
+        adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
 
     if table_exists(cr, "ir_server_object_lines"):
         cr.execute(
@@ -267,10 +286,10 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     # remove this field from dependencies of other fields
     if column_exists(cr, "ir_model_fields", "depends"):
         cr.execute(
-            "SELECT id,model,depends FROM ir_model_fields WHERE state='manual' AND depends ~ %s",
+            "SELECT id,model,depends,COALESCE(compute,''),name FROM ir_model_fields WHERE state='manual' AND depends ~ %s",
             [r"\m{}\M".format(fieldname)],
         )
-        for id, from_model, deps in cr.fetchall():
+        for id, from_model, deps, compute_code, dep_field_name in cr.fetchall():
             parts = []
             for part in deps.split(","):
                 path = part.strip().split(".")
@@ -278,6 +297,16 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
                     path[i] == fieldname and _valid_path_to(cr, path[:i], from_model, model) for i in range(len(path))
                 ):
                     parts.append(part)
+                elif fieldname in compute_code:
+                    _logger.warning(
+                        "Field %s.%s depends on removed field %s.%s and its compute code references it, "
+                        "this may lead to errors.",
+                        from_model,
+                        dep_field_name,
+                        model,
+                        fieldname,
+                    )
+
             if len(parts) != len(deps.split(",")):
                 cr.execute("UPDATE ir_model_fields SET depends=%s WHERE id=%s", [", ".join(parts) or None, id])
 
@@ -307,20 +336,6 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
                 "DELETE FROM ir_model_relation r USING ir_model m WHERE m.id = r.model AND r.name = %s", [m2m_rel]
             )
             ENVIRON.setdefault("_gone_m2m", {})[m2m_rel] = "%s:%s" % (model, fieldname)
-
-    # remove the ir.model.fields entry (and its xmlid)
-    cr.execute(
-        """
-            WITH del AS (
-                DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id
-            )
-            DELETE FROM ir_model_data
-                  USING del
-                  WHERE model = 'ir.model.fields'
-                    AND res_id = del.id
-        """,
-        [model, fieldname],
-    )
 
     # cleanup translations
     if table_exists(cr, "ir_translation"):
@@ -381,6 +396,40 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
     table = table_of_model(cr, model)
     if drop_column and stored:
         remove_column(cr, table, fieldname, cascade=cascade)
+
+    # relation_field_id is a FK with ON DELETE CASCADE
+    if column_exists(cr, "ir_model_fields", "relation_field_id"):
+        cr.execute(
+            """
+            SELECT d.model,
+                   d.name
+              FROM ir_model_fields d
+              JOIN ir_model_fields f
+                ON d.relation_field_id = f.id
+             WHERE f.model = %s
+               AND f.name = %s
+               AND d.ttype = 'one2many'
+               AND d.state = 'manual'
+            """,
+            [model, fieldname],
+        )
+        for rel_model, rel_field in cr.fetchall():
+            _logger.info("Cascade removing one2many field %s.%s", rel_model, rel_field)
+            remove_field(cr, rel_model, rel_field)
+
+    # remove the ir.model.fields entry (and its xmlid)
+    cr.execute(
+        """
+            WITH del AS (
+                DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id
+            )
+            DELETE FROM ir_model_data
+                  USING del
+                  WHERE model = 'ir.model.fields'
+                    AND res_id = del.id
+        """,
+        [model, fieldname],
+    )
 
     # remove field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
@@ -640,7 +689,7 @@ def rename_field(cr, model, old, new, update_references=True, domain_adapter=Non
         # Rename corresponding index
         new_index_name = make_index_name(table, new)
         old_index_name = make_index_name(table, old)
-        cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(new_index_name, old_index_name))
+        cr.execute('ALTER INDEX IF EXISTS "{0}" RENAME TO "{1}"'.format(old_index_name, new_index_name))
 
     # rename field on inherits
     for inh in for_each_inherit(cr, model, skip_inherit):
@@ -731,6 +780,76 @@ def convert_field_to_html(cr, model, field, skip_inherit=()):
         convert_field_to_html(cr, inh.model, field, skip_inherit=skip_inherit)
 
 
+def convert_m2o_field_to_m2m(cr, model, field, new_name=None, m2m_table=None, col1=None, col2=None):
+    """
+    Convert a Many2one field to a Many2many.
+
+    It creates the relation table and fill it.
+
+    :param str model: model name of the field to convert
+    :param str field: current name of the field to convert
+    :param str new_name: new name of the field to convert.
+                         If not provide, it's `field` with a trailing "s".
+    :param str m2m_table: name of the relation table. Automatically generated if not provided.
+    :param str col1: name of the column referencing `model`.
+    :param str col2: name of the column referencing the target of `field`.
+    """
+    _validate_model(model)
+    if new_name is None:
+        if not field.endswith("_id"):
+            raise ValueError("Please specify the new name explicitly")
+        new_name = field + "s"
+
+    table1 = table_of_model(cr, model)
+    table2, _, _ = target_of(cr, table1, field)
+
+    if col1 is None:
+        col1 = "{}_id".format(table1)
+    if col2 is None:
+        col2 = "{}_id".format(table2)
+
+    m2m_table = create_m2m(cr, m2m_table or AUTO, table1, table2, col1, col2)
+
+    dedup = SQLStr("ON CONFLICT DO NOTHING")
+    if cr._cnx.server_version < 90500:
+        # Approximate version for older PG versions
+        dedup = format_query(
+            cr,
+            """
+                EXCEPT
+                SELECT {col1}, {col2}
+                  FROM {m2m}
+            """,
+            m2m=m2m_table,
+            col1=col1,
+            col2=col2,
+        )
+
+    fill_query = format_query(
+        cr,
+        """
+            INSERT INTO {m2m}({col1}, {col2})
+                 SELECT id, {field}
+                   FROM {table}
+                  WHERE {field} IS NOT NULL
+                {dedup}
+        """,
+        m2m=m2m_table,
+        col1=col1,
+        col2=col2,
+        field=field,
+        table=table1,
+        dedup=dedup,
+    )
+    cr.execute(fill_query)
+    remove_column(cr, table1, field)
+    rename_field(cr, model, field, new_name)
+
+
+# Because we can.
+m2o2m2m = convert_m2o_field_to_m2m
+
+
 def _convert_field_to_company_dependent(
     cr, model, field, type, target_model=None, default_value=None, default_value_ref=None, company_field="company_id"
 ):
@@ -764,9 +883,16 @@ def _convert_field_to_company_dependent(
         where_condition = "{0} IS NOT NULL"
     else:
         where_condition = cr.mogrify("{0} != %s", [default_value]).decode()
-    where_condition += format_query(cr, " AND {} IS NOT NULL", company_field)
 
-    using = format_query(cr, "jsonb_build_object({}, {{0}})", company_field)
+    if company_field:
+        where_condition += format_query(cr, " AND {} IS NOT NULL", company_field)
+        using = format_query(cr, "jsonb_build_object({}, {{0}})", company_field)
+    else:
+        using = format_query(
+            cr,
+            "(SELECT jsonb_object_agg(c.id::text, {}.{{0}}) FROM res_company c)",
+            table,
+        )
     alter_column_type(cr, table, field, "jsonb", using=using, where=where_condition)
 
     # delete all old default
@@ -1000,7 +1126,7 @@ if version_gte("16.0"):
     def convert_field_to_translatable(cr, model, field):
         table = table_of_model(cr, model)
         ctype = column_type(cr, table, field)
-        if not ctype or ctype == "json":
+        if not ctype or ctype == "jsonb":
             return
         alter_column_type(cr, table, field, "jsonb", "jsonb_build_object('en_US', {0})")
 
@@ -1041,12 +1167,57 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
     table = table_of_model(cr, model)
 
     if column_exists(cr, table, field):
-        query = "UPDATE {table} SET {field}= %s::jsonb->>{field} WHERE {field} IN %s".format(table=table, field=field)
+        ctype = column_type(cr, table, field)
+        if ctype == "varchar":
+            query = "UPDATE {table} t SET {column} = %(json)s::jsonb->>t.{column} WHERE t.{column} = ANY(%(keys)s)"
+        elif ctype == "jsonb":
+            # company dependent selection field
+            query = """
+                WITH upd AS (
+                     SELECT t.id,
+                            jsonb_object_agg(v.key, COALESCE(%(json)s::jsonb->>v.value, v.value)) AS value
+                       FROM {table} t
+                       JOIN LATERAL jsonb_each_text(t.{column}) v
+                         ON true
+                      WHERE jsonb_path_query_array(t.{column}, '$.*') ?| %(keys)s
+                        AND {{parallel_filter}}
+                      GROUP BY t.id
+                )
+                UPDATE {table} t
+                   SET {column} = upd.value
+                  FROM upd
+                 WHERE upd.id = t.id
+            """
+        else:
+            raise UpgradeError("unsupported column type for selection field: {}".format(ctype))
+
+        data = {
+            "keys": list(mapping),
+            "json": json.dumps(mapping),
+        }
         queries = [
-            cr.mogrify(q, [json.dumps(mapping), tuple(mapping)]).decode()
-            for q in explode_query_range(cr, query, table=table)
+            cr.mogrify(q, data).decode()
+            for q in explode_query_range(cr, format_query(cr, query, table=table, column=field), table=table, alias="t")
         ]
         parallel_execute(cr, queries)
+
+    elif table_exists(cr, "ir_property"):
+        cr.execute("SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", [model, field])
+        if cr.rowcount:
+            fields_id = cr.fetchone()[0]
+            query = """
+                UPDATE ir_property
+                   SET value_text = %(json)s::jsonb->>value_text
+                 WHERE value_text IN %(keys)s
+                   AND fields_id = %(fields_id)s
+            """
+            data = {
+                "keys": tuple(mapping),
+                "json": json.dumps(mapping),
+                "fields_id": fields_id,
+            }
+            queries = [cr.mogrify(q, data).decode() for q in explode_query_range(cr, query, table="ir_property")]
+            parallel_execute(cr, queries)
 
     if table_exists(cr, "ir_model_fields_selection"):
         cr.execute(
@@ -1060,6 +1231,36 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
             """,
             [model, field, [k for k in mapping if k not in mapping.values()]],
         )
+
+    if table_exists(cr, "ir_default"):
+        query = """
+            UPDATE ir_default d
+               SET json_value = (%(json)s::jsonb->>d.json_value)
+              FROM ir_model_fields f
+             WHERE d.field_id = f.id
+               AND f.model = %(model)s
+               AND f.name = %(name)s
+               AND d.json_value IN %(keys)s
+        """
+        dumped_map = {json.dumps(k): json.dumps(v) for k, v in mapping.items()}
+    else:
+        query = """
+            UPDATE ir_values
+               SET value = %(json)s::jsonb->>value
+             WHERE model = %(model)s
+               AND name = %(name)s
+               AND key = 'default'
+               AND value IN %(keys)s
+        """
+        dumped_map = {pickle.dumps(k): pickle.dumps(v) for k, v in mapping.items()}
+
+    data = {
+        "keys": tuple(dumped_map),
+        "json": json.dumps(dumped_map),
+        "model": model,
+        "name": field,
+    }
+    cr.execute(query, data)
 
     def adapter(leaf, _or, _neg):
         left, op, right = leaf
@@ -1078,7 +1279,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
 
 
 def is_field_anonymized(cr, model, field):
-    from .modules import module_installed
+    from .modules import module_installed  # noqa: PLC0415
 
     _validate_model(model)
     if not module_installed(cr, "anonymization"):
@@ -1210,11 +1411,11 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             _validate_model(model)
 
     p = {
-        "old": r"\y%s\y" % (re.escape(old),),
-        "old_pattern": r"""[.'"]{0}\y""".format(re.escape(old)),
+        "old": PGRegexp(r"\y{}\y".format(re.escape(old))),
+        "old_pattern": PGRegexp(r"""[.'"]{0}\y""".format(re.escape(old))),
         "new": new,
-        "def_old": r"\ydefault_%s\y" % (re.escape(old),),
-        "def_new": "default_%s" % (new,),
+        "def_old": PGRegexp(r"\ydefault_{}\y".format(re.escape(old))),
+        "def_new": "default_{}".format(new),
         "models": tuple(only_models) if only_models else (),
     }
 
@@ -1305,7 +1506,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
             """
 <details>
   <summary>
-    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions and compute methods of other fields may need an update:
+    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions and compute methods of other fields may need an update.
     If a server action or a field is a standard one and you haven't made any modifications, you may ignore them.
   </summary>
   <ul>{li}</ul>
@@ -1321,26 +1522,26 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         col_prefix = ""
         if not column_exists(cr, "ir_filters", "sort"):
             col_prefix = "--"  # sql comment the line
-        q = """
-            UPDATE ir_filters
-               SET {col_prefix} sort = regexp_replace(sort, %(old)s, %(new)s, 'g'),
-                   context = regexp_replace(regexp_replace(context,
-                                                           %(old)s, %(new)s, 'g'),
-                                                           %(def_old)s, %(def_new)s, 'g')
-        """
 
-        if only_models:
-            q += " WHERE model_id IN %(models)s AND "
-        else:
-            q += " WHERE "
-        q += """
-            (
+        q = format_query(
+            cr,
+            """
+            UPDATE ir_filters
+               SET {col_prefix} sort = {sort_repl},
+                   context = {context_repl}
+             WHERE {cond}
+               AND (
                 context ~ %(old)s
                 OR context ~ %(def_old)s
                 {col_prefix} OR sort ~ %(old)s
-            )
-        """
-        cr.execute(q.format(col_prefix=col_prefix), p)
+               )
+            """,
+            col_prefix=SQLStr(col_prefix),
+            sort_repl=pg_replace("sort", [(p["old"], p["new"])]),
+            context_repl=pg_replace("context", [(p["old"], p["new"]), (p["def_old"], p["def_new"])]),
+            cond=SQLStr("model_id IN %(models)s") if only_models else SQLStr("true"),
+        )
+        cr.execute(q, p)
 
         # ir.exports.line, base_import.mapping # noqa
         if only_models:

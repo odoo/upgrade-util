@@ -8,6 +8,11 @@ from textwrap import dedent
 import lxml
 from docutils.core import publish_string
 
+try:
+    import markdown
+except ImportError:
+    markdown = None
+
 from .helpers import _validate_model
 from .misc import parse_version
 
@@ -88,6 +93,11 @@ ANNOUNCE_MEDIA -= {""}
 
 
 ODOO_SHOWCASE_VIDEOS = {
+    "19.0": "OZLP-SCHW7A",
+    "saas~18.4": "fiPyJXzeNjQ",
+    "saas~18.3": "oyev2DxC5yY",
+    "saas~18.2": "bwn_HWuLuTA",
+    "saas~18.1": "is9oLyIkQGk",
     "18.0": "gbE3azm_Io0",
     "saas~17.4": "8F4-uDwom8A",
     "saas~17.2": "ivjgo_2-wkE",
@@ -120,6 +130,8 @@ def announce_release_note(cr):
     filepath = os.path.join(os.path.dirname(__file__), "release-note.xml")
     with open(filepath, "rb") as fp:
         contents = fp.read()
+        if not version_gte("15.0"):
+            contents = contents.replace(b"t-out", b"t-esc")
         report = lxml.etree.fromstring(contents)
     e = env(cr)
     major_version, minor_version = re.findall(r"\d+", release.major_version)
@@ -141,6 +153,8 @@ def announce_migration_report(cr):
         contents = fp.read()
         if Markup:
             contents = contents.replace(b"t-raw", b"t-out")
+        if not version_gte("15.0"):
+            contents = contents.replace(b"t-out", b"t-esc")
         report = lxml.etree.fromstring(contents)
     e = env(cr)
     major_version, minor_version = re.findall(r"\d+", release.major_version)
@@ -186,7 +200,7 @@ def rst2html(rst):
 
 
 def md2html(md):
-    import markdown
+    assert markdown
 
     mdversion = markdown.__version_info__ if hasattr(markdown, "__version_info__") else markdown.version_info
     extensions = [
@@ -256,9 +270,9 @@ def announce(
 
     except MigrationError:
         try:
-            from openerp.modules.registry import RegistryManager
+            from openerp.modules.registry import RegistryManager  # noqa: PLC0415
         except ImportError:
-            from openerp.modules.registry import Registry as RegistryManager
+            from openerp.modules.registry import Registry as RegistryManager  # noqa: PLC0415
         registry = RegistryManager.get(cr.dbname)
         user = registry["res.users"].browse(cr, SUPERUSER_ID, uid, context=ctx)
 
@@ -311,7 +325,7 @@ def announce(
                 _logger.warning("Cannot unfold chat window", exc_info=True)
 
 
-def get_anchor_link_to_record(model, id, name, action_id=None):
+def get_anchor_link_to_record(model, id, name=None, action_id=None):
     _validate_model(model)
     if not name:
         name = "{}(id={})".format(model, id)

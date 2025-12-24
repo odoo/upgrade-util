@@ -1146,7 +1146,7 @@ def convert_tree(tree, src_version, dst_version, **converter_kwargs):
     :return: the converted lxml tree.
     :rtype: etree.ElementTree
     """
-    tree, ops_count = BootstrapConverter(tree, **converter_kwargs).convert(src_version, dst_version)
+    tree, _ops_count = BootstrapConverter(tree, **converter_kwargs).convert(src_version, dst_version)
     return tree
 
 

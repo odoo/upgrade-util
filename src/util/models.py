@@ -15,7 +15,7 @@ from .fields import IMD_FIELD_PATTERN, remove_field
 from .helpers import _ir_values_value, _validate_model, model_of_table, table_of_model
 from .indirect_references import indirect_references
 from .inherit import for_each_inherit, inherit_parents
-from .misc import _cached, chunks, log_progress
+from .misc import _cached, chunks, log_progress, version_gte
 from .pg import (
     _get_unique_indexes_with,
     column_exists,
@@ -28,6 +28,7 @@ from .pg import (
     get_value_or_en_translation,
     parallel_execute,
     table_exists,
+    update_m2m_tables,
     view_exists,
 )
 
@@ -174,12 +175,48 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
         for tbl in ["base_action_rule", "base_automation", "google_drive_config"]:
             if column_exists(cr, tbl, "model_id"):
                 cr.execute("DELETE FROM {0} WHERE model_id=%s".format(tbl), [mod_id])
+
+        if not version_gte("17.0") and column_exists(cr, "base_automation", "action_server_id"):
+            cr.execute(
+                """
+                DELETE FROM base_automation b_a
+                 USING ir_act_server action
+                 WHERE b_a.action_server_id = action.id
+                   AND action.binding_model_id = %s
+                """,
+                [mod_id],
+            )
+
         cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
 
         # remove m2m tables
         if ignore_m2m != "*":
             tables = get_m2m_tables(cr, table_of_model(cr, model))
             ignore = set(ignore_m2m)
+            if tables and column_exists(cr, "ir_model_fields", "relation_table"):
+                cr.execute(
+                    """
+                    SELECT name, model
+                      FROM ir_model_fields
+                     WHERE relation_table IN %s
+                       AND state = 'manual'
+                    """,
+                    [tuple(tables)],
+                )
+
+                if cr.rowcount:
+                    affected_fields = cr.fetchall()
+                    for field, field_model in affected_fields:
+                        remove_field(cr, field_model, field, drop_column=False)
+                    msg = "The following fields have been removed because their related model {} ({}) was removed:\n{}".format(
+                        mod_label, model, "\n".join(" - field {} of model {}".format(*r) for r in affected_fields)
+                    )
+                    add_to_migration_reports(
+                        message=msg,
+                        category="Removed Fields",
+                        format="md",
+                    )
+
             for table_name in tables:
                 if table_name in ignore:
                     _logger.info("remove_model(%r): m2m table %r explicitly ignored", model, table_name)
@@ -268,13 +305,21 @@ def _replace_model_in_computed_custom_fields(cr, source, target):
         )
 
 
-def rename_model(cr, old, new, rename_table=True):
+def rename_model(cr, old, new, rename_table=True, ignored_m2ms="ALL_BEFORE_18_1"):
     """
     Rename a model.
 
-    :param str old: current name of the model to rename
-    :param str new: new name of the model to rename
+    Updates all references to the model name in the DB.
+
+    If table rename is requested, from saas~18.1+, m2m table are updated too, unless
+    ignored. In older versions, m2m tables are skipped unless an empty list is passed.
+
+    :param str old: current model name
+    :param str new: new model name
     :param bool rename_table: whether to also rename the table of the model
+    :param ignored_m2ms: m2m tables to skip. Defaults to `"ALL_BEFORE_18_1"`, which skips
+                         all in Odoo 18 or below, none in saa~18.1+. For all versions, if
+                         the value is not the default, skip only the specified m2m tables.
     """
     _validate_model(old)
     _validate_model(new)
@@ -285,6 +330,10 @@ def rename_model(cr, old, new, rename_table=True):
         new_table = table_of_model(cr, new)
         if new_table != old_table:
             pg_rename_table(cr, old_table, new_table)
+            if ignored_m2ms != "ALL_BEFORE_18_1":  # explicit value, run the the update
+                update_m2m_tables(cr, old_table, new_table, ignored_m2ms)
+            elif version_gte("saas~18.1"):  # from 18.1 we update by default
+                update_m2m_tables(cr, old_table, new_table, ())
 
     updates = [("wkf", "osv")] if table_exists(cr, "wkf") else []
     updates += [(ir.table, ir.res_model) for ir in indirect_references(cr) if ir.res_model]

@@ -31,9 +31,10 @@ from .helpers import (
     resolve_model_fields_path,
     table_of_model,
 )
+from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import Sentinel, chunks, parse_version, version_gte
+from .misc import AUTOMATIC, chunks, parse_version, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
@@ -48,6 +49,7 @@ from .pg import (
     format_query,
     get_columns,
     get_fk,
+    get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
     table_exists,
@@ -407,7 +409,7 @@ def remove_records(cr, model, ids):
         if inh.via:
             table = table_of_model(cr, inh.model)
             if not column_exists(cr, table, inh.via):
-                # column may not exists in case of a partially unintalled module that left only *magic columns* in tables
+                # column may not exists in case of a partially uninstalled module that left only *magic columns* in tables
                 continue
             cr.execute('SELECT id FROM "{}" WHERE "{}" IN %s'.format(table, inh.via), [ids])
             if inh.model == "ir.ui.menu":
@@ -1005,9 +1007,6 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     return new_res_id
 
 
-AUTOMATIC = Sentinel("AUTOMATIC")
-
-
 def update_record_from_xml(
     cr,
     xmlid,
@@ -1076,7 +1075,7 @@ def __update_record_from_xml(
     fields,
     done_refs,
 ):
-    from .modules import get_manifest
+    from .modules import get_manifest  # noqa: PLC0415
 
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
@@ -1218,8 +1217,12 @@ def __update_record_from_xml(
                     fields_with_values_from_xml |= {"arch_db", "name"}
             else:
                 fields_with_values_from_xml = fields
+            if version_gte("saas~18.5"):  # translate is varchar
+                sql_code = "SELECT name FROM ir_model_fields WHERE model = %s AND translate IS NOT NULL AND name IN %s"
+            else:  # translate is boolean
+                sql_code = "SELECT name FROM ir_model_fields WHERE model = %s AND translate = true AND name IN %s"
             cr.execute(
-                "SELECT name FROM ir_model_fields WHERE model = %s AND translate = true AND name IN %s",
+                sql_code,
                 [model, tuple(fields_with_values_from_xml)],
             )
             reset_translations = [fname for [fname] in cr.fetchall()]
@@ -1280,11 +1283,14 @@ def delete_unused(cr, *xmlids, **kwargs):
     :param bool keep_xmlids: whether to keep the xml_ids of records that cannot be
                              removed. By default `True` for versions up to 18.0,
                              `False` from `saas~18.1` on.
+    :param list(str) or str include_m2m: list of m2m tables to include in the search.
+                                         `"*"` for all.
     :return: list of ids of removed records, if any
     :rtype: list(int)
     """
     deactivate = kwargs.pop("deactivate", False)
     keep_xmlids = kwargs.pop("keep_xmlids", not version_gte("saas~18.1"))
+    include_m2m = kwargs.pop("include_m2m", ())
     if kwargs:
         raise TypeError("delete_unused() got an unexpected keyword argument %r" % kwargs.popitem()[0])
 
@@ -1356,12 +1362,14 @@ def delete_unused(cr, *xmlids, **kwargs):
         else:
             kids_query = format_query(cr, "SELECT id, ARRAY[id] AS children FROM {0} WHERE id = ANY(%(ids)s)", table)
 
+        m2m_tables = include_m2m if include_m2m != "*" else get_m2m_tables(cr, table)
+
         sub = " UNION ALL ".join(
             [
                 format_query(cr, "SELECT 1 FROM {} x WHERE x.{} = ANY(s.children)", fk_tbl, fk_col)
                 for fk_tbl, fk_col, _, fk_act in get_fk(cr, table, quote_ident=False)
                 # ignore "on delete cascade" fk (they are indirect dependencies (lines or m2m))
-                if fk_act != "c"
+                if (fk_act != "c" or fk_tbl in m2m_tables)
                 # ignore children records unless the deletion is restricted
                 if not (fk_tbl == table and fk_act != "r")
             ]
@@ -1423,7 +1431,7 @@ def delete_unused(cr, *xmlids, **kwargs):
     return deleted
 
 
-def replace_record_references(cr, old, new, replace_xmlid=True):
+def replace_record_references(cr, old, new, replace_xmlid=True, parent_field="parent_id"):
     """
     Replace all (in)direct references of a record by another.
 
@@ -1436,10 +1444,12 @@ def replace_record_references(cr, old, new, replace_xmlid=True):
     if not old[1]:
         return None
 
-    return replace_record_references_batch(cr, {old[1]: new[1]}, old[0], new[0], replace_xmlid)
+    return replace_record_references_batch(cr, {old[1]: new[1]}, old[0], new[0], replace_xmlid, parent_field)
 
 
-def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, replace_xmlid=True, ignores=()):
+def replace_record_references_batch(
+    cr, id_mapping, model_src, model_dst=None, replace_xmlid=True, ignores=(), parent_field="parent_id"
+):
     """
     Replace all references to records.
 
@@ -1456,6 +1466,9 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                                the source records
     :param list(str) ignores: list of **table** names to skip when updating the referenced
                               values
+    :paream str parent_field: when the target and source model are the same, and the model
+                              table has `parent_path` column, this field will be used to
+                              update it.
     """
     _validate_model(model_src)
     if model_dst is None:
@@ -1731,11 +1744,12 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
                          -- there is no target already present within the same constraint
                         NOT EXISTS(SELECT 1 FROM {table} WHERE {res_model_whr} AND {jmap_expr} AND {where_clause})
                          -- there is no other entry with the same target within the same constraint
-                        AND NOT (t2 IS NOT NULL AND {where_clause2})
+                        AND NOT (t2.{res_id} IS NOT NULL AND {where_clause2})
                         """,
                         table=ir.table,
                         res_model_whr=res_model_whr,
                         jmap_expr=jmap_expr,
+                        res_id=ir.res_id,
                         where_clause=SQLStr(" AND ".join(format_query(cr, "{0}=t.{0}", col) for col in uniq_cols))
                         if uniq_cols
                         else SQLStr("True"),
@@ -1781,6 +1795,20 @@ def replace_record_references_batch(cr, id_mapping, model_src, model_dst=None, r
             )
 
     cr.execute("DROP TABLE _upgrade_rrr")
+    if parent_field and model_dst == model_src:
+        if column_exists(cr, model_src_table, "parent_path"):
+            fk_target = target_of(cr, model_src_table, parent_field)
+            if fk_target:
+                if fk_target[0] != model_src_table:
+                    _logger.warning(
+                        "`%s` has a `parent_path` but `%s` is not a self-referencing FK", model_src_table, parent_field
+                    )
+                else:
+                    update_parent_path(cr, model_src, parent_field)
+            elif parent_field != "parent_id":  # check non-default value
+                _logger.error("`%s` in `%s` is not a self-referencing FK", parent_field, model_src_table)
+        elif column_exists(cr, model_src_table, "parent_left"):
+            _logger.warning("Possibly missing update of parent_left/right in `%s`", model_src_table)
 
 
 def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
@@ -1935,3 +1963,43 @@ def _remove_redundant_tcalls(cr, match):
                 vid,
                 match,
             )
+
+
+def update_parent_path(cr, model, parent_field="parent_id"):
+    """
+    Trigger the update of parent paths in a model.
+
+    :meta private: exclude from online docs
+    """
+    if not version_gte("saas~11.3"):
+        _logger.error("parent_left and parent_right must be computed via the ORM")
+        return
+    table = table_of_model(cr, model)
+    name_field = "name" if column_exists(cr, table, "name") else "id"
+    break_recursive_loops(cr, model, parent_field, name_field)
+    query = format_query(
+        cr,
+        """
+        WITH RECURSIVE __parent_store_compute(id, parent_path) AS (
+             SELECT row.id,
+                    concat(row.id, '/')
+               FROM {table} row
+              WHERE row.{parent_field} IS NULL
+
+            UNION
+
+             SELECT row.id,
+                    concat(comp.parent_path, row.id, '/')
+               FROM {table} row
+               JOIN __parent_store_compute comp
+                 ON row.{parent_field} = comp.id
+        )
+        UPDATE {table} row
+           SET parent_path = comp.parent_path
+          FROM __parent_store_compute comp
+         WHERE row.id = comp.id
+        """,
+        table=table,
+        parent_field=parent_field,
+    )
+    cr.execute(query)

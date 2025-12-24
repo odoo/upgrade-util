@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ruff: noqa: PLC0415
 """
 Utility functions to perform operations via the ORM.
 
@@ -13,7 +14,6 @@ import re
 from contextlib import contextmanager
 from functools import wraps
 from itertools import chain
-from operator import itemgetter
 from textwrap import dedent
 
 try:
@@ -42,7 +42,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_between, version_gte
-from .pg import column_exists, get_columns
+from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor
 
 # python3 shims
 try:
@@ -251,7 +251,7 @@ def no_selection_cache_validation(f=None):
 
 
 @no_selection_cache_validation
-def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto"):
+def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto", query=None):
     """
     Recompute field values.
 
@@ -271,27 +271,56 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     :param str model: name of the model to recompute
     :param list(str) fields: list of the name of the fields to recompute
     :param list(int) or None ids: list of the IDs of the records to recompute, when `None`
-                                  recompute *all* records
+                                  recompute *all* records, unless `query` is also set (see
+                                  below)
     :param logger: logger used to report the progress
     :type logger: :class:`logging.Logger`
     :param int chunk_size: number of records per chunk - used to split the processing
     :param str strategy: strategy used to process the re-computation
+    :param str query: query to get the IDs of records to recompute, it is an error to set
+                      both `ids` and `query`. Note that the processing will always happen
+                      in ascending order. If that is unwanted, you must use `ids` instead.
     """
-    assert strategy in {"flush", "commit", "auto"}
+    if strategy not in {"flush", "commit", "auto"}:
+        raise ValueError("Invalid strategy {!r}".format(strategy))
+    if ids is not None and query is not None:
+        raise ValueError("Cannot set both `ids` and `query`")
     Model = env(cr)[model] if isinstance(model, basestring) else model
     model = Model._name
+
     if ids is None:
-        cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
-        ids = tuple(map(itemgetter(0), cr.fetchall()))
+        query = format_query(cr, "SELECT id FROM {}", table_of_model(cr, model)) if query is None else SQLStr(query)
+        cr.execute(
+            format_query(cr, "CREATE UNLOGGED TABLE _upgrade_rf(id) AS (WITH query AS ({}) SELECT * FROM query)", query)
+        )
+        count = cr.rowcount
+        cr.execute("ALTER TABLE _upgrade_rf ADD CONSTRAINT pk_upgrade_rf_id PRIMARY KEY (id)")
+
+        def get_ids():
+            with named_cursor(cr, itersize=2**20) as ncr:
+                ncr.execute("SELECT id FROM _upgrade_rf ORDER BY id")
+                for (id_,) in ncr:
+                    yield id_
+
+        ids_ = get_ids()
+    else:
+        count = len(ids)
+        ids_ = ids
+
+    if not count:
+        cr.execute("DROP TABLE IF EXISTS _upgrade_rf")
+        return
+
+    _logger.info("Computing fields %s of %r on %d records", fields, model, count)
 
     if strategy == "auto":
-        big_table = len(ids) > BIG_TABLE_THRESHOLD
+        big_table = count > BIG_TABLE_THRESHOLD
         any_tracked_field = any(getattr(Model._fields[f], _TRACKING_ATTR, False) for f in fields)
         strategy = "commit" if big_table and any_tracked_field else "flush"
 
-    size = (len(ids) + chunk_size - 1) / chunk_size
-    qual = "%s %d-bucket" % (model, chunk_size) if chunk_size != 1 else model
-    for subids in log_progress(chunks(ids, chunk_size, list), logger, qualifier=qual, size=size):
+    size = (count + chunk_size - 1) / chunk_size
+    qual = "{} {:d}-bucket".format(model, chunk_size) if chunk_size != 1 else model
+    for subids in log_progress(chunks(ids_, chunk_size, list), logger, qualifier=qual, size=size):
         records = Model.browse(subids)
         for field_name in fields:
             field = records._fields[field_name]
@@ -309,6 +338,7 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         else:
             flush(records)
         invalidate(records)
+    cr.execute("DROP TABLE IF EXISTS _upgrade_rf")
 
 
 class iter_browse(object):
@@ -347,6 +377,8 @@ class iter_browse(object):
     :param list(int) ids: list of IDs of the records to iterate
     :param int chunk_size: number of records to load in each iteration chunk, `200` by
                            default
+    :param bool yield_chunks: when iterating, yield records in chunks of `chunk_size` instead of one by one.
+                              Default is `False`
     :param logger: logger used to report the progress, by default
                    :data:`~odoo.upgrade.util.orm._logger`
     :type logger: :class:`logging.Logger`
@@ -357,7 +389,7 @@ class iter_browse(object):
     See also :func:`~odoo.upgrade.util.orm.env`
     """
 
-    __slots__ = ("_chunk_size", "_cr_uid", "_it", "_logger", "_model", "_patch", "_size", "_strategy")
+    __slots__ = ("_chunk_size", "_cr_uid", "_it", "_logger", "_model", "_patch", "_size", "_strategy", "_yield_chunks")
 
     def __init__(self, model, *args, **kw):
         assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
@@ -366,6 +398,7 @@ class iter_browse(object):
         ids = args[-1]
         self._size = len(ids)
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
+        self._yield_chunks = kw.pop("yield_chunks", False)
         self._logger = kw.pop("logger", _logger)
         self._strategy = kw.pop("strategy", "flush")
         assert self._strategy in {"flush", "commit"}
@@ -399,9 +432,10 @@ class iter_browse(object):
         if self._it is None:
             raise RuntimeError("%r ran twice" % (self,))
 
-        it = chain.from_iterable(self._it)
+        it = self._it if self._yield_chunks else chain.from_iterable(self._it)
+        sz = (self._size + self._chunk_size - 1) // self._chunk_size if self._yield_chunks else self._size
         if self._logger:
-            it = log_progress(it, self._logger, qualifier=self._model._name, size=self._size)
+            it = log_progress(it, self._logger, qualifier=self._model._name, size=sz)
         self._it = None
         return chain(it, self._end())
 

@@ -333,10 +333,11 @@ class TestAdaptOneDomain(UnitTestCase):
         self.assertEqual(new_domain, expected)
 
         # test it also works recursively
-        domain = [("partner_id", "any", [("bank_ids", "not any", [("acc_number", "like", "S.A.")])])]
+        account_number = "account_number" if util.version_gte("saas~19.2") else "acc_number"
+        domain = [("partner_id", "any", [("bank_ids", "not any", [(account_number, "like", "S.A.")])])]
         expected = [("partner_id", "any", [("bank_ids", "not any", [("acc_nbr", "like", "S.A.")])])]
 
-        new_domain = _adapt_one_domain(self.cr, "res.partner.bank", "acc_number", "acc_nbr", "res.company", domain)
+        new_domain = _adapt_one_domain(self.cr, "res.partner.bank", account_number, "acc_nbr", "res.company", domain)
         self.assertEqual(new_domain, expected)
 
 
@@ -562,6 +563,7 @@ class TestIrExports(UnitTestCase):
         self.assertEqual(self.export.export_fields[0].name, "full_name")
         self.assertEqual(self.export.export_fields[1].name, "rate_ids/name")
 
+    @mute_logger(util.pg._logger.name)
     def test_rename_model(self):
         util.rename_model(self.cr, "res.currency", "res.currency2")
         self._invalidate()
@@ -621,6 +623,7 @@ class TestBaseImportMappings(UnitTestCase):
         self.assertEqual(remaining_mappings[0].field_name, "full_name")
         self.assertEqual(remaining_mappings[1].field_name, "rate_ids/name")
 
+    @mute_logger(util.pg._logger.name)
     def test_rename_model(self):
         util.rename_model(self.cr, "res.currency", "res.currency2")
         util.invalidate(self.import_mapping)
@@ -658,6 +661,19 @@ class TestIterBrowse(UnitTestCase):
                 c.name  # noqa: B018
         expected = (len(ids) + chunk_size - 1) // chunk_size
         self.assertEqual(read.call_count, expected)
+
+    def test_iter_browse_iter_chunks(self):
+        cr = self.env.cr
+        cr.execute("SELECT id FROM res_country")
+        ids = [c for (c,) in cr.fetchall()]
+        chunk_size = 10
+
+        res_chunks = list(
+            util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size, yield_chunks=True)
+        )
+        no_chunks = (len(ids) + chunk_size - 1) // chunk_size
+        self.assertEqual(len(res_chunks), no_chunks)
+        self.assertEqual(len(res_chunks[0]), chunk_size)
 
     def test_iter_browse_call(self):
         cr = self.env.cr
@@ -716,11 +732,64 @@ class TestIterBrowse(UnitTestCase):
 
 
 class TestPG(UnitTestCase):
+    @parametrize(
+        [
+            # explicit conversions
+            ("boolean", "bool"),
+            ("smallint", "int2"),
+            ("integer", "int4"),
+            ("bigint", "int8"),
+            ("real", "float4"),
+            ("double precision", "float8"),
+            ("character varying", "varchar"),
+            ("timestamp with time zone", "timestamptz"),
+            ("timestamp without time zone", "timestamp"),
+            # noop for existing types
+            ("bool", "bool"),
+            ("int4", "int4"),
+            ("varchar", "varchar"),
+            # and unspecified/unknown types
+            ("jsonb", "jsonb"),
+            ("foo", "foo"),
+            # keep suffix (for arrays and sized limited varchar)
+            ("int4[]", "int4[]"),
+            ("varchar(2)", "varchar(2)"),
+            # but also convert types
+            ("integer[]", "int4[]"),
+            ("character varying(16)", "varchar(16)"),
+        ]
+    )
+    def test__normalize_pg_type(self, type_, expected):
+        self.assertEqual(util.pg._normalize_pg_type(type_), expected)
+
+    @parametrize(
+        [
+            ("res_country", "name", False, "jsonb" if util.version_gte("16.0") else "varchar"),  # translated field
+            ("res_country", "code", False, "varchar"),
+            ("res_country", "code", True, "varchar(2)"),
+            ("res_currency", "active", False, "bool"),
+            ("res_currency", "active", True, "bool"),
+            ("res_country", "create_date", False, "timestamp"),
+            ("res_currency", "create_uid", False, "int4"),
+            ("res_country", "name_position", False, "varchar"),
+            ("res_country", "name_position", True, "varchar"),
+            ("res_country", "address_format", False, "text"),
+            ("res_partner", "does_not_exists", False, None),
+        ]
+    )
+    def test_column_type(self, table, column, sized, expected):
+        value = util.column_type(self.env.cr, table, column, sized=sized)
+        if expected is None:
+            self.assertIsNone(value)
+        else:
+            self.assertEqual(value, expected)
+
     def test_alter_column_type(self):
         cr = self.env.cr
         cr.execute(
             """
             ALTER TABLE res_partner_bank ADD COLUMN x bool;
+            ALTER TABLE res_partner_bank ADD COLUMN y varchar(4);
 
             UPDATE res_partner_bank
                SET x = CASE id % 3
@@ -739,6 +808,15 @@ class TestPG(UnitTestCase):
             all(x == 1 or (x == 2 and id_ % 3 == 2) for id_, x in data),
             "Some values where not casted correctly via USING",
         )
+
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y", sized=True), "varchar(4)")
+        util.alter_column_type(cr, "res_partner_bank", "y", "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y", sized=True), "varchar")
+        util.alter_column_type(cr, "res_partner_bank", "y", "varchar(12)")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y"), "varchar")
+        self.assertEqual(util.column_type(cr, "res_partner_bank", "y", sized=True), "varchar(12)")
 
     @parametrize(
         [
@@ -765,6 +843,42 @@ class TestPG(UnitTestCase):
         cr.execute("SELECT {} FROM res_users WHERE id=%s".format(util.pg_text2html("signature")), [uid])
         result = cr.fetchone()[0]
         self.assertEqual(result, expected)
+
+    @parametrize(
+        [
+            ("{parallel_filter}", "…"),
+            ("{{parallel_filter}}", "{parallel_filter}"),
+            ("{}", "{}"),
+            ("{0}", "{0}"),
+            ("{{0}}", "{0}"),
+            ("{x}", "{x}"),
+            ("{{x}}", "{x}"),
+            ("{{}}", "{}"),
+            ("{{", "{"),
+            ("test", "test"),
+            ("", ""),
+            ("WHERE {parallel_filter} AND true", "WHERE … AND true"),
+            ("WHERE {parallel_filter} AND {other}", "WHERE … AND {other}"),
+            ("WHERE {parallel_filter} AND {other!r}", "WHERE … AND {other!r}"),
+            ("WHERE {parallel_filter} AND {{other}}", "WHERE … AND {other}"),
+            ("WHERE {parallel_filter} AND {}", "WHERE … AND {}"),
+            ("WHERE {parallel_filter} AND {{}}", "WHERE … AND {}"),
+            ("WHERE {parallel_filter} AND {parallel_filter}", "WHERE … AND …"),
+            ("using { with other things inside } and {parallel_filter}", "using { with other things inside } and …"),
+        ]
+    )
+    def test_ExplodeFormatter(self, value, expected):
+        formatted = util.pg._ExplodeFormatter().format(value, parallel_filter="…")
+        self.assertEqual(formatted, expected)
+        # retro-compatibility test
+        try:
+            std_formatted = value.format(parallel_filter="…")
+        except (IndexError, KeyError):
+            # ignore string that weren't valid
+            pass
+        else:
+            # assert that the new formatted output match the old one.
+            self.assertEqual(formatted, std_formatted)
 
     def _get_cr(self):
         cr = self.registry.cursor()
@@ -881,6 +995,115 @@ class TestPG(UnitTestCase):
         cr.execute(util.format_query(cr, "SELECT 1 FROM {}", TEST_TABLE_NAME))
         self.assertFalse(cr.rowcount)
 
+    def test_update_one_col_from_dict(self):
+        TEST_TABLE_NAME = "_upgrade_bulk_update_one_col_test_table"
+        N_ROWS = 10
+
+        cr = self._get_cr()
+
+        cr.execute(
+            util.format_query(
+                cr,
+                """
+                DROP TABLE IF EXISTS {table};
+
+                CREATE TABLE {table} (
+                    id SERIAL PRIMARY KEY,
+                    col1 INTEGER,
+                    col2 INTEGER
+                );
+
+                INSERT INTO {table} (col1, col2) SELECT v, v FROM GENERATE_SERIES(1, %s) as v;
+                """,
+                table=TEST_TABLE_NAME,
+            ),
+            [N_ROWS],
+        )
+        mapping = {id: id * 2 for id in range(1, N_ROWS + 1, 2)}
+        util.bulk_update_table(cr, TEST_TABLE_NAME, "col1", mapping)
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col2 != id",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount, "unintended column 'col2' is affected")
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col1 != id AND MOD(id, 2) = 0",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount, "unintended rows are affected")
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col1 != 2 * id AND MOD(id, 2) = 1",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount, "partial/incorrect updates are performed")
+
+    def test_update_multiple_cols_from_dict(self):
+        TEST_TABLE_NAME = "_upgrade_bulk_update_multiple_cols_test_table"
+        N_ROWS = 10
+
+        cr = self._get_cr()
+
+        cr.execute(
+            util.format_query(
+                cr,
+                """
+                DROP TABLE IF EXISTS {table};
+
+                CREATE TABLE {table} (
+                    id SERIAL PRIMARY KEY,
+                    col1 INTEGER,
+                    col2 INTEGER,
+                    col3 INTEGER
+                );
+
+                INSERT INTO {table} (col1, col2, col3) SELECT v, v, v FROM GENERATE_SERIES(1, %s) as v;
+                """,
+                table=TEST_TABLE_NAME,
+            ),
+            [N_ROWS],
+        )
+        mapping = {id: [id * 2, id * 3] for id in range(1, N_ROWS + 1, 2)}
+        util.bulk_update_table(cr, TEST_TABLE_NAME, ["col1", "col2"], mapping)
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col3 != id",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount, "unintended column 'col3' is affected")
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE col1 != id AND MOD(id, 2) = 0",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount, "unintended rows are affected")
+
+        cr.execute(
+            util.format_query(
+                cr,
+                "SELECT id FROM {table} WHERE (col1 != 2 * id OR col2 != 3 * id) AND MOD(id, 2) = 1",
+                table=TEST_TABLE_NAME,
+            )
+        )
+        self.assertFalse(cr.rowcount, "partial/incorrect updates are performed")
+
     def test_create_column_with_fk(self):
         cr = self.env.cr
         self.assertFalse(util.column_exists(cr, "res_partner", "_test_lang_id"))
@@ -933,6 +1156,58 @@ class TestPG(UnitTestCase):
         ulc = columns.using(leading_comma=True)
         self.assertTrue(s(ulc.using(alias="x")), ', "x"."a", "x"."A"')
         self.assertIs(ulc, ulc.using(leading_comma=True))
+
+    def test_create_m2m(self):
+        cr = self.env.cr
+
+        m2m_name = "random_table_name"
+        created_m2m = util.create_m2m(cr, m2m_name, "res_users", "res_groups")
+        self.assertEqual(m2m_name, created_m2m)
+        self.assertTrue(util.table_exists(cr, created_m2m))
+
+        auto_generated_m2m_table_name = util.create_m2m(cr, util.AUTO, "res_users", "res_groups")
+        self.assertEqual("res_groups_res_users_rel", auto_generated_m2m_table_name)
+        self.assertTrue(util.table_exists(cr, auto_generated_m2m_table_name))
+
+    def test_rename_m2m(self):
+        cr = self.env.cr
+
+        self.env["ir.model"].create({"model": "x_new.model", "name": "Custom test model"})
+        manual_model_id = self.env["ir.model"].create({"model": "x_manual.model", "name": "Manual model"}).id
+
+        field_regular = self.env["ir.model.fields"].create(
+            {
+                "name": "x_m2m_field_regular",
+                "ttype": "many2many",
+                "model_id": manual_model_id,
+                "relation": "x_new.model",
+                "relation_table": "x_x_manual_model_x_new_model_rel",
+            }
+        )
+        field_custom = self.env["ir.model.fields"].create(
+            {
+                "name": "x_m2m_field_custom",
+                "ttype": "many2many",
+                "model_id": manual_model_id,
+                "relation": "x_new.model",
+                "relation_table": "x_x_manual_model_x_new_model_rel_2",
+            }
+        )
+        old_regular_table = field_regular.relation_table
+        old_custom_table = field_custom.relation_table
+
+        util.pg_rename_table(cr, "x_new_model", "new_special_model")
+        util.update_m2m_tables(cr, "x_new_model", "new_special_model")
+        util.invalidate(field_regular)
+
+        new_regular_table = field_regular.relation_table
+        self.assertEqual(new_regular_table, "x_new_special_model_x_manual_model_rel")
+        self.assertEqual(field_custom.relation_table, old_custom_table)
+        self.assertEqual(field_regular.column2, "new_special_model_id")
+        self.assertEqual(field_custom.column2, "new_special_model_id")
+        self.assertTrue(util.table_exists(cr, new_regular_table))
+        self.assertTrue(util.table_exists(cr, old_custom_table))
+        self.assertFalse(util.table_exists(cr, old_regular_table))
 
 
 class TestORM(UnitTestCase):
@@ -1007,6 +1282,90 @@ class TestField(UnitTestCase):
         # merge None into False in the initial repartition
         initial_repartition[False] += initial_repartition.pop(None, 0)
         self.assertEqual(back_repartition, initial_repartition)
+
+    def test_change_field_selection_with_default(self):
+        cr = self.env.cr
+        lang = self.env["res.lang"].create({"name": "Elvish", "code": "el_VISH", "active": True})
+        if util.table_exists(cr, "ir_default"):
+            self.env["ir.default"].set("res.partner", "lang", "el_VISH")
+        else:
+            self.env["ir.values"].set_default("res.partner", "lang", "el_VISH")
+        util.flush(lang)
+        partner = self.env["res.partner"].create({"name": "Gandalf"})
+        self.assertEqual(partner.lang, "el_VISH")
+
+        util.invalidate(partner)
+        util.change_field_selection_values(cr, "res.partner", "lang", {"el_VISH": "en_US"})
+
+        self.assertEqual(partner.lang, "en_US")
+
+        if util.table_exists(cr, "ir_default"):
+            new_default = (getattr(self.env["ir.default"], "get", None) or self.env["ir.default"]._get)(
+                "res.partner", "lang"
+            )
+        else:
+            new_default = self.env["ir.values"].get_default("res.partner", "lang")
+
+        self.assertEqual(new_default, "en_US")
+
+    @unittest.skipIf(not util.version_gte("saas~17.5"), "Company dependent fields are stored as jsonb since saas~17.5")
+    def test_convert_field_to_company_dependent(self):
+        cr = self.env.cr
+
+        partner_model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        self.env["ir.model.fields"].create(
+            [
+                {
+                    "name": "x_test_cd_1",
+                    "ttype": "char",
+                    "model_id": partner_model.id,
+                },
+                {
+                    "name": "x_test_cd_2",
+                    "ttype": "char",
+                    "model_id": partner_model.id,
+                },
+            ]
+        )
+
+        c1 = self.env["res.company"].create({"name": "Flancrest"})
+        c2 = self.env["res.company"].create({"name": "Flancrest2"})
+
+        test_partners = self.env["res.partner"].create(
+            [
+                {"name": "Homer", "x_test_cd_1": "A", "x_test_cd_2": "A", "company_id": c1.id},
+                {"name": "Marjorie", "x_test_cd_1": "B", "x_test_cd_2": "B"},
+                {"name": "Bartholomew"},
+            ]
+        )
+        test_partners.invalidate_recordset(["x_test_cd_1", "x_test_cd_2"])
+
+        # Using company_id as default, only records with company set are updated
+        util.make_field_company_dependent(cr, "res.partner", "x_test_cd_1", "char")
+        util.make_field_company_dependent(cr, "res.partner", "x_test_cd_2", "char", company_field=False)
+
+        # make the ORM re-read the info about these manual fields from the DB
+        setup_models = (
+            self.registry.setup_models if hasattr(self.registry, "setup_models") else self.registry._setup_models__
+        )
+        args = (["res.partner"],) if util.version_gte("saas~18.4") else ()
+        setup_models(cr, *args)
+
+        test_partners_c1 = test_partners.with_company(c1.id)
+        self.assertEqual(test_partners_c1[0].x_test_cd_1, "A")
+        self.assertFalse(test_partners_c1[1].x_test_cd_1)
+        self.assertFalse(test_partners_c1[2].x_test_cd_1)
+        self.assertEqual(test_partners_c1[0].x_test_cd_2, "A")
+        self.assertEqual(test_partners_c1[1].x_test_cd_2, "B")
+        self.assertFalse(test_partners_c1[2].x_test_cd_2)
+
+        test_partners_c2 = test_partners.with_company(c2.id)
+        self.assertFalse(test_partners_c2[0].x_test_cd_1)
+        self.assertFalse(test_partners_c2[1].x_test_cd_1)
+        self.assertFalse(test_partners_c2[2].x_test_cd_1)
+        self.assertEqual(test_partners_c2[0].x_test_cd_2, "A")
+        self.assertEqual(test_partners_c2[1].x_test_cd_2, "B")
+        self.assertFalse(test_partners_c2[2].x_test_cd_2)
 
 
 class TestHelpers(UnitTestCase):
@@ -1597,6 +1956,24 @@ class TestRecords(UnitTestCase):
         self.assertTrue(cat_2.exists())
         self.assertTrue(cat_3.exists())
 
+    def test_delete_unused_include_m2m(self):
+        cat_1, cat_2, cat_3 = self._prepare_test_delete_unused()
+
+        cr = self.env.cr
+        cr.execute(
+            "INSERT INTO res_partner_res_partner_category_rel(partner_id, category_id) VALUES(%s, %s)",
+            [util.ref(cr, "base.partner_root"), cat_2.id],
+        )
+
+        deleted = util.delete_unused(
+            self.env.cr, f"base.{cat_1.name}", f"base.{cat_2.name}", f"base.{cat_3.name}", include_m2m="*"
+        )
+
+        self.assertEqual(deleted, [f"base.{cat_3.name}"])
+        self.assertTrue(cat_1.exists())
+        self.assertTrue(cat_2.exists())
+        self.assertFalse(cat_3.exists())
+
 
 class TestEditView(UnitTestCase):
     @parametrize(
@@ -2105,8 +2482,9 @@ class TestConvertFieldToHtml(UnitTestCase):
         cr = self.env.cr
 
         model = self.env["ir.model"].search([("model", "=", "res.partner")])
+        translate = "standard" if util.version_gte("saas~18.5") else True
         f1 = self.env["ir.model.fields"].create(
-            {"name": "x_testx", "model": "res.partner", "ttype": "text", "model_id": model.id, "translate": True}
+            {"name": "x_testx", "model": "res.partner", "ttype": "text", "model_id": model.id, "translate": translate}
         )
         partner = self.env["res.partner"].create({"name": "test Pxtner", "x_testx": "test\npartner field"})
         default = self.env["ir.default"].create({"field_id": f1.id, "json_value": '"Test\\ntext"'})
@@ -2235,13 +2613,13 @@ class TestAssertUpdated(UnitTestCase):
         with self.assertUpdated("res_partner", ids=[]):
             p1.city = "Underground"
             util.flush(p1)
-        with self.assertRaises(AssertionError), self.assertUpdated("res_bank", ids=[]):
-            self.env["res.bank"].create({"name": "Annie Leonhart"})
+        with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Annie Leonhart"})
 
         # when ids has multiple records, all records should be updated
         with self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
-            p1.company_name = "Survey Corps"
-            p2.company_name = "Survey Corps"
+            p1.city = "Survey Corps"
+            p2.city = "Survey Corps"
             util.flush(p1)
             util.flush(p2)
         with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
@@ -2269,20 +2647,20 @@ class TestAssertUpdated(UnitTestCase):
             self.env["res.partner"].create({"name": "Bertolt Hoover"})
 
         # when ids is [], assert no record is updated
-        with self.assertNotUpdated("res_bank", ids=[]):
-            self.env["res.bank"].create({"name": "Marco Bodt"})
+        with self.assertNotUpdated("res_partner", ids=[]):
+            self.env["res.partner"].create({"name": "Marco Bodt"})
         with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[]):
             p2.city = "Shiganshina"
             util.flush(p2)
 
         # when ids has a record, only that record should not be updated
         with self.assertNotUpdated("res_partner", ids=[p2.id]):
-            p1.company_name = "Survey Corps"
+            p1.city = "Survey Corps"
             util.flush(p1)
 
         # when ids has multiple records, none of them should be updated
         with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[p1.id, p2.id]):
-            p2.company_name = "Survey Corps"
+            p2.city = "Survey Corps"
             util.flush(p2)
 
     def test_assert_updated_combo(self):
@@ -2292,7 +2670,7 @@ class TestAssertUpdated(UnitTestCase):
         util.flush(p2)
 
         with self.assertUpdated("res_partner", ids=[p1.id]), self.assertNotUpdated("res_partner", ids=[p2.id]):
-            p1.company_name = "Marley Warriors"
+            p1.city = "Marley Warriors"
             util.flush(p1)
 
         with self.assertRaises(AssertionError), self.assertUpdated("res_partner"), self.assertNotUpdated(

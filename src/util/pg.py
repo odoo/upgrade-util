@@ -5,6 +5,7 @@ import collections
 import logging
 import os
 import re
+import string
 import threading
 import time
 import uuid
@@ -32,6 +33,7 @@ except NameError:
 import psycopg2
 from psycopg2 import errorcodes, sql
 from psycopg2.extensions import quote_ident
+from psycopg2.extras import Json
 
 try:
     from odoo.modules import module as odoo_module
@@ -43,7 +45,7 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import Sentinel, log_progress
+from .misc import AUTO, Sentinel, log_progress, on_CI, version_gte
 
 _logger = logging.getLogger(__name__)
 
@@ -111,9 +113,7 @@ if ThreadPoolExecutor is not None:
         def execute(query):
             with cursor() as tcr:
                 tcr.execute(query)
-                cnt = tcr.rowcount
-                tcr.commit()
-                return cnt
+                return tcr.rowcount
 
         cr.commit()
 
@@ -221,6 +221,43 @@ def format_query(cr, query, *args, **kwargs):
     return SQLStr(sql.SQL(query).format(*args, **kwargs).as_string(cr._cnx))
 
 
+class _ExplodeFormatter(string.Formatter):
+    """
+    Retro-compatible parallel filter formatter.
+
+    Any input that didn't fail before satisfies:
+    1. There is no replacement in the string other than `{parallel_filter}`.
+    2. Any literal brace was escaped --by doubling them.
+
+    For any input that didn't fail before this new implementation returns the same output
+    as `str.format`.
+
+    The main change here, and the goal of this class, is to now make former invalid input
+    valid. Thus this formatter will _only_ replace `{parallel_filter}` while keeping any
+    other `{str}` or `{int}` elements. Double braces will still be formatted into
+    single ones.
+
+    :meta private: exclude from online docs
+    """
+
+    def parse(self, format_string):
+        for literal_text, field_name, format_spec, conversion in super(_ExplodeFormatter, self).parse(format_string):
+            if field_name is not None and field_name != "parallel_filter":
+                yield literal_text + "{", None, None, None
+                composed = (
+                    field_name
+                    + (("!" + conversion) if conversion else "")
+                    + ((":" + format_spec) if format_spec else "")
+                    + "}"
+                )
+                yield composed, None, None, None
+            else:
+                yield literal_text, field_name, format_spec, conversion
+
+
+_explode_format = _ExplodeFormatter().format
+
+
 def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     """
     Explode a query to multiple queries that can be executed in parallel.
@@ -257,7 +294,7 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     if num_buckets < 1:
         raise ValueError("num_buckets should be greater than zero")
     parallel_filter = "mod(abs({prefix}id), %s) = %s".format(prefix=prefix)
-    query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
+    query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
@@ -290,7 +327,15 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
     cr.execute(format_query(cr, "SELECT min(id), max(id) FROM {}", table))
     min_id, max_id = cr.fetchone()
     if min_id is None:
-        return []  # empty table
+        # empty table
+        if on_CI():
+            # Even if there are any records, return one query to be executed to validate its correctness and avoid
+            # scripts that pass the CI but fail in production.
+            parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
+            return [_explode_format(query, parallel_filter=parallel_filter)]
+        else:
+            return []
+
     count = (max_id + 1 - min_id) // bucket_size
     if count > MAX_BUCKETS:
         _logger.getChild("explode_query_range").warning(
@@ -328,10 +373,11 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         # Still, since the query may only be valid if there is no split, we force the usage of `prefix` in the query to
         # validate its correctness and avoid scripts that pass the CI but fail in production.
         parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
-        return [query.format(parallel_filter=parallel_filter)]
+        return [_explode_format(query, parallel_filter=parallel_filter)]
 
     parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
-    query = query.replace("%", "%%").format(parallel_filter=parallel_filter)
+    query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
+
     return [
         cr.mogrify(query, {"lower-bound": ids[i], "upper-bound": ids[i + 1] - 1}).decode() for i in range(len(ids) - 1)
     ]
@@ -392,7 +438,12 @@ def pg_array_uniq(a, drop_null=False):
 
 def pg_replace(s, replacements):
     q = lambda s: psycopg2.extensions.QuotedString(s).getquoted().decode("utf-8")
-    return SQLStr(reduce(lambda s, r: "replace({}, {}, {})".format(s, q(r[0]), q(r[1])), replacements, s))
+
+    def replace(s, r):
+        func = "regexp_replace({}, {}, {}, 'g')" if isinstance(r[0], PGRegexp) else "replace({}, {}, {})"
+        return func.format(s, q(r[0]), q(r[1]))
+
+    return SQLStr(reduce(replace, replacements, s))
 
 
 def pg_html_escape(s, quote=True):
@@ -450,10 +501,15 @@ def get_value_or_en_translation(cr, table, column):
 
 
 def _column_info(cr, table, column):
+    # -> tuple[str, int | None, bool, bool] | None
     _validate_table(table)
     cr.execute(
         """
         SELECT COALESCE(bt.typname, t.typname) AS udt_name,
+               information_schema._pg_char_max_length(
+                    information_schema._pg_truetypid(a.*, t.*),
+                   information_schema._pg_truetypmod(a.*, t.*)
+               ) AS char_max_length,
                NOT (a.attnotnull OR t.typtype = 'd' AND t.typnotnull) AS is_nullable,
                (   c.relkind IN ('r','p','v','f')
                AND pg_column_is_updatable(c.oid::regclass, a.attnum, false)
@@ -474,6 +530,54 @@ def _column_info(cr, table, column):
     return cr.fetchone()
 
 
+_COLUMNS = {}
+if version_gte("10.0"):  # Since at least 9.0
+    _COLUMNS[("ir_model_fields", "depends")] = True
+    _COLUMNS[("ir_model_fields", "domain")] = True
+    _COLUMNS[("ir_model_fields", "relation_table")] = True
+
+    _COLUMNS[("ir_ui_view", "arch_db")] = True
+    _COLUMNS[("ir_ui_view", "active")] = True
+
+    _COLUMNS[("ir_filters", "sort")] = True
+    _COLUMNS[("ir_filters", "domain")] = True
+    _COLUMNS[("ir_filters", "model_id")] = True
+
+    _COLUMNS[("ir_model_rule", "domain_force")] = True
+
+    _COLUMNS[("ir_model_data", "res_id")] = True
+    _COLUMNS[("ir_model_data", "model")] = True
+    _COLUMNS[("ir_model_data", "name")] = True
+
+    _COLUMNS[("ir_attachment", "res_field")] = True
+    _COLUMNS[("ir_attachment", "res_model")] = True
+    _COLUMNS[("ir_attachment", "res_id")] = True
+
+    _COLUMNS[("ir_ui_menu", "action")] = True
+
+    _COLUMNS[("ir_act_window", "res_model")] = True
+    _COLUMNS[("ir_act_window", "res_id")] = True
+    _COLUMNS[("ir_act_window", "domain")] = True
+
+    _COLUMNS[("ir_value", "res_id")] = True
+
+if version_gte("14.0"):  # Since at least 13.0
+    _COLUMNS[("ir_module_module_dependency", "auto_install_required")] = True
+    _COLUMNS[("ir_act_window", "src_model")] = False
+
+if version_gte("saas~16.1"):  # Since 16.0
+    _COLUMNS[("ir_translation", "name")] = False
+
+if version_gte("saas~17.1"):  # Since 17.0
+    _COLUMNS[("ir_cron", "resource_ref")] = True
+    _COLUMNS[("ir_act_server", "resource_ref")] = True
+
+if version_gte("saas~18.1"):  # Since 18.0
+    _COLUMNS[("ir_model_fields", "company_dependent")] = True
+    _COLUMNS[("ir_filters", "embedded_parent_res_id")] = True
+    _COLUMNS[("ir_act_report_xml", "domain")] = True
+
+
 def column_exists(cr, table, column):
     """
     Return whether a column exists.
@@ -482,10 +586,10 @@ def column_exists(cr, table, column):
     :param str column: column to check
     :rtype: bool
     """
-    return _column_info(cr, table, column) is not None
+    return _COLUMNS[(table, column)] if (table, column) in _COLUMNS else (_column_info(cr, table, column) is not None)
 
 
-def column_type(cr, table, column):
+def column_type(cr, table, column, sized=False):
     """
     Return the type of a column, if it exists.
 
@@ -494,20 +598,25 @@ def column_type(cr, table, column):
     :rtype: SQL type of the column
     """
     nfo = _column_info(cr, table, column)
+    if not nfo:
+        return None
+    if sized and nfo[1]:
+        return "{}({})".format(nfo[0], nfo[1])
     return nfo[0] if nfo else None
 
 
 def column_nullable(cr, table, column):
     nfo = _column_info(cr, table, column)
-    return nfo and nfo[1]
+    return nfo and nfo[2]
 
 
 def column_updatable(cr, table, column):
     nfo = _column_info(cr, table, column)
-    return nfo and nfo[2]
+    return nfo and nfo[3]
 
 
 def _normalize_pg_type(type_):
+    main_type, suffix = re.match(r"(.+?)((?:\[\]|\([0-9]+\))*)$", type_).groups()
     aliases = {
         "boolean": "bool",
         "smallint": "int2",
@@ -519,7 +628,7 @@ def _normalize_pg_type(type_):
         "timestamp with time zone": "timestamptz",
         "timestamp without time zone": "timestamp",
     }
-    return aliases.get(type_.lower(), type_)
+    return aliases.get(main_type.strip().lower(), main_type) + suffix
 
 
 def create_column(cr, table, column, definition, **kwargs):
@@ -568,7 +677,7 @@ def create_column(cr, table, column, definition, **kwargs):
     if definition == "bool" and default is no_def:
         default = False
 
-    curtype = column_type(cr, table, column)
+    curtype = column_type(cr, table, column, sized=True)
     if curtype:
         if curtype != definition:
             _logger.error("%s.%s already exists but is %r instead of %r", table, column, curtype, definition)
@@ -587,6 +696,37 @@ def create_column(cr, table, column, definition, **kwargs):
         cr.execute(create_query + " DEFAULT %s", [default])
         cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
     return True
+
+
+def copy_column(cr, table, column, new_name=AUTO):
+    """
+    Copy a column.
+
+    This function copies a column if it exists. It raises an error otherwise.
+
+    :param str table: table of the column
+    :param str column: name of the column
+    :param str new_name: name of the new column, if not passed the original column name
+                         will be used with suffix ``_upg_copy``.
+    :return: new column name
+    :rtype: str
+    """
+    if not column_exists(cr, table, column):
+        raise MigrationError("column {} doesn't exists".format(column))
+    if new_name is AUTO:
+        new_name = column + "_upg_copy"
+    if column_exists(cr, table, new_name):
+        raise MigrationError("column {} already exists".format(new_name))
+    create_column(cr, table, new_name, column_type(cr, table, column))
+    query = format_query(
+        cr,
+        "UPDATE {table} SET {new_name} = {column} WHERE {column} IS NOT NULL",
+        table=table,
+        new_name=new_name,
+        column=column,
+    )
+    explode_execute(cr, query, table=table)
+    return new_name
 
 
 def create_fk(cr, table, column, fk_table, on_delete_action="NO ACTION"):
@@ -634,12 +774,12 @@ def alter_column_type(cr, table, column, type, using=None, where=None, logger=_l
         raise ValueError("`where` parameter is only relevant with a non-default `using` parameter")
 
     if not using:
-        current_type = column_type(cr, table, column)
+        current_type = column_type(cr, table, column, sized=True)
         if current_type and current_type == _normalize_pg_type(type):
             logger.info("Column %r of table %r is already defined as %r", column, table, type)
             return
 
-    # remove the existing linked `ir_model_fields_selection` recods in case it was a selection field
+    # remove the existing linked `ir_model_fields_selection` records in case it was a selection field
     if table_exists(cr, "ir_model_fields_selection"):
         cr.execute(
             """
@@ -740,8 +880,8 @@ def remove_constraint(cr, table, name, cascade=False, warn=True):
     """
     _validate_table(table)
     log = _logger.warning if warn else _logger.info
-    cascade = "CASCADE" if cascade else ""
-    cr.execute('ALTER TABLE "{}" DROP CONSTRAINT IF EXISTS "{}" {}'.format(table, name, cascade))
+    cascade = SQLStr("CASCADE" if cascade else "")
+    cr.execute(format_query(cr, "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {} {}", table, name, cascade))
     # Exceptionally remove Odoo records, even if we are in PG land on this file. This is somehow
     # valid because ir.model.constraint are ORM low-level objects that relate directly to table
     # constraints.
@@ -749,6 +889,8 @@ def remove_constraint(cr, table, name, cascade=False, warn=True):
     if cr.rowcount:
         ids = tuple(c for (c,) in cr.fetchall())
         cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
+        # The constraint was found remove any index with same name
+        cr.execute(format_query(cr, "DROP INDEX IF EXISTS {}", name))
         return True
     if name.startswith(table + "_"):
         log("%r not found in ir_model_constraint, table=%r", name, table)
@@ -1010,6 +1152,9 @@ class ColumnList(UserList, sql.Composable):
         self._trailing_comma = False
         self._alias = None
 
+    def __hash__(self):
+        return hash((tuple(self._unquoted_columns), self._leading_comma, self._trailing_comma, self._alias))
+
     def __eq__(self, other):
         return (
             isinstance(other, ColumnList)
@@ -1219,14 +1364,14 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
         )
 
     if remove_constraints:
-        # DELETE all constraints, except Primary/Foreign keys, they will be re-created by the ORM
-        # NOTE: Custom constraints will instead be lost
+        # DELETE all constraints, except Primary/Foreign keys/not null checks, they will be re-created by the ORM
+        # NOTE: Custom constraints will instead be lost, except for not null ones
         cr.execute(
-            """
+            r"""
             SELECT constraint_name
               FROM information_schema.table_constraints
              WHERE table_name = %s
-               AND constraint_name !~ '^[0-9_]+_not_null$'
+               AND constraint_name !~ '^\w+_not_null$'
                AND (  constraint_type NOT IN ('PRIMARY KEY', 'FOREIGN KEY')
                    -- For long table names the constraint name is shortened by PG to fit 63 chars, in such cases
                    -- it's better to drop the constraint, even if it's a foreign key, and let the ORM re-create it.
@@ -1239,24 +1384,29 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
             _logger.info("Dropping constraint %s on table %s", const, new_table)
             remove_constraint(cr, new_table, const, warn=False)
 
-    # rename fkeys
+    # rename constraints
     cr.execute(
         """
         SELECT constraint_name
           FROM information_schema.table_constraints
          WHERE table_name = %s
-           AND constraint_type = 'FOREIGN KEY'
-           AND constraint_name LIKE %s
+           AND (
+               constraint_name ~ %s
+               OR (
+                   constraint_type = 'FOREIGN KEY'
+                   AND constraint_name LIKE %s
+                  )
+               )
         """,
-        [new_table, old_table.replace("_", r"\_") + r"\_%"],
+        [new_table, "^" + re.escape(old_table) + r"_\w+_not_null$", old_table.replace("_", r"\_") + r"\_%"],
     )
     old_table_length = len(old_table)
-    for (old_fkey,) in cr.fetchall():
-        new_fkey = new_table + old_fkey[old_table_length:]
-        _logger.info("Renaming FK %r to %r", old_fkey, new_fkey)
+    for (old_const,) in cr.fetchall():
+        new_const = new_table + old_const[old_table_length:]
+        _logger.info("Renaming constraint %r to %r", old_const, new_const)
         cr.execute(
             sql.SQL("ALTER TABLE {} RENAME CONSTRAINT {} TO {}").format(
-                sql.Identifier(new_table), sql.Identifier(old_fkey), sql.Identifier(new_fkey)
+                sql.Identifier(new_table), sql.Identifier(old_const), sql.Identifier(new_const)
             )
         )
 
@@ -1281,16 +1431,37 @@ def drop_depending_views(cr, table, column):
 
 
 def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
+    """
+    Ensure a m2m table exists or is created.
+
+    This function creates the table associated to a m2m field.
+    If the table already exists, :func:`~odoo.upgrade.util.pg.fixup_m2m` is run on it.
+    The table name can be generated automatically, applying the same logic of the ORM.
+    In order to do so, use the value "auto" for the `m2m` parameter.
+
+    :param str m2m: table name to create,
+                    if :const:`~odoo.upgrade.util.misc.AUTO` it is auto-generated
+    :param str fk1: first foreign key table name
+    :param str fk2: second foreign key table name
+    :param str col1: column referencing `fk1`, defaults to `"{fk1}_id"`
+    :param str col2: column referencing `fk2`, defaults to `"{fk2}_id"`
+    :return: the name of the table just created/fixed-up
+    :rtype: str
+    """
     if col1 is None:
         col1 = "%s_id" % fk1
     if col2 is None:
         col2 = "%s_id" % fk2
 
+    if m2m is AUTO:
+        m2m = "{}_{}_rel".format(*sorted([fk1, fk2]))
+
     if table_exists(cr, m2m):
         fixup_m2m(cr, m2m, fk1, fk2, col1, col2)
-        return
+        return m2m
 
-    cr.execute(
+    query = format_query(
+        cr,
         """
         CREATE TABLE {m2m}(
             {col1} integer NOT NULL REFERENCES {fk1}(id) ON DELETE CASCADE,
@@ -1298,8 +1469,124 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
             PRIMARY KEY ({col1}, {col2})
         );
         CREATE INDEX ON {m2m}({col2}, {col1});
-    """.format(**locals())
+        """,
+        m2m=m2m,
+        col1=col1,
+        col2=col2,
+        fk1=fk1,
+        fk2=fk2,
     )
+    cr.execute(query)
+
+    return m2m
+
+
+def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
+    """
+    Update m2m table names and columns.
+
+    This function renames m2m tables still referring to `old_table`. It also updates
+    column names and constraints of those tables.
+
+    :param str old_table: former table name
+    :param str new_table: new table name
+    :param list(str) ignored_m2ms: explicit list of m2m tables to ignore
+
+    :meta private: exclude from online docs
+    """
+    assert isinstance(ignored_m2ms, (list, tuple))
+    if old_table == new_table or not version_gte("10.0"):
+        return
+    ignored_m2ms = set(ignored_m2ms)
+    for orig_m2m_table in get_m2m_tables(cr, new_table):
+        if orig_m2m_table in ignored_m2ms:
+            continue
+        m = re.match(r"^(x_|)(?:(\w+)_{0}|{0}_(\w+))_rel$".format(re.escape(old_table)), orig_m2m_table)
+        if m:
+            m2m_table = "{}{}_{}_rel".format(m.group(1), *sorted([m.group(2) or m.group(3), new_table]))
+            # Due to the 63 chars limit in generated constraint names, for long table names the FK
+            # constraint is dropped when renaming the table. We need the constraint to correctly
+            # identify the FK targets. The FK constraints will be dropped and recreated below.
+            rename_table(cr, orig_m2m_table, m2m_table, remove_constraints=False)
+            cr.execute(
+                """
+                UPDATE ir_model_fields
+                   SET relation_table = %s
+                 WHERE relation_table = %s
+                   AND state = 'manual'
+                """,
+                [m2m_table, orig_m2m_table],
+            )
+            _logger.info("Renamed m2m table %s to %s", orig_m2m_table, m2m_table)
+        else:
+            m2m_table = orig_m2m_table
+        for m2m_col in get_columns(cr, m2m_table).iter_unquoted():
+            col_info = target_of(cr, m2m_table, m2m_col)
+            if not col_info or col_info[0] != new_table or col_info[1] != "id":
+                continue
+            old_col, new_col = map("{}_id".format, [old_table, new_table])
+            if m2m_col != old_col:
+                _logger.warning(
+                    "Possibly missing rename: the column %s of m2m table %s references the table %s",
+                    m2m_col,
+                    m2m_table,
+                    new_table,
+                )
+                continue
+            old_constraint = col_info[2]
+            cr.execute(
+                """
+                SELECT c.confdeltype
+                  FROM pg_constraint c
+                  JOIN pg_class t
+                    ON c.conrelid = t.oid
+                 WHERE t.relname = %s
+                   AND c.conname = %s
+                """,
+                [m2m_table, old_constraint],
+            )
+            on_delete = cr.fetchone()[0]
+            query = format_query(
+                cr,
+                """
+                ALTER TABLE {m2m_table}
+              RENAME COLUMN {old_col} TO {new_col};
+
+                ALTER TABLE {m2m_table}
+            DROP CONSTRAINT {old_constraint},
+            ADD FOREIGN KEY ({new_col}) REFERENCES {new_table} (id) ON DELETE {del_action}
+                """,
+                m2m_table=m2m_table,
+                old_col=old_col,
+                new_col=new_col,
+                old_constraint=old_constraint,
+                new_table=new_table,
+                del_action=SQLStr("RESTRICT") if on_delete == "r" else SQLStr("CASCADE"),
+            )
+            cr.execute(query)
+
+            cr.execute(
+                """
+                UPDATE ir_model_fields
+                   SET column1 = %s
+                 WHERE relation_table = %s
+                   AND column1 = %s
+                   AND state = 'manual'
+                """,
+                [new_col, m2m_table, old_col],
+            )
+            cr.execute(
+                """
+                UPDATE ir_model_fields
+                   SET column2 = %s
+                 WHERE relation_table = %s
+                   AND column2 = %s
+                   AND state = 'manual'
+                """,
+                [new_col, m2m_table, old_col],
+            )
+
+            _logger.info("Renamed m2m column of table %s from %s to %s", m2m_table, old_col, new_col)
 
 
 def fixup_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
@@ -1572,3 +1859,76 @@ def create_id_sequence(cr, table, set_as_default=True):
                 table=table_sql,
             )
         )
+
+
+def bulk_update_table(cr, table, columns, mapping, key_col="id"):
+    """
+    Update table based on mapping.
+
+    Each `mapping` entry defines the new values for the specified `columns` for the row(s)
+    whose `key_col` value matches the key.
+
+    .. example::
+
+       .. code-block:: python
+
+          # single column update
+          util.bulk_update_table(cr, "res_users", "active", {42: False, 27: True})
+
+          # multi-column update
+          util.bulk_update_table(
+              cr,
+              "res_users",
+              ["active", "password"],
+              {
+                  "admin": [True, "1234"],
+                  "demo": [True, "5678"],
+              },
+              key_col="login",
+          )
+
+    :param str table: table to update.
+    :param str | list(str) columns: columns spec for the update. It could be a single
+                                    column name or a list of column names. The `mapping`
+                                    must match the spec.
+    :param dict mapping: values to set, which must match the spec in `columns`,
+                         following the **same** order
+    :param str key_col: column used as key to get the values from `mapping` during the
+                        update.
+
+    .. warning::
+
+       The values in the mapping will be casted to the type of the target column.
+       This function is designed to update scalar values, avoid setting arrays or json
+       data via the mapping.
+    """
+    _validate_table(table)
+    if not columns or not mapping:
+        return
+
+    assert isinstance(mapping, dict)
+    if isinstance(columns, str):
+        columns = [columns]
+    else:
+        n_columns = len(columns)
+        assert all(isinstance(value, (list, tuple)) and len(value) == n_columns for value in mapping.values())
+
+    query = format_query(
+        cr,
+        """
+        UPDATE {table} t
+           SET ({cols}) = ROW({cols_values})
+          FROM JSONB_EACH(%s) m
+         WHERE t.{key_col}::text = m.key
+        """,
+        table=table,
+        cols=ColumnList.from_unquoted(cr, columns),
+        cols_values=SQLStr(
+            ", ".join(
+                "(m.value->>{:d})::{}".format(col_idx, column_type(cr, table, col_name, sized=True))
+                for col_idx, col_name in enumerate(columns)
+            )
+        ),
+        key_col=key_col,
+    )
+    cr.execute(query, [Json(mapping)])

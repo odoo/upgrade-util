@@ -5,6 +5,8 @@ repos:
         name: Compile python files using the expected runtime version
         entry: ./tools/compile23.py
         language: script
+        require_serial: true
+        verbose: true
       - id: bad-import-000
         name: Incompatible import with old versions in tests and `0.0.0` scripts
         language: pygrep
@@ -12,7 +14,7 @@ repos:
         files: '^src/\w+/(tests|0\.0\.0)/.*\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.3
+    rev: v0.14.5
     hooks:
     - id: ruff
       name: Check code with Ruff, apply automatic fixes
@@ -20,11 +22,11 @@ repos:
     - id: ruff-format
       name: Format code with Ruff
   - repo: https://github.com/crate-ci/typos
-    rev: v1.31.1
+    rev: v1.39.2
     hooks:
       - id: typos
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
     - id: check-xml
     - id: check-yaml
