@@ -168,6 +168,84 @@ def migrate(cr, version):
         'website_stock_availability.res_config_settings_view_form_inherit',
         'operating_unit.view_user_form',
         'sale_discount_display_amount.sale_order_view_form_display_discount',
+        'operating_unit.view_users_form'
+        'sale_order_transit_notification.res_config_settings_view_form_transit_inherit'
+        'whatsapp_connector.res_config_settings_view_form'
+        'sale_order_rate.res_config_settings_view_form'
+        'l10n_do_hr_payroll.res_config_settings_view_form'
+        'product_sequence.res_config_settings_view_form'
+        'bi_warranty_registration.res_config_settings_view_form_stock'
+        'bi_warranty_registration.res_config_settings_view_form'
+        'product_price_checker.res_config_settings_view_form_checker'
+        'purchase_request.purchase_order_line_form2_sub'
+        'product_stock_qty_date_widgets.product_product_tree_view_inherit_widget_qty'
+        'product_brand.view_product_variant_kanban_brand'
+        'recurring_sale_order_app.recurring_order_view_form'
+        'stock.stock_location_view_form_editable'
+        'stock.stock_location_view_tree2_editable'
+        'sale_pos_backend_card_bin_promotion.view_order_form_inherited'
+        'sale_pos_session_link.view_order_sales_pos_backend_inherit_form'
+        'sale_pos_backend_advance_payment.sale_pos_backend_order_form_advance_inherit'
+        'l10n_do_sale_pos_backend.view_order_form_inherited'
+        'sale_pos_backend_warranty_reports.view_order_form_warranty_inherit'
+        'cecomsa_sale_control.view_order_sales_pos_backend_form_inherit'
+        'sale_pos_backend.view_partner_form_sale_cashier'
+        'l10n_do_account_bank_payment_se.account_payment_line_mixed_view_form',
+        'l10n_do_account_bank_payment_se.account_payment_line_view_form',
+        'l10n_do_chase.account_move_form_inherit_view',
+        'l10n_do_chase.journal_payment_view_form',
+        'l10n_do_electronic_invoice.autorized_xml_file_4e_view_form',
+        'l10n_do_fiscal_printer.ir_sequence_view_form',
+        'l10n_do_fiscal_printer.res_config_settings_view_form',
+        'l10n_do_fiscal_printer_ir_series_move_form',
+        'l10n_do_fleet_vehicle_journal.inherit_fleet_vehicle_view_form',
+        'l10n_do_fleet_vehicle_journal.journal_entry_view_form',
+        'l10n_do_hr_payroll_inherit.res_config_settings_view_form',
+        'l10n_do_hr_payroll_inherit.sheet_import_line_form_view',
+        'l10n_do_hr_payroll_inherit.sheet_import_view_form',
+        'l10n_do_hr_payroll_inherit.sheet_import_view_tree',
+        'l10n_do_income_statement.report_line_form_view',
+        'l10n_do_income_statement.wizard_income_statement_config_view',
+        'l10n_do_isr_retention.wizard_view_form',
+        'l10n_do_pos_bank_statement.l10n_do_pos_bank_statement_form_view',
+        'l10n_do_pos_return.order_form_view',
+        'l10n_do_project_sale.project_project_view_form_inherit',
+        'l10n_do_purchase.document_type_wizard_view_form',
+        'l10n_do_purchase.requisition_view_form',
+        'l10n_do_sale.purchase_order_line_inherit_view',
+        'l10n_do_sale_order_extension.res_config_settings_view_form',
+        'l10n_do_sale_order_view.line_inherit_view_form',
+        'l10n_do_sale_order_view.order_view_form',
+        'l10n_do_sale_payment_method.form_view_payment_inherit',
+        'l10n_do_sale_payment_method.sale_order_form_view_payment_inherit',
+        'l10n_do_supplier_invoice.res_config_settings_view_form_supplier_invoice',
+        'l10n_do_supplier_invoice.view_account_move_supplier_invoice_form',
+        'l10n_do_supplier_payment.advance_payment_inherit_form_view',
+        'l10n_do_supplier_payment.res_partner_form_inherit_view',
+        'l10n_do_supplier_payment.view_account_move_supplier_form_inherit',
+        'l10n_do_supplier_payment.wizard_supplier_payment_view_form',
+        'l10n_do_supplier_withholding.account_move_form_supplier_withholding',
+        'l10n_do_supplier_withholding.partner_supplier_withholding_view_form',
+        'l10n_do_supplier_withholding.res_config_settings_supplier_withholding_view_form',
+        'pm_bank_transfer_order.view_bank_transfer_order_form',
+        'pm_bank_transfer_order.view_res_partner_bank_inherit_form',
+        'pm_bank_transfer_order.wizard_view_form',
+        'pm_bank_transfer_order_line.view_bank_transfer_order_line_form',
+        'pm_bank_transfer_order_line_inherit.view_bank_transfer_order_line_form_inherit',
+        'pos_backend_order.line_inherit_view_form',
+        'pos_backend_order.order_view_form',
+        'pos_journal_control.wizard_view_form',
+        'pos_journal_control.view_session_journal_control_form',
+        'pos_payment_method_extension.payment_method_inherit_form_view',
+        'pos_payment_method_extension.pos_payment_method_view_form',
+        'pos_payment_method_extension.wizard_view_form',
+        'pos_sale_report.order_sale_report_wizard_form_view',
+        'sale_cashier_inherit.view_sale_cashier_form',
+        'sale_cashier_inherit.view_sale_cashier_session_form',
+        'sale_cashier_inherit.view_sale_cashier_session_inherit_form',
+        'sale_cashier_inherit.view_sale_cashier_session_return_form',
+        'sale_cashier_inherit.view_users_form',
+
     ]
 
     remove_inherit_views_list = [
