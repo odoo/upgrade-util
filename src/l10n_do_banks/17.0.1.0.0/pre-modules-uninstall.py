@@ -58,7 +58,6 @@ def uninstall_modules(cr):
         'whatsapp_connector_send_stock',
         'whatsapp_connector_send_purchase',
         'whatsapp_connector_send_account',
-        'whatsapp_connector_send_sale',
         'whatsapp_connector_send_crm',
         'whatsapp_connector_template_base',
         'whatsapp_connector_admin',
