@@ -967,7 +967,7 @@ def new_module(cr, module, deps=(), auto_install=False, category=None, countries
     trigger_auto_install(cr, module)
 
 
-def _caller_version(depth=3):
+def _caller_version(depth=2):
     frame = currentframe()
     version = "util"
     while version == "util":
