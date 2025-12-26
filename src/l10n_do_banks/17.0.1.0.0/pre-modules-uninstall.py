@@ -102,7 +102,6 @@ def uninstall_modules(cr):
         'l10n_do_check_print',
         'l10n_do_hr_expense_invoice',
         'ncf_invoice_template',
-        'ncf_manager',
         'ncf_purchase',
         'sh_payslip_send_email',
         'incocegla_product_label_zebra_printer',
