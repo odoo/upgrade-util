@@ -101,8 +101,6 @@ def uninstall_modules(cr):
         'hr_payroll_inputs_dynamic_tree',
         'l10n_do_check_print',
         'l10n_do_hr_expense_invoice',
-        'ncf_invoice_template',
-        'ncf_purchase',
         'sh_payslip_send_email',
         'incocegla_product_label_zebra_printer',
         'l10n_do_ecf_xsd_bypass',
@@ -132,7 +130,6 @@ def uninstall_modules(cr):
         'database_cleanup',
         'dev_sale_product_stock_restrict',
         'interface_invoicing',
-        'ncf_sale',
         'negative_stock_sale',
         'non_moving_product_ept',
         'payment_backend_refund',
@@ -148,6 +145,7 @@ def uninstall_modules(cr):
         'required_requested_date',
         'stock_inventory_chatter'
         'cecomsa_account_followup',
+        'odoo_document_invoice_report',
     ]
 
     for module_name in modules_to_uninstall:
