@@ -102,13 +102,6 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
             if cr.rowcount:
                 xml_id = "%s.%s" % cr.fetchone()
 
-    # From given or determined xml_id, the views duplicated in a multi-website
-    # context are to be found and removed.
-    if xml_id != "?" and column_exists(cr, "ir_ui_view", "key"):
-        cr.execute("SELECT id FROM ir_ui_view WHERE key = %s AND id != %s", [xml_id, view_id])
-        for [v_id] in cr.fetchall():
-            remove_view(cr, view_id=v_id, silent=silent, key=xml_id)
-
     if not key and column_exists(cr, "ir_ui_view", "key"):
         cr.execute("SELECT key FROM ir_ui_view WHERE id = %s and key != %s", [view_id, xml_id])
         [key] = cr.fetchone() or [None]
@@ -176,6 +169,13 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
         _logger.info("remove deprecated %s view %s (ID %s)", (key and "COWed") or "built-in", key or xml_id, view_id)
 
     remove_records(cr, "ir.ui.view", [view_id])
+
+    # From given or determined xml_id, the views duplicated in a multi-website
+    # context are to be found and removed.
+    if xml_id != "?" and column_exists(cr, "ir_ui_view", "key"):
+        cr.execute("SELECT id FROM ir_ui_view WHERE key = %s AND id != %s", [xml_id, view_id])
+        for [v_id] in cr.fetchall():
+            remove_view(cr, view_id=v_id, silent=silent, key=xml_id)
 
 
 @contextmanager
