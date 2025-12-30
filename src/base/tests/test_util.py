@@ -2614,7 +2614,9 @@ class TestAssertUpdated(UnitTestCase):
             p1.city = "Underground"
             util.flush(p1)
         with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[]):
-            self.env["res.partner"].create({"name": "Annie Leonhart"})
+            if util.version_gte("13.0"):
+                # Before 13.0 creating a record will also update some of its fields
+                self.env["res.partner"].create({"name": "Annie Leonhart"})
 
         # when ids has multiple records, all records should be updated
         with self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
@@ -2648,7 +2650,9 @@ class TestAssertUpdated(UnitTestCase):
 
         # when ids is [], assert no record is updated
         with self.assertNotUpdated("res_partner", ids=[]):
-            self.env["res.partner"].create({"name": "Marco Bodt"})
+            if util.version_gte("13.0"):
+                # Before 13.0 creating a record will also update some of its fields
+                self.env["res.partner"].create({"name": "Marco Bodt"})
         with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[]):
             p2.city = "Shiganshina"
             util.flush(p2)
