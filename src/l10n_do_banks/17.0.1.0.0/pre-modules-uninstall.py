@@ -150,6 +150,7 @@ def uninstall_modules(cr):
         'cecomsa_account_followup',
         'odoo_document_invoice_report',
         'stock_inventory_chatter',
+        'cecomsa_account_followup',
     ]
 
     for module_name in modules_to_uninstall:
