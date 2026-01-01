@@ -2682,3 +2682,63 @@ class TestAssertUpdated(UnitTestCase):
         ):
             p2.city = "Niflheim"
             util.flush(p2)
+
+
+class TestReportUtils(UnitTestCase):
+    @parametrize(
+        [
+            (
+                "Simple test with minimal arguments and no data.",
+                [],
+                ("id", "name"),
+                "Partner {name} has id {id}",
+                None,
+                None,
+                100,
+                "Other",
+                "<summary>Simple test with minimal arguments and no data.</summary>",
+            ),
+            (
+                "Testing links.",
+                [],
+                ("id", "name"),
+                "Partner {partner_link}.",
+                {"partner_link": ("res.partner", "id", "name")},
+                None,
+                100,
+                "Other",
+                "<summary>Testing links.</summary>",
+            ),
+            (
+                "Test with minimal data.",
+                [(1, "Partner One")],
+                ("id", "name"),
+                "Partner {partner_link}.",
+                {"partner_link": ("res.partner", "id", "name")},
+                None,
+                100,
+                "Other",
+                "<summary>Test with minimal data.<details><i>The total number of affected records is 1.</i><ul>\n"
+                '<li>Partner <a target="_blank" href="/odoo/res.partner/1?debug=1">Partner One</a>.</li>\n'
+                "</ul></details></summary>",
+            ),
+            (
+                "Test with limited data.",
+                [(1, "Partner One"), (2, "Partner Two"), (3, "Partner Three")],
+                ("id", "name"),
+                "Partner {partner_link}.",
+                {"partner_link": ("res.partner", "id", "name")},
+                None,
+                2,
+                "Other",
+                "<summary>Test with limited data.<details><i>The total number of affected records is 3. This list is limited to 2 records.</i><ul>\n"
+                '<li>Partner <a target="_blank" href="/odoo/res.partner/1?debug=1">Partner One</a>.</li>\n'
+                '<li>Partner <a target="_blank" href="/odoo/res.partner/2?debug=1">Partner Two</a>.</li>\n'
+                "</ul></details></summary>",
+            ),
+        ]
+    )
+    def test_report_with_list(self, summary, data, columns, row_format, links, total, limit, category, expected):
+        self.assertEqual(
+            util.report_with_list(summary, data, columns, row_format, links, total, limit, category), expected
+        )
