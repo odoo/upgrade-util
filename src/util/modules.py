@@ -58,6 +58,7 @@ INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
 
 ENVIRON.setdefault("AUTO_DISCOVERY_RAN", False)
+UPG_LENIENT_MODULE_DEPENDENCIES = str2bool(os.getenv("UPG_LENIENT_MODULE_DEPENDENCIES", "0"))
 
 if version_gte("15.0"):
     AUTO_INSTALL = os.getenv("UPG_AUTOINSTALL")
@@ -747,7 +748,14 @@ def _assert_modules_exists(cr, *modules):
 @_warn_usage_outside_base
 def new_module_dep(cr, module, new_dep):
     assert isinstance(new_dep, basestring)
-    _assert_modules_exists(cr, module, new_dep)
+    _assert_modules_exists(cr, module)
+    try:
+        _assert_modules_exists(cr, new_dep)
+    except UnknownModuleError as e:
+        if UPG_LENIENT_MODULE_DEPENDENCIES:
+            _logger.error("Unknown modules: %s", ", ".join(e.args))  # noqa: TRY400
+        else:
+            raise
     # One new dep at a time
     cr.execute(
         """
@@ -920,7 +928,13 @@ def _set_module_countries(cr, module, countries):
 @_warn_usage_outside_base
 def new_module(cr, module, deps=(), auto_install=False, category=None, countries=()):
     if deps:
-        _assert_modules_exists(cr, *deps)
+        try:
+            _assert_modules_exists(cr, *deps)
+        except UnknownModuleError as e:
+            if UPG_LENIENT_MODULE_DEPENDENCIES:
+                _logger.error("Unknown modules: %s", ", ".join(e.args))  # noqa: TRY400
+            else:
+                raise
 
     cr.execute("SELECT id FROM ir_module_module WHERE name = %s", [module])
     if cr.rowcount:
