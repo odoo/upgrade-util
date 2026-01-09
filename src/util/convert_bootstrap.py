@@ -561,7 +561,7 @@ class BS3to4ConvertBlockquote(ElementOperation):
 # TODO abt: merge MakeCard and ConvertCard into one operation class
 class BS3to4MakeCard(ElementOperation):
     """
-    Pre-processe a BS3 panel, thumbnail, or well element to be converted to a BS4 card.
+    Pre-process a BS3 panel, thumbnail, or well element to be converted to a BS4 card.
 
     Card components conversion is then handled by the ``ConvertCard`` operation class.
     """
