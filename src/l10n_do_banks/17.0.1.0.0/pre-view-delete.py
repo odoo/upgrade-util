@@ -6,7 +6,7 @@ _logger = logging.getLogger(__name__)
 def migrate(cr, version):
     """
     Pre-migration script to delete specific views before upgrade.
-    
+
     Args:
         cr (cursor): Database cursor
         version (str): Module version
@@ -18,7 +18,7 @@ def migrate(cr, version):
         'bi_warranty_registration.warranty_details_form_view'
         'bi_warranty_registration.warranty_case_claims_form_view1',
         'product_product_price_widget.product_product_tree_view_inherit_widget',
-        'sale_stock_product_price_widget.sale_price_widgets_view', 
+        'sale_stock_product_price_widget.sale_price_widgets_view',
         'sale_stock_qty_date_widgets.sale_stock_qty_date_widgets_view',
         'product_stock_qty_date_widget.product_product_tree_view_inherit_widget_qty',
         'warranty_registration_extra_features.warranty_case_claims_form_view1_inherit',
@@ -30,6 +30,7 @@ def migrate(cr, version):
         'professional_templates.view_sale_order_inherit_customized',
         'professional_templates.view_rfq_inherit_customized',
         'professional_templates.purchase_order_inherited_customized',
+        'stock_analytic.view_picking_form',
     ]
 
     for xml_id in views_to_delete:
@@ -47,12 +48,12 @@ def migrate(cr, version):
                             inherited.unlink()
                         except Exception as e:
                             _logger.warning(f'Error deleting inherited view: {e}')
-                
+
                 # Check if this view inherits from another
                 if view.inherit_id:
                     _logger.info(f'View {xml_id} inherits from {view.inherit_id.xml_id}')
                     view.inherit_id = False
-                
+
                 # Now delete the view itself
                 view.unlink()
                 _logger.info(f'Successfully deleted view: {xml_id}')
