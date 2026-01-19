@@ -9,9 +9,13 @@ def _update_views(cr):
     cr.execute(
         """
         UPDATE ir_ui_view
-           SET arch_db = replace(arch_db, 'analytic_account_id', 'analytic_distribution')
+           SET arch_db = replace(
+               arch_db::text,
+               'analytic_account_id',
+               'analytic_distribution'
+           )::jsonb
          WHERE model = 'stock.picking'
-           AND arch_db ILIKE '%%analytic_account_id%%'
+           AND arch_db::text ILIKE '%%analytic_account_id%%'
         """
     )
     _logger.info("Updated %s stock.picking views.", cr.rowcount)
