@@ -148,6 +148,9 @@ def uninstall_modules(cr):
         'stock_inventory_chatter',
         'cecomsa_account_followup',
         'odoo_document_invoice_report',
+        'payroll_dynamic_xls_report',
+        'purchase_analytic_global',
+        'purchase_discount'
     ]
 
     _logger.info(f'Starting uninstall process for {len(modules_to_uninstall)} modules.')
