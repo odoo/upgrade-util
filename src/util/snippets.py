@@ -298,6 +298,8 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
         (base_select_query + "\n       AND id BETWEEN {} AND  {}".format(*x))
         for x in determine_chunk_limit_ids(cr, table, columns, "({}) AND ({})".format(where, extra_where))
     ]
+    if not split_queries:
+        return
 
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
