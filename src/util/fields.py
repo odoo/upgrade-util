@@ -72,7 +72,7 @@ from .pg import (
     target_of,
 )
 from .records import _remove_import_export_paths
-from .report import add_to_migration_reports, get_anchor_link_to_record
+from .report import add_to_migration_reports, report_with_list
 
 # python3 shims
 try:
@@ -1470,11 +1470,26 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                )
     """.format(col_prefix=col_prefix, name=get_value_or_en_translation(cr, "ir_act_server", "name"))
     cr.execute(q, {"old_pattern": p["old_pattern"], "old": p["old"], "standard_modules": tuple(standard_modules)})
-    li = ""
-    if cr.rowcount:
-        li = "".join(
-            "<li>{}</li>".format(get_anchor_link_to_record("ir.actions.server", aid, aname))
-            for aid, aname in cr.fetchall()
+
+    model_text = "All models"
+    if only_models:
+        model_text = "Models " + ", ".join("<kbd>{}</kbd>".format(m) for m in only_models)
+    total = cr.rowcount
+    if total:
+        summary = (
+            "{model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. "
+            "The following server actions may need an update. "
+            "If a server action is a standard one and you haven't made any modifications, you may ignore it."
+        ).format(model_text=model_text, old=old, new=new)
+        report_with_list(
+            summary=summary,
+            data=cr.fetchall(),
+            columns=("id", "name"),
+            row_format="{action_link}",
+            links={"action_link": ("ir.actions.server", "id", "name")},
+            total=total,
+            limit=20,
+            category="Fields renamed",
         )
 
     if column_exists(cr, "ir_model_fields", "compute"):
@@ -1493,28 +1508,24 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                    )
             """
         cr.execute(q, {"old_pattern": p["old_pattern"], "standard_modules": tuple(standard_modules)})
-        if cr.rowcount:
-            li += "".join(
-                "<li>{}</li>".format(get_anchor_link_to_record("ir.model.fields", fid, fname))
-                for fid, fname in cr.fetchall()
+
+        total = cr.rowcount
+        if total:
+            summary = (
+                "{model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. "
+                "The following compute methods of other fields may need an update. "
+                "If a field is a standard one and you haven't made any modifications, you may ignore it."
+            ).format(model_text=model_text, old=old, new=new)
+            report_with_list(
+                summary=summary,
+                data=cr.fetchall(),
+                columns=("id", "name"),
+                row_format="{field_link}",
+                links={"field_link": ("ir.model.fields", "id", "name")},
+                total=total,
+                limit=20,
+                category="Fields renamed",
             )
-    if li:
-        model_text = "All models"
-        if only_models:
-            model_text = "Models " + ", ".join("<kbd>{}</kbd>".format(m) for m in only_models)
-        add_to_migration_reports(
-            """
-<details>
-  <summary>
-    {model_text}: the field <kbd>{old}</kbd> has been renamed to <kbd>{new}</kbd>. The following server actions and compute methods of other fields may need an update.
-    If a server action or a field is a standard one and you haven't made any modifications, you may ignore them.
-  </summary>
-  <ul>{li}</ul>
-</details>
-            """.format(**locals()),
-            category="Fields renamed",
-            format="html",
-        )
 
     # if we stay on the same model. (no usage of dotted-path) (only works for domains and related)
     if "." not in old and "." not in new:
