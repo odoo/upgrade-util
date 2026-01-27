@@ -1,5 +1,10 @@
-from odoo.addons.base.maintenance.migrations import util
-from odoo.addons.base.maintenance.migrations.util.modules import _get_autoinstallable_modules
+try:
+    from odoo.addons.base.maintenance.migrations import util
+    from odoo.addons.base.maintenance.migrations.util.modules import _get_autoinstallable_modules
+except ImportError:
+    # for symlinked versions
+    from openerp.addons.base.maintenance.migrations import util
+    from openerp.addons.base.maintenance.migrations.util.modules import _get_autoinstallable_modules
 
 
 def migrate(cr, version):
