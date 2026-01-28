@@ -656,7 +656,7 @@ class TestIterBrowse(UnitTestCase):
     def test_iter_browse_iter(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
-        ids = [c for (c,) in cr.fetchall()]
+        ids = [c for (c,) in cr.fetchall()]  # ids as list
         chunk_size = 10
 
         Country = type(self.env["res.country"])
@@ -670,28 +670,32 @@ class TestIterBrowse(UnitTestCase):
     def test_iter_browse_iter_chunks(self):
         cr = self.env.cr
         cr.execute("SELECT id FROM res_country")
-        ids = [c for (c,) in cr.fetchall()]
+        count = cr.rowcount
+        ids = (c for (c,) in cr.fetchall())  # ids as generator
         chunk_size = 10
 
         res_chunks = list(
-            util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size, yield_chunks=True)
+            util.iter_browse(
+                self.env["res.country"], ids, size=count, logger=None, chunk_size=chunk_size, yield_chunks=True
+            )
         )
-        no_chunks = (len(ids) + chunk_size - 1) // chunk_size
+        no_chunks = (count + chunk_size - 1) // chunk_size
         self.assertEqual(len(res_chunks), no_chunks)
         self.assertEqual(len(res_chunks[0]), chunk_size)
 
     def test_iter_browse_call(self):
         cr = self.env.cr
-        cr.execute("SELECT id FROM res_country")
-        ids = [c for (c,) in cr.fetchall()]
+        query = "SELECT id FROM res_country"  # ids as query
+        cr.execute(query)
+        count = cr.rowcount
         chunk_size = 10
 
         Country = type(self.env["res.country"])
         with mock.patch.object(Country, "write", autospec=True, side_effect=Country.write) as write:
-            ib = util.iter_browse(self.env["res.country"], ids, logger=None, chunk_size=chunk_size)
+            ib = util.iter_browse(self.env["res.country"], None, query=query, logger=None, chunk_size=chunk_size)
             ib.write({"vat_label": "VAT"})
 
-        expected = (len(ids) + chunk_size - 1) // chunk_size
+        expected = (count + chunk_size - 1) // chunk_size
         self.assertEqual(write.call_count, expected)
 
     def test_iter_browse_create_non_empty(self):
@@ -707,6 +711,27 @@ class TestIterBrowse(UnitTestCase):
         names = [f"Name {i}" for i in range(7)]
         ib = util.iter_browse(RP, [], chunk_size=chunk_size)
         records = ib.create([{"name": name} for name in names], multi=multi)
+        self.assertEqual([t.name for t in records], names)
+
+    @parametrize([(True,), (False,)])
+    def test_iter_browse_create_val_gen(self, multi):
+        chunk_size = 2
+        RP = self.env["res.partner"]
+
+        names = [f"Name {i}" for i in range(7)]
+        ib = util.iter_browse(RP, [], chunk_size=chunk_size)
+        records = ib.create(({"name": name} for name in names), size=7, multi=multi)
+        self.assertEqual([t.name for t in records], names)
+
+    @parametrize([(True,), (False,)])
+    def test_iter_browse_create_val_query(self, multi):
+        chunk_size = 2
+        RP = self.env["res.partner"]
+
+        names = [f"Name {i}" for i in range(7)]
+        query = "SELECT 'Name ' || i AS name FROM GENERATE_SERIES(0, 6) AS i"
+        ib = util.iter_browse(RP, [], chunk_size=chunk_size)
+        records = ib.create(query=query, multi=multi)
         self.assertEqual([t.name for t in records], names)
 
     def test_iter_browse_iter_twice(self):
