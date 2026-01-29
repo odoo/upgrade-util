@@ -231,16 +231,12 @@ class Convertor:
         self.update_query = update_query
         # when db_name is set update_query must be set also
         assert not (self.dbname is None) ^ (self.update_query is None)
-        self.pool_reset = False
 
     def __call__(self, row_or_query):
         # backwards compatibility: caller passes rows and expects us to return them converted
         if not self.dbname:
             return self._convert_row(row_or_query)
         # improved interface: caller passes a query for us to fetch input rows, convert and update them
-        if not self.pool_reset:
-            sql_db._Pool = None  # children cannot borrow from copies of the same pool, it will cause protocol error
-            self.pool_reset = True
         with sql_db.db_connect(self.dbname).cursor() as cr:
             cr.execute(row_or_query)
             for changes in filter(None, map(self._convert_row, cr.fetchall())):
@@ -268,6 +264,11 @@ class Convertor:
             if has_changed:
                 changes["id"] = res_id
         return changes if "id" in changes else None
+
+
+# children cannot borrow from copies of the same pool, it will cause protocol error
+def init_worker_process():
+    sql_db._Pool = None
 
 
 def convert_html_columns(cr, table, columns, converter_callback, where_column="IS NOT NULL", extra_where="true"):
@@ -309,7 +310,7 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
 
     cr.commit()
     extrakwargs = {"mp_context": multiprocessing.get_context("fork")} if sys.version_info >= (3, 7) else {}
-    with ProcessPoolExecutor(max_workers=get_max_workers(), **extrakwargs) as executor:
+    with ProcessPoolExecutor(max_workers=get_max_workers(), initializer=init_worker_process, **extrakwargs) as executor:
         convert = Convertor(converters, converter_callback, cr.dbname, update_query)
         futures = [executor.submit(convert, query) for query in split_queries]
         for future in log_progress(

@@ -2357,6 +2357,7 @@ def not_doing_anything_converter(el):
     return True
 
 
+@unittest.skipUnless(util.version_gte("15.0"), "Only works on Odoo >= 15 (python >= 3.7)")
 class TestHTMLFormat(UnitTestCase):
     def testsnip(self):
         view_arch = """
