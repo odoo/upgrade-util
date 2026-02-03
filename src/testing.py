@@ -144,6 +144,9 @@ _logger = logging.getLogger(__name__)
 DATA_TABLE = "upgrade_test_data"
 VERSION_RE = re.compile(r"^(saas[-~])?(\d+).(\d+)$")
 
+ODOO_UPG_DB_TARGET_VERSION = os.getenv("ODOO_UPG_DB_TARGET_VERSION")
+ODOO_UPG_DB_SOURCE_VERSION = os.getenv("ODOO_UPG_DB_SOURCE_VERSION")
+
 
 def parametrize(argvalues):
     """
@@ -419,7 +422,14 @@ class UpgradeCommon(BaseCase):
             self.skipTest("abstract test class")
             return
         (version, sub_version) = self.change_version
-        if version is not None:
+        if version is not None and ODOO_UPG_DB_TARGET_VERSION and ODOO_UPG_DB_SOURCE_VERSION:
+            if parse_version(ODOO_UPG_DB_SOURCE_VERSION) >= parse_version("{}.{}".format(*self.change_version)):
+                self.skipTest("out of bounds version (>)")
+                return
+            if parse_version(ODOO_UPG_DB_TARGET_VERSION) < parse_version("{}.{}".format(*self.change_version)):
+                self.skipTest("out of bounds version (<)")
+                return
+        elif version is not None:
             current_version = parse_version(release.series)
             if current_version >= parse_version("%s.%s" % self.change_version):
                 self.skipTest("out of bounds version (>)")
@@ -445,7 +455,14 @@ class UpgradeCommon(BaseCase):
             self.skipTest("abstract test class")
             return
         (version, sub_version) = self.change_version
-        if version is not None:
+        if version is not None and ODOO_UPG_DB_TARGET_VERSION and ODOO_UPG_DB_SOURCE_VERSION:
+            if parse_version(ODOO_UPG_DB_SOURCE_VERSION) >= parse_version("{}.{}".format(*self.change_version)):
+                self.skipTest("out of bounds version (>)")
+                return
+            if parse_version(ODOO_UPG_DB_TARGET_VERSION) < parse_version("{}.{}".format(*self.change_version)):
+                self.skipTest("out of bounds version (<)")
+                return
+        elif version is not None:
             current_version = parse_version(release.series)
             if current_version < parse_version("%s.%s" % self.change_version):
                 self.skipTest("out of bounds version (<)")
