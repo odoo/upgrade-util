@@ -578,7 +578,14 @@ if version_gte("saas~18.4"):
         assert isinstance(context, SelfPrintEvalContext)
 
         if version_gte("saas~18.5"):
-            c = _safe_eval_mod.compile_codeobj(expr, filename=None, mode="eval")
+            # Ensure that the expression is not altered by using `compile`
+            # and not `compile_codeobj` (via `UNSAFE_POLICY`).
+            try:
+                c = compile(expr.strip(), "", "eval")
+            except (SyntaxError, TypeError, ValueError):
+                raise
+            except Exception as e:
+                raise ValueError("%r while compiling\n%r" % (e, expr))
             _safe_eval_mod.assert_valid_codeobj(_safe_eval_mod._SAFE_OPCODES, c, expr)
         else:
             c = _safe_eval_mod.test_expr(expr, _safe_eval_mod._SAFE_OPCODES, mode="eval", filename=None)
