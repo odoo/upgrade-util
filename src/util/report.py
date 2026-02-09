@@ -72,6 +72,13 @@ except ImportError:
     except ImportError:
         from openerp.addons.base.module.module import MyWriter
 
+try:
+    from odoo.tools.safe_eval import SafeObject
+
+    SafeObject.add_function(("odoo", "upgrade", "util", "report", "get_anchor_link_to_record"))
+except ImportError:
+    pass
+
 from .exceptions import MigrationError
 from .misc import has_enterprise, split_osenv, version_between, version_gte
 from .orm import env, get_admin_channel, guess_admin_id
