@@ -1998,6 +1998,7 @@ def update_parent_path(cr, model, parent_field="parent_id"):
            SET parent_path = comp.parent_path
           FROM __parent_store_compute comp
          WHERE row.id = comp.id
+           AND COALESCE(row.parent_path, '') != comp.parent_path
         """,
         table=table,
         parent_field=parent_field,
