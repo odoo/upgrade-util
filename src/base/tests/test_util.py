@@ -1844,6 +1844,33 @@ class TestRecords(UnitTestCase):
         self.assertEqual(usd.symbol, "$")
         self.assertEqual(usd.name, "XXX")
 
+    def test_update_record_from_xml__fields_not_in_xml(self):
+        cr = self.env.cr
+        eur_xmlid = "base.EUR"
+
+        eur = self.env.ref(eur_xmlid)
+        eur.write({"position": "before", "rounding": 0.00001})
+        util.flush(eur)
+        util.invalidate(eur)
+
+        util.update_record_from_xml(cr, eur_xmlid, fields=["position", "rounding"])
+        util.invalidate(eur)
+
+        self.assertEqual(eur.position, "after")  # default = "after", not in <record>
+        self.assertEqual(eur.rounding, 0.01)  # default = 0.01, same value in <record>
+
+        pubuser_xmlid = "base.public_user"
+
+        pubuser = self.env.ref(pubuser_xmlid)
+        pubuser.write({"active": True})
+        util.flush(pubuser)
+        util.invalidate(pubuser)
+
+        util.update_record_from_xml(cr, pubuser_xmlid, fields=["active"])
+        util.invalidate(pubuser)
+
+        self.assertFalse(pubuser.active)  # default = True, False in <record>
+
     def test_update_record_from_xml_cache(self):
         cr = self.env.cr
         xmlid = "base.action_attachment"
