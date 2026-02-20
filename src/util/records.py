@@ -1122,7 +1122,8 @@ def update_record_from_xml(
                                    should also be updated.
     :param set(str) or None fields: optional list of fields to include in the XML declaration.
                                     If set, all other fields will be ignored. When set, record
-                                    won't be created if missing.
+                                    won't be created if missing and all fields not found in
+                                    the XML declaration will be set to NULL/their default.
 
     .. warning::
        This functions uses the ORM, therefore it can only be used after **all** models
@@ -1219,6 +1220,7 @@ def __update_record_from_xml(
         elif ref.split(".")[0] == from_module:
             extra_references.append(ref)
 
+    xml_fields = set()
     for f in manifest.get("data", []):
         if not f.endswith(".xml"):
             continue
@@ -1236,6 +1238,8 @@ def __update_record_from_xml(
                     for fn in node.xpath("./field[@name]"):
                         if fn.attrib["name"] not in fields:
                             node.remove(fn)
+                        xml_fields.add(fn.attrib["name"])
+
                 root[0].append(node)
 
                 if node.tag == "menuitem" and parent.tag == "menuitem" and "parent_id" not in node.attrib:
@@ -1266,6 +1270,20 @@ def __update_record_from_xml(
         suffix = " in %r module" % from_module if from_module != module else ""
         raise ValueError("Cannot find %r%s" % (xmlid, suffix))
 
+    new_env = env(cr)
+
+    # override requested fields not found in xml
+    if fields is not None:
+        missing_fields = set(fields) - xml_fields
+        if missing_fields:
+            fields_default = new_env[model].default_get(missing_fields)
+            for field in missing_fields:
+                field_default = fields_default.get(field)
+                if field_default is None:
+                    root[0][-1].append(lxml.builder.E.field(name=field, eval="False"))
+                else:
+                    root[0][-1].append(lxml.builder.E.field(str(field_default), name=field))
+
     done_refs.add(xmlid)
     for ref in extra_references:
         if ref in done_refs:
@@ -1282,8 +1300,6 @@ def __update_record_from_xml(
             fields=None,
             done_refs=done_refs,
         )
-
-    new_env = env(cr)
 
     if version_gte("saas~15.4"):
         new_env.invalidate_all()
