@@ -1039,7 +1039,8 @@ def update_record_from_xml(
                                    should also be updated.
     :param set(str) or None fields: optional list of fields to include in the XML declaration.
                                     If set, all other fields will be ignored. When set, record
-                                    won't be created if missing.
+                                    won't be created if missing and all fields not found in
+                                    the XML declaration will be set to NULL.
 
     .. warning::
        This functions uses the ORM, therefore it can only be used after **all** models
@@ -1147,9 +1148,13 @@ def __update_record_from_xml(
                 found = True
                 parent = node.getparent()
                 if node.tag == "record" and fields is not None:
+                    xml_fields = set()
                     for fn in node.xpath("./field[@name]"):
                         if fn.attrib["name"] not in fields:
                             node.remove(fn)
+                        xml_fields.add(fn.attrib["name"])
+                    # override requested fields not found in xml
+                    node.extend(lxml.builder.E.field(name=f, eval="False") for f in fields if f not in xml_fields)
                 new_root[0].append(node)
 
                 if node.tag == "menuitem" and parent.tag == "menuitem" and "parent_id" not in node.attrib:
