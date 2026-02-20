@@ -60,7 +60,7 @@ def _unknown_model_id(cr):
     return cr.fetchone()[0]
 
 
-def remove_model(cr, model, drop_table=True, ignore_m2m=()):
+def remove_model(cr, model, drop_table=True, ignore_m2m=(), remove_inherits=False):
     """
     Remove a model and its references from the database.
 
@@ -69,6 +69,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 
     :param str model: name of the model to remove
     :param bool drop_table: whether to drop the table of this model
+    :param bool remove_inherits: whether to also clean inherits of ``model``
     :param list(str) or str ignore_m2m: list of m2m tables to ignore - not removed, use
                                         `"*"` to ignore (keep) all m2m tables
     """
@@ -163,6 +164,16 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                 notify = notify or bool(cr.rowcount)
 
     _remove_import_export_paths(cr, model)
+
+    for inh in for_each_inherit(cr, model):
+        if remove_inherits:
+            remove_inherit_from_model(cr, inh.model, model, with_inherit_parents=False)
+        else:
+            _logger.warning(
+                "Model %r is being removed, to also remove its inherit from %r set the `remove_inherits` flag in `remove_model()`.",
+                model,
+                inh.model,
+            )
 
     _rm_refs(cr, model)
 
