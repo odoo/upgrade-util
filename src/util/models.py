@@ -158,6 +158,9 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                     ]
                 )
 
+                sets = list(sets)
+                if column_exists(cr, ir.table, "active"):
+                    sets.append('"active" = FALSE')
                 query = 'UPDATE "{}" SET {} WHERE id IN %s'.format(ir.table, ",".join(sets))
                 cr.execute(query, args + (tuple(ids),))
                 notify = notify or bool(cr.rowcount)
