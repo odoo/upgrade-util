@@ -42,7 +42,7 @@ from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
 from .misc import chunks, log_progress, version_between, version_gte
-from .pg import SQLStr, column_exists, format_query, get_columns, query_ids
+from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor, query_ids
 
 # python3 shims
 try:
@@ -362,7 +362,9 @@ class iter_browse(object):
 
     :param model: the model to iterate
     :type model: :class:`odoo.model.Model`
-    :param list(int) ids: list of IDs of the records to iterate
+    :param iterable(int) ids: iterable of IDs of the records to iterate
+    :param str query: alternative to ids, SQL query that can produce them.
+                      Can also be a DML statement with a RETURNING clause.
     :param int chunk_size: number of records to load in each iteration chunk, `200` by
                            default
     :param bool yield_chunks: when iterating, yield records in chunks of `chunk_size` instead of one by one.
@@ -377,14 +379,27 @@ class iter_browse(object):
     See also :func:`~odoo.upgrade.util.orm.env`
     """
 
-    __slots__ = ("_chunk_size", "_cr_uid", "_it", "_logger", "_model", "_patch", "_size", "_strategy", "_yield_chunks")
+    __slots__ = (
+        "_chunk_size",
+        "_cr_uid",
+        "_ids",
+        "_it",
+        "_logger",
+        "_model",
+        "_patch",
+        "_query",
+        "_size",
+        "_strategy",
+        "_yield_chunks",
+    )
 
     def __init__(self, model, *args, **kw):
         assert len(args) in [1, 3]  # either (cr, uid, ids) or (ids,)
         self._model = model
         self._cr_uid = args[:-1]
-        ids = args[-1]
-        self._size = len(ids)
+        self._ids = args[-1]
+        self._size = kw.pop("size", None)
+        self._query = kw.pop("query", None)
         self._chunk_size = kw.pop("chunk_size", 200)  # keyword-only argument
         self._yield_chunks = kw.pop("yield_chunks", False)
         self._logger = kw.pop("logger", _logger)
@@ -393,8 +408,32 @@ class iter_browse(object):
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
+        if not (self._ids is None) ^ (self._query is None):
+            raise TypeError("Must be initialized using exactly one of `ids` or `query`")
+
+        if self._query:
+            self._ids = query_ids(self._model.env.cr, self._query, itersize=self._chunk_size)
+
+        if not self._size:
+            try:
+                self._size = len(self._ids)
+            except TypeError:
+                raise ValueError("When passing ids as a generator, the size kwarg is mandatory")
         self._patch = None
-        self._it = chunks(ids, self._chunk_size, fmt=self._browse)
+        self._it = chunks(self._ids, self._chunk_size, fmt=self._browse)
+
+    def _values_query(self, query):
+        cr = self._model.env.cr
+        cr.execute(format_query(cr, "WITH query AS ({}) SELECT count(*) FROM query", SQLStr(query)))
+        size = cr.fetchone()[0]
+
+        def get_values():
+            with named_cursor(cr, itersize=self._chunk_size) as ncr:
+                ncr.execute(SQLStr(query))
+                for row in ncr.iterdict():
+                    yield row
+
+        return size, get_values()
 
     def _browse(self, ids):
         next(self._end(), None)
@@ -447,35 +486,47 @@ class iter_browse(object):
         self._it = None
         return caller
 
-    def create(self, values, **kw):
+    def create(self, values=None, query=None, **kw):
         """
         Create records.
 
         An alternative to the default `create` method of the ORM that is safe to use to
         create millions of records.
 
-        :param list(dict) values: list of values of the records to create
+        :param iterable(dict) values: iterable of values of the records to create
+        :param int size: the no. of elements produced by values, required if values is a generator
+        :param str query: alternative to values, SQL query that can produce them.
+                          *No* DML statements allowed. Only SELECT.
         :param bool multi: whether to use the multi version of `create`, by default is
                            `True` from Odoo 12 and above
         """
         multi = kw.pop("multi", version_gte("saas~11.5"))
+        size = kw.pop("size", None)
         if kw:
             raise TypeError("Unknown arguments: %s" % ", ".join(kw))
 
-        if not values:
-            raise ValueError("`create` cannot be called with an empty `values` argument")
+        if not (values is None) ^ (query is None):
+            raise ValueError("`create` needs to be called using exactly one of `values` or `query` arguments")
 
         if self._size:
             raise ValueError("`create` can only called on empty `browse_record` objects.")
 
-        ids = []
-        size = len(values)
+        if query:
+            size, values = self._values_query(query)
+
+        if size is None:
+            try:
+                size = len(values)
+            except TypeError:
+                raise ValueError("When passing a generator of values, the size kwarg is mandatory")
+
         it = chunks(values, self._chunk_size, fmt=list)
         if self._logger:
             sz = (size + self._chunk_size - 1) // self._chunk_size
             qualifier = "env[%r].create([:%d])" % (self._model._name, self._chunk_size)
             it = log_progress(it, self._logger, qualifier=qualifier, size=sz)
 
+        ids = []
         self._patch = no_selection_cache_validation()
         for sub_values in it:
             self._patch.start()
