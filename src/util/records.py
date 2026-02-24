@@ -1154,7 +1154,15 @@ def __update_record_from_xml(
                             node.remove(fn)
                         xml_fields.add(fn.attrib["name"])
                     # override requested fields not found in xml
-                    node.extend(lxml.builder.E.field(name=f, eval="False") for f in fields if f not in xml_fields)
+                    fields_default = env(cr)[node.attrib["model"]].default_get(fields)
+                    for field in fields:
+                        if field not in xml_fields:
+                            field_default = fields_default.get(field)
+                            if field_default is None:
+                                node.append(lxml.builder.E.field(name=field, eval="False"))
+                            else:
+                                node.append(lxml.builder.E.field(str(field_default), name=field))
+
                 new_root[0].append(node)
 
                 if node.tag == "menuitem" and parent.tag == "menuitem" and "parent_id" not in node.attrib:
