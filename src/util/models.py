@@ -115,7 +115,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 
         query = cr.mogrify(
             """
-                SELECT d.res_id
+                SELECT DISTINCT d.res_id
                   FROM ir_model_data d
                   JOIN "{}" r ON d.model = %s AND d.res_id = r.id
                  WHERE d.module != '__export__'
