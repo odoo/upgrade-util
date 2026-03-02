@@ -120,6 +120,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                   JOIN "{}" r ON d.model = %s AND d.res_id = r.id
                  WHERE d.module != '__export__'
                    AND {}
+                GROUP BY d.res_id
             """.format(ir.table, ir.model_filter(prefix="r.")),
             [ref_model, model],
         ).decode()
