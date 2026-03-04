@@ -1319,6 +1319,8 @@ def update_field_usage(cr, model, old, new, domain_adapter=None, skip_inherit=()
         - ir_act_server
         - mail_alias
         - ir_ui_view_custom (dashboard)
+        - sign_item_type
+        - sign_item
         - domains (using `domain_adapter`)
         - related fields
 
@@ -1419,32 +1421,115 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         "models": tuple(only_models) if only_models else (),
     }
 
-    # ir.action.server
-    if column_exists(cr, "ir_act_server", "update_path") and only_models:
-        cr.execute(
-            """
-            SELECT a.id,
-                   a.update_path,
-                   m.model
+    if only_models:
+        # ir.action.server, sign.item.type, sign.item
+        searches = []
+        sa_query = """
+            SELECT a.id, a.update_path, m.model
               FROM ir_act_server a
               JOIN ir_model m
-                ON a.model_id = m.id
+                ON m.id = a.model_id
              WHERE a.state = 'object_write'
                AND a.update_path ~ %(old)s
-            """,
-            p,
-        )
-        to_update = {}
-        for act_id, update_path, src_model in cr.fetchall():
-            for dst_model in only_models:
-                new_path = _replace_path(cr, old, new, src_model, dst_model, update_path)
-                if new_path != update_path:
-                    to_update[act_id] = new_path
-        if to_update:
-            cr.execute(
-                "UPDATE ir_act_server SET update_path = %s::jsonb->>id::text WHERE id IN %s",
-                [Json(to_update), tuple(to_update)],
+        """
+        searches.append(("ir_act_server", "update_path", sa_query))
+
+        if column_exists(cr, "sign_item_type", "model_id"):
+            # introduced in saas~18.1
+            sign_item_type_query = """
+                SELECT t.id, t.auto_field, m.model
+                  FROM sign_item_type t
+                  JOIN ir_model m
+                    ON m.id = t.model_id
+                 WHERE t.auto_field ~ %(old)s
+            """
+        else:
+            # before, model was always "res.partner"
+            sign_item_type_query = """
+                SELECT t.id, t.auto_field, 'res.partner'
+                  FROM sign_item_type t
+                 WHERE t.auto_field ~ %(old)s
+            """
+
+        searches.append(("sign_item_type", "auto_field", sign_item_type_query))
+        if table_exists(cr, "hr_contract_salary_offer"):
+            # `sign.item.name` is a field path of `hr.{contract,version}` if
+            # they are linked to a template used by a `hr.contract.salary.offer` record.
+            # https://github.com/odoo/enterprise/blob/61b46e9ac8397be04a896da2cbea5fa9b7db7766/hr_contract_salary/controllers/main.py#L1046
+            #
+            # The template in an offer:
+            # * From 19, directly stored
+            #   https://github.com/odoo/enterprise/blob/1d10ee238a50e7bdb552efdeafc068c5127cd49a/hr_contract_salary/controllers/main.py#L995
+            # * Before 19, read from the linked contract/version.
+            #   https://github.com/odoo/enterprise/blob/f1573a1e2546f47f1a351d21764ba5433c205530/hr_contract_salary/controllers/main.py#L975
+            #
+            # The template in the sign item:
+            # * From 18.3, related via the sign document
+            #   https://github.com/odoo/enterprise/blob/b3bd0601c5bf2783b891ced414d85161c5cc2c3c/sign/models/sign_item.py#L13
+            # * Before, directly stored
+            #   https://github.com/odoo/enterprise/blob/2a7bc7896f808cf085aa97448f3e417faf94d124/sign/models/sign_item.py#L12
+            if column_exists(cr, "hr_contract_salary_offer", "sign_template_id"):
+                offer_template = SQLStr(
+                    "SELECT sign_template_id AS id FROM hr_contract_salary_offer GROUP BY sign_template_id"
+                )
+            else:
+                offer_template = format_query(
+                    cr,
+                    """
+                    SELECT CASE
+                               WHEN o.employee_id IS NOT NULL THEN c.contract_update_template_id
+                               ELSE c.sign_template_id
+                           END AS id
+                      FROM hr_contract_salary_offer o
+                      JOIN {contract} c
+                        ON c.id = o.contract_template_id
+                  GROUP BY 1
+                    """,
+                    contract="hr_version" if table_exists(cr, "hr_version") else "hr_contract",
+                )
+
+            if column_exists(cr, "sign_item", "template_id"):
+                item_template = "i.template_id"
+                doc_join = ""
+            else:
+                item_template = "d.template_id"
+                doc_join = "JOIN sign_document d ON i.document_id = d.id"
+            sign_item_query = format_query(
+                cr,
+                r"""
+                WITH _offer_template AS (
+                    {offer_template}
+                )
+                SELECT i.id, i.name, f.model
+                  FROM sign_item i
+                       {doc_join}
+                  JOIN _offer_template t
+                    ON {item_template} = t.id
+                  JOIN ir_model_fields f
+                    ON f.model IN ('hr.version', 'hr.contract')
+                   AND i.name ~ CONCAT('^', f.name, '(\..+)?$')  -- too broad :/
+                 WHERE i.name ~ %(old)s
+                """,
+                doc_join=SQLStr(doc_join),
+                item_template=SQLStr(item_template),
+                offer_template=offer_template,
             )
+            searches.append(("sign_item", "name", sign_item_query))
+
+        for table, column, query in searches:
+            if not column_exists(cr, table, column):
+                continue
+            cr.execute(query, p)
+
+            to_update = {}
+            for rec_id, field_path, src_model in cr.fetchall():
+                for dst_model in only_models:
+                    new_path = _replace_path(cr, old, new, src_model, dst_model, field_path)
+                    if new_path != field_path:
+                        to_update[rec_id] = new_path
+            if to_update:
+                upd_query = format_query(cr, "UPDATE {} SET {} = %s::jsonb->>id::text WHERE id IN %s", table, column)
+                cr.execute(upd_query, [Json(to_update), tuple(to_update)])
 
     # Modifying server action is dangerous.
     # The search pattern can be anywhere in the code, leading to invalid codes.
