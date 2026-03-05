@@ -1423,33 +1423,26 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
 
     if only_models:
         # ir.action.server, sign.item.type, sign.item
-        searches = [
-            (
-                "ir_act_server",
-                "update_path",
-                """
-                SELECT a.id, a.update_path, m.model
-                  FROM ir_act_server a
-                  JOIN ir_model m
-                    ON m.id = a.model_id
-                 WHERE a.state = 'object_write'
-                   AND a.update_path ~ %(old)s
-                """,
-            ),
-        ]
-
-        sign_item_query = """
-            SELECT t.id, t.{0}, m.model
-              FROM sign_item_type t
+        searches = []
+        sa_query = """
+            SELECT a.id, a.update_path, m.model
+              FROM ir_act_server a
               JOIN ir_model m
-                ON m.id = t.model_id
-             WHERE t.{0} ~ %(old)s
+                ON m.id = a.model_id
+             WHERE a.state = 'object_write'
+               AND a.update_path ~ %(old)s
         """
-        searches.append(("sign_item_type", "auto_field", format_query(cr, sign_item_query, "auto_field")))
-        # XXX placeholder is translated. Code needs to be adapted
-        # searches.append(("sign_item_type", "placeholder", format_query(cr, sign_item_query, "placeholder")))
+        searches.append(("ir_act_server", "update_path", sa_query))
 
-        if version_gte("saas~18.1"):
+        if column_exists(cr, "sign_item_type", "model_id"):
+            # introduced in saas~18.1
+            sign_item_query = """
+                SELECT t.id, t.{0}, m.model
+                  FROM sign_item_type t
+                  JOIN ir_model m
+                    ON m.id = t.model_id
+                 WHERE t.{0} ~ %(old)s
+            """
             sign_query = """
                 SELECT i.id, i.name, m.model
                   FROM sign_item i
@@ -1460,12 +1453,21 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                  WHERE i.name ~ %(old)s
             """
         else:
-            # model was always "res.partner"
+            # before, model was always "res.partner"
+            sign_item_query = """
+                SELECT t.id, t.{0}, 'res.partner'
+                  FROM sign_item_type t
+                 WHERE t.{0} ~ %(old)s
+            """
             sign_query = """
                 SELECT i.id, i.name, 'res.partner'
                   FROM sign_item i
                  WHERE i.name ~ %(old)s
             """
+
+        searches.append(("sign_item_type", "auto_field", format_query(cr, sign_item_query, "auto_field")))
+        # XXX placeholder is translated. Code needs to be adapted
+        # searches.append(("sign_item_type", "placeholder", format_query(cr, sign_item_query, "placeholder")))
         searches.append(("sign_item", "name", sign_query))
 
         for table, column, query in searches:
