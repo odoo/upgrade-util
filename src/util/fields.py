@@ -1436,33 +1436,37 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
                    AND a.update_path ~ %(old)s
                 """,
             ),
-            (
-                "sign_item_type",
-                "auto_field",
-                """
-                SELECT t.id, t.auto_field, m.model
-                  FROM sign_item_type t
-                  JOIN ir_model m
-                    ON m.id = t.model_id
-                 WHERE t.auto_field ~ %(old)s
-                """,
-            ),
-            (
-                "sign_item",
-                "name",
-                """
+        ]
+
+        sign_item_query = """
+            SELECT t.id, t.{0}, m.model
+              FROM sign_item_type t
+              JOIN ir_model m
+                ON m.id = t.model_id
+             WHERE t.{0} ~ %(old)s
+        """
+        searches.append(("sign_item_type", "auto_field", format_query(cr, sign_item_query, "auto_field")))
+        # XXX placeholder is translated. Code needs to be adapted
+        # searches.append(("sign_item_type", "placeholder", format_query(cr, sign_item_query, "placeholder")))
+
+        if version_gte("saas~18.1"):
+            sign_query = """
                 SELECT i.id, i.name, m.model
                   FROM sign_item i
-                  JOIN sign_document d
-                    ON d.id = i.document_id
-                  JOIN sign_template t
-                    ON t.id = d.template_id
+                  JOIN sign_item_type t
+                    ON t.id = i.type_id
                   JOIN ir_model m
                     ON m.id = t.model_id
                  WHERE i.name ~ %(old)s
-                """,
-            ),
-        ]
+            """
+        else:
+            # model was always "res.partner"
+            sign_query = """
+                SELECT i.id, i.name, 'res.partner'
+                  FROM sign_item i
+                 WHERE i.name ~ %(old)s
+            """
+        searches.append(("sign_item", "name", sign_query))
 
         for table, column, query in searches:
             if not column_exists(cr, table, column):
