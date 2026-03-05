@@ -1319,6 +1319,8 @@ def update_field_usage(cr, model, old, new, domain_adapter=None, skip_inherit=()
         - ir_act_server
         - mail_alias
         - ir_ui_view_custom (dashboard)
+        - sign_item_type
+        - sign_item
         - domains (using `domain_adapter`)
         - related fields
 
@@ -1419,32 +1421,69 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         "models": tuple(only_models) if only_models else (),
     }
 
-    # ir.action.server
-    if column_exists(cr, "ir_act_server", "update_path") and only_models:
-        cr.execute(
-            """
-            SELECT a.id,
-                   a.update_path,
-                   m.model
+    if only_models:
+        # ir.action.server, sign.item.type, sign.item
+        searches = []
+        sa_query = """
+            SELECT a.id, a.update_path, m.model
               FROM ir_act_server a
               JOIN ir_model m
-                ON a.model_id = m.id
+                ON m.id = a.model_id
              WHERE a.state = 'object_write'
                AND a.update_path ~ %(old)s
-            """,
-            p,
-        )
-        to_update = {}
-        for act_id, update_path, src_model in cr.fetchall():
-            for dst_model in only_models:
-                new_path = _replace_path(cr, old, new, src_model, dst_model, update_path)
-                if new_path != update_path:
-                    to_update[act_id] = new_path
-        if to_update:
-            cr.execute(
-                "UPDATE ir_act_server SET update_path = %s::jsonb->>id::text WHERE id IN %s",
-                [Json(to_update), tuple(to_update)],
-            )
+        """
+        searches.append(("ir_act_server", "update_path", sa_query))
+
+        if column_exists(cr, "sign_item_type", "model_id"):
+            # introduced in saas~18.1
+            sign_item_query = """
+                SELECT t.id, t.{0}, m.model
+                  FROM sign_item_type t
+                  JOIN ir_model m
+                    ON m.id = t.model_id
+                 WHERE t.{0} ~ %(old)s
+            """
+            sign_query = """
+                SELECT i.id, i.name, m.model
+                  FROM sign_item i
+                  JOIN sign_item_type t
+                    ON t.id = i.type_id
+                  JOIN ir_model m
+                    ON m.id = t.model_id
+                 WHERE i.name ~ %(old)s
+            """
+        else:
+            # before, model was always "res.partner"
+            sign_item_query = """
+                SELECT t.id, t.{0}, 'res.partner'
+                  FROM sign_item_type t
+                 WHERE t.{0} ~ %(old)s
+            """
+            sign_query = """
+                SELECT i.id, i.name, 'res.partner'
+                  FROM sign_item i
+                 WHERE i.name ~ %(old)s
+            """
+
+        searches.append(("sign_item_type", "auto_field", format_query(cr, sign_item_query, "auto_field")))
+        # XXX placeholder is translated. Code needs to be adapted
+        # searches.append(("sign_item_type", "placeholder", format_query(cr, sign_item_query, "placeholder")))
+        searches.append(("sign_item", "name", sign_query))
+
+        for table, column, query in searches:
+            if not column_exists(cr, table, column):
+                continue
+            cr.execute(query, p)
+
+            to_update = {}
+            for rec_id, field_path, src_model in cr.fetchall():
+                for dst_model in only_models:
+                    new_path = _replace_path(cr, old, new, src_model, dst_model, field_path)
+                    if new_path != field_path:
+                        to_update[rec_id] = new_path
+            if to_update:
+                upd_query = format_query(cr, "UPDATE {} SET {} = %s::jsonb->>id::text WHERE id IN %s", table, column)
+                cr.execute(upd_query, [Json(to_update), tuple(to_update)])
 
     # Modifying server action is dangerous.
     # The search pattern can be anywhere in the code, leading to invalid codes.
