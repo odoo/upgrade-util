@@ -7,7 +7,7 @@ from .misc import _cached, version_gte
 from .models import rename_model
 from .modules import rename_module
 from .orm import env
-from .pg import column_exists, format_query, parallel_execute, rename_table, table_exists
+from .pg import column_exists, format_query, parallel_execute, remove_constraint, rename_table, table_exists
 from .report import add_to_migration_reports
 
 try:
@@ -99,6 +99,16 @@ def rename_custom_module(cr, old_module_name, new_module_name, report_details=""
     add_to_migration_reports(
         category="Custom modules",
         message="The custom module '{old_module_name}' was renamed to '{new_module_name}'. {report_details}".format(
+            **locals()
+        ),
+    )
+
+
+def remove_custom_constraint(cr, table_name, constraint_name, report_details=""):
+    remove_constraint(cr, table_name, constraint_name)
+    add_to_migration_reports(
+        category="Custom constraints",
+        message="The custom constraint '{constraint_name}' on the '{table_name}' table has been removed. {report_details}".format(
             **locals()
         ),
     )
