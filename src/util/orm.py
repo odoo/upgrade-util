@@ -251,7 +251,9 @@ def no_selection_cache_validation(f=None):
 
 
 @no_selection_cache_validation
-def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto", query=None):
+def recompute_fields(
+    cr, model, fields, ids=None, logger=_logger, chunk_size=256, strategy="auto", query=None, prefetch=True
+):
     """
     Recompute field values.
 
@@ -280,6 +282,9 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     :param str query: query to get the IDs of records to recompute, it is an error to set
                       both `ids` and `query`. Note that the processing will always happen
                       in ascending order. If that is unwanted, you must use `ids` instead.
+    :param bool prefetch: when ``False``, disable ORM prefetching while recomputing (default
+                          ``True``). Useful to avoid unnecessary reads and potential memory
+                          overrun.
     """
     if strategy not in {"flush", "commit", "auto"}:
         raise ValueError("Invalid strategy {!r}".format(strategy))
@@ -310,7 +315,8 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
     size = (count + chunk_size - 1) / chunk_size
     qual = "{} {:d}-bucket".format(model, chunk_size) if chunk_size != 1 else model
     for subids in log_progress(chunks(ids_, chunk_size, list), logger, qualifier=qual, size=size):
-        records = Model.browse(subids)
+        browse_model = Model if prefetch else Model.with_context(prefetch_fields=False)
+        records = browse_model.browse(subids)
         for field_name in fields:
             field = records._fields[field_name]
             if hasattr(records, "_recompute_todo"):
