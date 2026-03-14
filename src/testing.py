@@ -412,7 +412,7 @@ class UpgradeCommon(BaseCase):
         self._setup_registry()
         self.cr = self.registry.cursor()
         self.env = api.Environment(self.cr, SUPERUSER_ID, {})
-        self.addCleanup(self.env.clear)
+        self.addCleanup(self.env.transaction.clear if util.version_gte("15.0") else self.env.clear)
         self.addCleanup(self.cr.close)
 
     # could be reworked that to either call prepare or check in a unique test_method
