@@ -783,7 +783,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
             env.registry[model]._rec_name = rec_name
 
         # 7. Reload the registry as before
-        env.clear()
+        env.transaction.clear()
         setup_models = (
             env.registry._setup_models__ if hasattr(env.registry, "_setup_models__") else env.registry.setup_models
         )
