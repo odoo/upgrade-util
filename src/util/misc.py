@@ -16,6 +16,11 @@ from contextlib import contextmanager
 from itertools import chain, islice
 
 try:
+    from functools import lru_cache
+except ImportError:
+    lru_cache = lambda: lambda x: x
+
+try:
     from odoo import release
     from odoo.modules.module import get_module_path
     from odoo.tools.parse_version import parse_version
@@ -88,6 +93,7 @@ def str2bool(s, default=None):
     return s in y
 
 
+@lru_cache()
 def version_gte(version):
     """
     Return whether currently running Odoo version is greater or equal to `version`.
@@ -104,6 +110,7 @@ def version_gte(version):
     return parse_version(release.serie) >= parse_version(version)
 
 
+@lru_cache()
 def version_between(a, b):
     """
     Return whether currently running Odoo version is in the range `[a,b]`.
