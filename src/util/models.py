@@ -589,7 +589,9 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
 
-def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with_inherit_parents=True):
+def remove_inherit_from_model(
+    cr, model, inherit, keep=(), skip_inherit=(), with_inherit_parents=True, skip_update_references=()
+):
     """
     Remove ``inherit`` from ``model``.
 
@@ -606,6 +608,8 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
     :param tuple(str) skip_inherit: list of descendant models of ``model`` to not process
     :param boolean with_inherit_parents: if unset, remove fields coming from ``inherit``
                                          only, keeping all fields from its parents
+    :param tuple(str) or "*" skip_update_references: field names whose references should not be
+                                                     updated upon deletion. Use `"*"` for all fields.
     """
     _validate_model(model)
     _validate_model(inherit)
@@ -647,12 +651,20 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
                     format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter())), [model]
                 ).decode()
                 explode_execute(cr, query, table=table)
-        remove_field(cr, model, field, skip_inherit="*")  # inherits will be removed by the recursive call.
+        # skip_inherit set to `*` as inherits will be removed by the recursive call.
+        update_references = False if skip_update_references == "*" else field not in skip_update_references
+        remove_field(cr, model, field, skip_inherit="*", update_references=update_references)
 
     # down on inherits of `model`
     for inh in for_each_inherit(cr, model, skip_inherit):
         remove_inherit_from_model(
-            cr, inh.model, inherit, keep=keep, skip_inherit=skip_inherit, with_inherit_parents=with_inherit_parents
+            cr,
+            inh.model,
+            inherit,
+            keep=keep,
+            skip_inherit=skip_inherit,
+            with_inherit_parents=with_inherit_parents,
+            skip_update_references=skip_update_references,
         )
 
 
