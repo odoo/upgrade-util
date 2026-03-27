@@ -1181,6 +1181,10 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
     _validate_model(model)
     if not mapping:
         return
+    if not all(
+        isinstance(k, (basestring, type(None))) and isinstance(v, (basestring, type(None))) for k, v in mapping.items()
+    ):
+        raise ValueError("mapping keys and values should be string or None")
     table = table_of_model(cr, model)
 
     if column_exists(cr, table, field):
