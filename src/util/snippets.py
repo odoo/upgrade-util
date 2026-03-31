@@ -98,7 +98,7 @@ def get_html_fields(cr):
 def html_fields(cr):
     cr.execute(
         """
-        SELECT f.model, array_agg(f.name)
+        SELECT f.model, array_agg(f.name ORDER BY f.name)
           FROM ir_model_fields f
           JOIN ir_model m ON m.id = f.model_id
          WHERE f.ttype = 'html'
@@ -107,6 +107,7 @@ def html_fields(cr):
            AND f.model NOT LIKE 'ir.actions%'
            AND f.model NOT IN ('mail.message', 'mail.mail')
       GROUP BY f.model
+      ORDER BY f.model
     """
     )
     for model, columns in cr.fetchall():
