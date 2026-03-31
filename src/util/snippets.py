@@ -1,6 +1,6 @@
-# -*- coding: utf-8 -*-
 import concurrent
 import contextlib
+import enum
 import functools
 import logging
 import multiprocessing
@@ -18,8 +18,9 @@ with contextlib.suppress(ImportError):
 
 from .const import NEARLYWARN
 from .helpers import table_of_model
-from .misc import log_progress, make_pickleable_callback
-from .pg import column_exists, column_type, get_max_workers, table_exists
+from .misc import log_progress, make_pickleable_callback, version_gte
+from .modules import INSTALLED_MODULE_STATES
+from .pg import SQLStr, column_exists, column_type, format_query, get_max_workers, table_exists
 
 _logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")
@@ -88,6 +89,11 @@ def get_regex_from_snippets_list(snippets):
     return "(%s)" % "|".join(snippet.klass for snippet in snippets)
 
 
+class FieldScope(enum.Enum):
+    ALL = 1
+    SNIPPETS = 2
+
+
 def get_html_fields(cr):
     # yield (table, column) of stored html fields (that needs snippets updates)
     for table, columns in html_fields(cr):
@@ -95,21 +101,62 @@ def get_html_fields(cr):
             yield table, quote_ident(column, cr._cnx)
 
 
-def html_fields(cr):
-    cr.execute(
+def _html_fields(cr, modules):
+    if modules is None:
+        module_cte = extra_join = ""
+    else:
+        module_cte = """
+            _modules AS (
+                SELECT name
+                  FROM ir_module_module
+                 WHERE name = ANY(%(root_modules)s)
+                   AND state IN %(states)s
+                 UNION
+                SELECT m.name
+                  FROM ir_module_module m
+                  JOIN ir_module_module_dependency d
+                    ON d.module_id = m.id
+                  JOIN _modules w
+                    ON w.name = d.name
+                 WHERE m.state IN %(states)s
+            ),
         """
-        SELECT f.model, array_agg(f.name ORDER BY f.name)
-          FROM ir_model_fields f
-          JOIN ir_model m ON m.id = f.model_id
-         WHERE f.ttype = 'html'
-           AND f.store = true
-           AND m.transient = false
-           AND f.model NOT LIKE 'ir.actions%'
-           AND f.model NOT IN ('mail.message', 'mail.mail')
-      GROUP BY f.model
-      ORDER BY f.model
-    """
+        extra_join = """
+              JOIN ir_model_data imd
+                ON imd.model = 'ir.model.fields'
+               AND imd.res_id = f.id
+              JOIN _modules
+                ON imd.module = _modules.name
+        """
+
+    query = format_query(
+        cr,
+        """
+        WITH RECURSIVE
+        {}
+        _fields AS (
+            SELECT f.model, f.name
+              FROM ir_model_fields f
+              JOIN ir_model m
+                ON m.id = f.model_id
+                {}
+             WHERE f.ttype = 'html'
+               AND f.store = true
+               AND m.transient = false
+               AND f.model NOT LIKE 'ir.actions%%'
+               AND f.model NOT IN ('mail.message', 'mail.mail')
+          GROUP BY f.model, f.name
+        )
+        SELECT model, array_agg(name ORDER BY name)
+          FROM _fields
+      GROUP BY model
+      ORDER BY model
+        """,
+        SQLStr(module_cte),
+        SQLStr(extra_join),
     )
+
+    cr.execute(query, {"root_modules": modules, "states": INSTALLED_MODULE_STATES})
     for model, columns in cr.fetchall():
         table = table_of_model(cr, model)
         if not table_exists(cr, table):
@@ -118,6 +165,15 @@ def html_fields(cr):
         existing_columns = [column for column in columns if column_exists(cr, table, column)]
         if existing_columns:
             yield table, existing_columns
+
+
+def html_fields(cr):
+    return _html_fields(cr, modules=None)
+
+
+def snippet_fields(cr):
+    root_modules = ["html_builder"] if version_gte("19.0") else ["website", "mass_mailing"]
+    return _html_fields(cr, modules=root_modules)
 
 
 def parse_style(attr):
@@ -355,6 +411,7 @@ def convert_html_content(
     cr,
     converter_callback,
     where_column="IS NOT NULL",
+    scope=FieldScope.ALL,
     **kwargs,
 ):
     r"""
@@ -367,6 +424,8 @@ def convert_html_content(
     :param str where_column: filtering such as
         - "like '%abc%xyz%'"
         - "~* '\yabc.*xyz\y'"
+    :param FieldScope scope: if `FieldScope.SNIPPETS`, only process HTML fields defined by
+                             modules that depend on the snippet-engine module (version dependent).
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
     if hasattr(converter_callback, "for_html"):  # noqa: SIM108
@@ -375,7 +434,8 @@ def convert_html_content(
         # trust the given converter to handle HTML
         html_converter = converter_callback
 
-    for table, columns in html_fields(cr):
+    fields_iterator = snippet_fields if scope == FieldScope.SNIPPETS else html_fields
+    for table, columns in fields_iterator(cr):
         convert_html_columns(cr, table, columns, html_converter, where_column=where_column, **kwargs)
 
     if hasattr(converter_callback, "for_qweb"):
