@@ -105,7 +105,7 @@ def html_fields(cr):
            AND f.store = true
            AND m.transient = false
            AND f.model NOT LIKE 'ir.actions%'
-           AND f.model != 'mail.message'
+           AND f.model NOT IN ('mail.message', 'mail.mail')
       GROUP BY f.model
     """
     )
