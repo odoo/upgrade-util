@@ -40,12 +40,12 @@ def _remove_salary_rule(cr, xmlid):
             xmlid,
         )
         remove_field(cr, "hr.payroll.report", fname)
-    delete_unused(cr, xmlid)
+    delete_unused(cr, xmlid, deactivate=True)
 
 
 if not version_between("16.0", "saas~18.4"):
 
     def remove_salary_rule(cr, xmlid):
-        delete_unused(cr, xmlid)
+        delete_unused(cr, xmlid, deactivate=True)
 else:
     remove_salary_rule = _remove_salary_rule
