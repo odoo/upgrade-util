@@ -856,6 +856,34 @@ def rename_xmlid(cr, old, new, noupdate=None, on_collision="fail"):
     return None
 
 
+def _refs(cr, *xmlids):
+    if not xmlids:
+        return {}
+
+    for xmlid in xmlids:
+        if "." not in xmlid:
+            raise ValueError("Please use fully qualified name <module>.<name>")
+
+    pairs = list(map(list, zip(*(xmlid.split(".", 1) for xmlid in xmlids))))
+
+    cr.execute(
+        """
+        WITH xmlids AS (
+            SELECT unnest(%s::text[]) AS module,
+                   unnest(%s::text[]) AS name
+        )
+        SELECT xmlids.module || '.' || xmlids.name,
+               res_id
+          FROM xmlids
+     LEFT JOIN ir_model_data imd
+            ON imd.module = xmlids.module
+           AND imd.name = xmlids.name
+        """,
+        pairs,
+    )
+    return dict(cr.fetchall())
+
+
 def ref(cr, xmlid):
     """
     Return the id corresponding to the given :term:`xml_id <external identifier>`.
@@ -864,23 +892,23 @@ def ref(cr, xmlid):
     :return: ID of the referenced record, `None` if not found.
     :rtype: int or None
     """
-    if "." not in xmlid:
-        raise ValueError("Please use fully qualified name <module>.<name>")
+    return _refs(cr, xmlid)[xmlid]
 
-    module, _, name = xmlid.partition(".")
-    cr.execute(
-        """
-            SELECT res_id
-              FROM ir_model_data
-             WHERE module = %s
-               AND name = %s
-    """,
-        [module, name],
-    )
-    data = cr.fetchone()
-    if data:
-        return data[0]
-    return None
+
+def refs(cr, xmlids, strict=False):
+    """
+    Return a mapping of xmlid -> res_id for the given list of xmlids.
+
+    :param list xmlids: list of fully qualified xml_ids, each under the format `module.name`
+    :param bool strict: if ``True``, only include xmlids that exist in the database.
+    :return: dict mapping each xmlid to its res_id; missing xmlids map to ``None`` unless
+             ``strict=True``, in which case they are omitted from the result.
+    :rtype: dict
+    """
+    result = _refs(cr, *xmlids)
+    if strict:
+        return {xmlid: res_id for xmlid, res_id in result.items() if res_id is not None}
+    return result
 
 
 def force_noupdate(cr, xmlid, noupdate=True, warn=False):
