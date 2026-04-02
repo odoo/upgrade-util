@@ -2630,6 +2630,29 @@ class TestRenameXMLID(UnitTestCase):
         self.assertIn('t-name="base.rename_view"', test_view_1.arch_db)
 
 
+class TestRefs(UnitTestCase):
+    def test_refs_found(self):
+        cr = self.env.cr
+        partner_id = util.ref(cr, "base.partner_root")
+        result = util.refs(cr, ["base.partner_root"])
+        self.assertEqual(result, {"base.partner_root": partner_id})
+
+    def test_refs_missing(self):
+        cr = self.env.cr
+        result = util.refs(cr, ["base.no_such_xmlid"])
+        self.assertEqual(result, {"base.no_such_xmlid": None})
+
+    def test_refs_strict_filters_missing(self):
+        cr = self.env.cr
+        partner_id = util.ref(cr, "base.partner_root")
+        result = util.refs(cr, ["base.partner_root", "base.no_such_xmlid"], strict=True)
+        self.assertEqual(result, {"base.partner_root": partner_id})
+
+    def test_refs_empty(self):
+        result = util.refs(self.env.cr, [])
+        self.assertEqual(result, {})
+
+
 class TestAssertUpdated(UnitTestCase):
     def test_assert_updated(self):
         p1 = self.env["res.partner"].create({"name": "Levi"})
