@@ -985,7 +985,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
     new_res_id = records[0]
 
     if data_id:
-        logger.info("update `%s` from %s(%s) to %s(%s); values %r", xmlid, model, new_res_id, model, res_id, values)
+        logger.info("update `%s` from %s(%s) to %s(%s); values %r", xmlid, model, res_id, model, new_res_id, values)
         cr.execute(
             """
                 UPDATE ir_model_data
