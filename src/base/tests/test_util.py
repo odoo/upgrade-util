@@ -1652,6 +1652,9 @@ class TestRecords(UnitTestCase):
         # reset all fields on a <template>
         template_xmlid = "base.contact_name"
         record = self.env.ref(template_xmlid)
+        children = record.inherit_children_ids.filtered(lambda v: v.active)
+        children.write({"active": False})
+        self.addCleanup(children.write, {"active": True})
         non_xpath = etree.XPath("/non")
         data_after = {"name": "42", "arch_db": "<non>sense</non>"}
         data_before = {key: record[key] for key in data_after}
