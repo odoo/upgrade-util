@@ -1411,7 +1411,7 @@ def delete_unused(cr, *xmlids, **kwargs):
         deleted.extend(res_id_to_xmlid[r] for r in sub_ids if r in res_id_to_xmlid)
 
         if deactivate:
-            deactivate_ids = tuple(set(sub_ids) - set(ids))
+            deactivate_ids = tuple(set(ids) - set(sub_ids))
             if deactivate_ids:
                 cr.execute(format_query(cr, "UPDATE {} SET active = false WHERE id IN %s", table), [deactivate_ids])
 
