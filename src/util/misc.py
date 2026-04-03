@@ -131,7 +131,7 @@ def has_enterprise():
     :meta private: exclude from online docs
     """
     # NOTE should always return True as customers need Enterprise to migrate or
-    #      they are on SaaS, which include enterpise addons.
+    #      they are on SaaS, which include enterprise addons.
     #      This act as a sanity check for developers or in case we release the scripts.
     if os.getenv("ODOO_HAS_ENTERPRISE"):
         return True
