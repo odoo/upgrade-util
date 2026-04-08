@@ -1190,17 +1190,30 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
     if column_exists(cr, table, field):
         ctype = column_type(cr, table, field)
         if ctype == "varchar":
-            query = "UPDATE {table} t SET {column} = %(json)s::jsonb->>t.{column} WHERE t.{column} = ANY(%(keys)s)"
+            query = """
+                WITH _mapping AS (
+                    SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+                )
+                UPDATE {table} t
+                   SET {column} = m.new
+                  FROM _mapping m
+                 WHERE m.old IS NOT DISTINCT FROM t.{column}
+            """
         elif ctype == "jsonb":
             # company dependent selection field
             query = """
-                WITH upd AS (
+                WITH _mapping AS (
+                    SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+                ),
+                upd AS (
                      SELECT t.id,
-                            jsonb_object_agg(v.key, COALESCE(%(json)s::jsonb->>v.value, v.value)) AS value
+                            jsonb_object_agg(v.key, COALESCE(m.new, v.value)) AS value
                        FROM {table} t
                        JOIN LATERAL jsonb_each_text(t.{column}) v
                          ON true
-                      WHERE jsonb_path_query_array(t.{column}, '$.*') ?| %(keys)s
+                  LEFT JOIN _mapping m
+                         ON m.old IS NOT DISTINCT FROM v.value
+                      WHERE jsonb_path_query_array(t.{column}, '$.*') ?| (SELECT array_agg(old) FROM _mapping)
                         AND {{parallel_filter}}
                       GROUP BY t.id
                 )
@@ -1212,10 +1225,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
         else:
             raise UpgradeError("unsupported column type for selection field: {}".format(ctype))
 
-        data = {
-            "keys": list(mapping),
-            "json": json.dumps(mapping),
-        }
+        data = [list(mapping.keys()), list(mapping.values())]
         queries = [
             cr.mogrify(q, data).decode()
             for q in explode_query_range(cr, format_query(cr, query, table=table, column=field), table=table, alias="t")
@@ -1227,17 +1237,19 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
         if cr.rowcount:
             fields_id = cr.fetchone()[0]
             query = """
-                UPDATE ir_property
-                   SET value_text = %(json)s::jsonb->>value_text
-                 WHERE value_text IN %(keys)s
-                   AND fields_id = %(fields_id)s
+                WITH _mapping AS (
+                    SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+                )
+                UPDATE ir_property p
+                   SET value_text = m.new
+                  FROM _mapping m
+                 WHERE p.value_text IS NOT DISTINCT FROM m.old
+                   AND p.fields_id = %s
             """
-            data = {
-                "keys": tuple(mapping),
-                "json": json.dumps(mapping),
-                "fields_id": fields_id,
-            }
-            queries = [cr.mogrify(q, data).decode() for q in explode_query_range(cr, query, table="ir_property")]
+            data = [list(mapping.keys()), list(mapping.values()), fields_id]
+            queries = [
+                cr.mogrify(q, data).decode() for q in explode_query_range(cr, query, table="ir_property", alias="p")
+            ]
             parallel_execute(cr, queries)
 
     if table_exists(cr, "ir_model_fields_selection"):
@@ -1250,45 +1262,48 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
                     AND f.name = %s
                     AND s.value = ANY(%s)
             """,
-            [model, field, [k for k in mapping if k not in mapping.values()]],
+            [model, field, [k for k in mapping if k is not None and k not in mapping.values()]],
         )
 
     if table_exists(cr, "ir_default"):
         query = """
+            WITH _mapping AS (
+                SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+            )
             UPDATE ir_default d
-               SET json_value = (%(json)s::jsonb->>d.json_value)
-              FROM ir_model_fields f
+               SET json_value = m.new
+              FROM _mapping m,
+                   ir_model_fields f
              WHERE d.field_id = f.id
-               AND f.model = %(model)s
-               AND f.name = %(name)s
-               AND d.json_value IN %(keys)s
+               AND f.model = %s
+               AND f.name = %s
+               AND d.json_value = m.old
         """
         dumped_map = {json.dumps(k): json.dumps(v) for k, v in mapping.items()}
     else:
         query = """
-            UPDATE ir_values
-               SET value = %(json)s::jsonb->>value
-             WHERE model = %(model)s
-               AND name = %(name)s
-               AND key = 'default'
-               AND value IN %(keys)s
+            WITH _mapping AS (
+                SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+            )
+            UPDATE ir_values d
+               SET value = m.new
+              FROM _mapping m
+             WHERE d.model = %s
+               AND d.name = %s
+               AND d.key = 'default'
+               AND d.value = m.old
         """
         dumped_map = {pickle.dumps(k): pickle.dumps(v) for k, v in mapping.items()}
 
-    data = {
-        "keys": tuple(dumped_map),
-        "json": json.dumps(dumped_map),
-        "model": model,
-        "name": field,
-    }
+    data = [list(dumped_map.keys()), list(dumped_map.values()), model, field]
     cr.execute(query, data)
 
     def adapter(leaf, _or, _neg):
         left, op, right = leaf
-        if isinstance(right, (tuple, list)):  # noqa: SIM108
-            right = [mapping.get(r, r) for r in right]
+        if isinstance(right, (tuple, list)):
+            right = [mapping.get(r or None, r or False) for r in right]
         else:
-            right = mapping.get(right, right)
+            right = mapping.get(right or None, right or False)
         return [(left, op, right)]
 
     # skip all inherit, they will be handled by the recursive call
