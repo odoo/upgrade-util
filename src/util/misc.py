@@ -24,6 +24,14 @@ except ImportError:
     from openerp.modules.module import get_module_path
     from openerp.tools.parse_version import parse_version
 
+if release.major_version == "7.0":
+    # This version doesn't handle `saas~` part in versions
+    _parse_version = parse_version
+
+    def parse_version(version):
+        return _parse_version(version.replace("saas~", ""))
+
+
 from .exceptions import MigrationError, SleepyDeveloperError
 
 # python3 shim
