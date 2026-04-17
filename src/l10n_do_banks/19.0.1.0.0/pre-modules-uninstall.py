@@ -4,9 +4,6 @@ from odoo.addons.base.maintenance.migrations import util
 
 _logger = logging.getLogger(__name__)
 
-# Columns added in account_payment_compensation v17.0.1.3.0 that may not
-# exist in older DBs. Created here (earliest script) to avoid UndefinedColumn
-# errors when the ORM reads res.company before _auto_init runs.
 _COMPENSATION_COLUMNS = [
     ("res_company", "compensation_currency_date_reference", "VARCHAR", "'invoice_date'"),
     ("res_company", "compensation_default_percentage_sale_base", "NUMERIC", "1"),
