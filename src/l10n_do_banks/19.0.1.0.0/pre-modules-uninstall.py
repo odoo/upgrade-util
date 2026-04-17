@@ -28,8 +28,13 @@ def uninstall_modules(cr):
         "l10n_do_ecf_status_check",
         "l10n_do_sign_to_xml",
         "hr_course",
+        "advanced_web_domain_widget",
         "hr_employee_relative",
-   
+        "ks_dashboard_ninja",
+        "ks_dn_advance",
+        "account_payment_cash_custom_workflow",
+        "account_payment_compensation_news",  
+        "payment_azul",
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
@@ -59,28 +64,6 @@ def uninstall_modules(cr):
         failed_count,
     )
 
-
-def rename_modules(cr):
-    """Rename modules that have been reorganized in version 19.0."""
-    modules_to_rename = [
-        ("account_reconcile_payment", "l10n_do_account_withholding_tax"),
-    ]
-
-    for old_name, new_name in modules_to_rename:
-        if util.module_installed(cr, old_name):
-            _logger.info("Renaming module %s → %s", old_name, new_name)
-            cr.execute("DELETE FROM ir_module_module WHERE name = %s", (new_name,))
-            cr.execute(
-                "DELETE FROM ir_model_data WHERE module = 'base' AND name = %s AND model = 'ir.module.module'",
-                (f"module_{new_name}",),
-            )
-            util.rename_module(cr, old_name, new_name)
-            _logger.info("Successfully renamed module %s → %s.", old_name, new_name)
-        else:
-            _logger.debug("Module %s is not installed, skipping rename.", old_name)
-
-
 def migrate(cr, version):
     ensure_compensation_columns(cr)
     uninstall_modules(cr)
-    rename_modules(cr)
