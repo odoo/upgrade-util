@@ -637,7 +637,9 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
         super(IntegrityCase, self)._setup_registry()
         cr = self.registry.cursor()
         self.addCleanup(cr.close)
-        if hasattr(self, "registry_enter_test_mode"):
+        if callable(getattr(self, "registry_test_mode", None)):
+            self.enterContext(self.registry_test_mode(cr=cr, registry=self.registry))
+        elif hasattr(self, "registry_enter_test_mode"):
             self.registry_enter_test_mode(cr=cr)
         else:
             self.registry.enter_test_mode(cr)
