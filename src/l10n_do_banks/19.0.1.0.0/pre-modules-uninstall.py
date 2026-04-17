@@ -25,6 +25,11 @@ def uninstall_modules(cr):
     modules_to_uninstall = [
         "l10n_do_hr_course",
         "l10n_do_hr_recurrent_news",
+        "l10n_do_ecf_status_check",
+        "l10n_do_sign_to_xml",
+        "hr_course",
+        "hr_employee_relative",
+   
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
