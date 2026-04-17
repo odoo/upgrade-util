@@ -4,6 +4,24 @@ from odoo.addons.base.maintenance.migrations import util
 
 _logger = logging.getLogger(__name__)
 
+# Columns added in account_payment_compensation v17.0.1.3.0 that may not
+# exist in older DBs. Created here (earliest script) to avoid UndefinedColumn
+# errors when the ORM reads res.company before _auto_init runs.
+_COMPENSATION_COLUMNS = [
+    ("res_company", "compensation_currency_date_reference", "VARCHAR", "'invoice_date'"),
+    ("res_company", "compensation_default_percentage_sale_base", "NUMERIC", "1"),
+    ("res_company", "compensation_default_profit_percentage_sale_base", "NUMERIC", "1"),
+]
+
+
+def ensure_compensation_columns(cr):
+    for table, column, col_type, default in _COMPENSATION_COLUMNS:
+        if not util.column_exists(cr, table, column):
+            _logger.info("Adding missing column %s.%s", table, column)
+            cr.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {col_type} DEFAULT {default}"
+            )
+
 
 def uninstall_modules(cr):
     """Uninstall modules that are no longer needed or compatible with version 19.0."""
@@ -57,5 +75,6 @@ def rename_modules(cr):
 
 
 def migrate(cr, version):
+    ensure_compensation_columns(cr)
     uninstall_modules(cr)
     rename_modules(cr)
