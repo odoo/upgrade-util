@@ -49,7 +49,7 @@ def rename_modules(cr):
     for old_name, new_name in modules_to_rename:
         if util.module_installed(cr, old_name):
             _logger.info("Renaming module %s → %s", old_name, new_name)
-            cr.execute("DELETE FROM ir_module_module WHERE name = %s AND state = 'uninstalled'", (new_name))
+            cr.execute("DELETE FROM ir_module_module WHERE name = %s", (new_name,))
             util.rename_module(cr, old_name, new_name)
             _logger.info("Successfully renamed module %s → %s.", old_name, new_name)
         else:
