@@ -108,6 +108,8 @@ def get_admin_channel(cr):
             ]
             if "public" in e[channel_model_name]._fields:
                 search_rules.append(("public", "=", "groups"))
+            if "auto_join" in e[channel_model_name]._fields:
+                search_rules.append(("auto_join", "=", True))
             admin_channel = next(
                 iter(e[channel_model_name].search(search_rules).sorted(lambda c: "admin" not in c.name.lower()) or []),
                 None,
@@ -121,6 +123,8 @@ def get_admin_channel(cr):
                 }
                 if "public" in e[channel_model_name]._fields:
                     channel_values["public"] = "groups"
+                if "auto_join" in e[channel_model_name]._fields:
+                    channel_values["auto_join"] = True
                 admin_channel = e[channel_model_name].create(channel_values)
 
             e["ir.model.data"].create(
