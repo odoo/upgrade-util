@@ -30,11 +30,8 @@ def uninstall_modules(cr):
         "hr_course",
         "advanced_web_domain_widget",
         "hr_employee_relative",
-        "ks_dashboard_ninja",
-        "ks_dn_advance",
         "account_payment_cash_custom_workflow",
-        "account_payment_compensation_news",  
-        "payment_azul",
+        "account_payment_compensation_news",
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
