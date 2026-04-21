@@ -4,7 +4,7 @@ import operator
 import os
 
 from .const import ENVIRON, NEARLYWARN
-from .misc import _cached, parse_version, version_gte
+from .misc import parse_version, version_gte
 
 _logger = logging.getLogger(__name__)
 
@@ -12,7 +12,6 @@ _logger = logging.getLogger(__name__)
 if version_gte("saas~17.1"):
     from ._inherit import Inherit, frozendict
 
-    @_cached
     def _get_inheritance_data(cr):
         base_version = _get_base_version(cr)[:2] + ("*final",)
         cr.execute(

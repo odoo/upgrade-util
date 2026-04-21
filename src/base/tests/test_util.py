@@ -15,8 +15,13 @@ try:
 except ImportError:
     import mock
 
-from odoo import modules
+from odoo import SUPERUSER_ID, api, modules
 from odoo.tools import mute_logger
+
+try:
+    from odoo.sql_db import db_connect
+except ImportError:
+    from openerp.sql_db import db_connect
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
@@ -502,6 +507,9 @@ class TestRemoveFieldDomains(UnitTestCase):
         ]
     )
     def test_remove_field(self, domain, expected):
+        self._test_remove_field(domain, expected)
+
+    def _test_remove_field(self, domain, expected, **kw):
         cr = self.env.cr
         cr.execute(
             "INSERT INTO ir_filters(name, model_id, domain, context, sort)"
@@ -510,12 +518,16 @@ class TestRemoveFieldDomains(UnitTestCase):
         )
         (filter_id,) = cr.fetchone()
 
-        util.remove_field(cr, "base.module.update", "updated")
+        util.remove_field(cr, "base.module.update", "updated", **kw)
 
         cr.execute("SELECT domain FROM ir_filters WHERE id = %s", [filter_id])
         altered_domain = literal_eval(cr.fetchone()[0])
 
         self.assertEqual(altered_domain, expected)
+
+    def test_remove_field_no_update_references(self):
+        domain = [("updated", "=", 0)]
+        self._test_remove_field(domain, domain, update_references=False)
 
 
 class TestIrExports(UnitTestCase):
@@ -1495,6 +1507,27 @@ class TestNamedCursors(UnitTestCase):
         self.assertEqual(result, expected)
 
 
+class TestQueryIds(UnitTestCase):
+    def test_straight(self):
+        result = list(util.query_ids(self.env.cr, "SELECT * FROM (VALUES (1), (2)) AS x(x)", itersize=2))
+        self.assertEqual(result, [1, 2])
+
+    def test_chunks(self):
+        with util.query_ids(self.env.cr, "SELECT * FROM (VALUES (1), (2)) AS x(x)") as ids:
+            result = list(util.chunks(ids, 100, fmt=list))
+        self.assertEqual(result, [[1, 2]])
+
+    def test_destructor(self):
+        ids = util.query_ids(self.env.cr, "SELECT id from res_users")
+        del ids
+
+    def test_pk_violation(self):
+        with db_connect(self.env.cr.dbname).cursor() as cr, mute_logger("odoo.sql_db"), self.assertRaises(
+            ValueError
+        ), util.query_ids(cr, "SELECT * FROM (VALUES (1), (1)) AS x(x)") as ids:
+            list(ids)
+
+
 class TestRecords(UnitTestCase):
     def test_rename_xmlid(self):
         cr = self.env.cr
@@ -2331,6 +2364,7 @@ def not_doing_anything_converter(el):
     return True
 
 
+@unittest.skipUnless(util.version_gte("15.0"), "Only works on Odoo >= 15 (python >= 3.7)")
 class TestHTMLFormat(UnitTestCase):
     def testsnip(self):
         view_arch = """
@@ -2342,24 +2376,27 @@ class TestHTMLFormat(UnitTestCase):
                 </script>
             </html>
         """
-        view_id = self.env["ir.ui.view"].create(
-            {
-                "name": "not_for_anything",
-                "type": "qweb",
-                "mode": "primary",
-                "key": "test.htmlconvert",
-                "arch_db": view_arch,
-            }
-        )
-        cr = self.env.cr
-        snippets.convert_html_content(
-            cr,
-            snippets.html_converter(
-                not_doing_anything_converter, selector="//*[hasclass('fake_class_not_doing_anything')]"
-            ),
-        )
-        util.invalidate(view_id)
-        res = self.env["ir.ui.view"].search_read([("id", "=", view_id.id)], ["arch_db"])
+        vals = {
+            "name": "not_for_anything",
+            "type": "qweb",
+            "mode": "primary",
+            "key": "test.htmlconvert",
+            "arch_db": view_arch,
+        }
+        # util.convert_html_columns() commits the cursor, use a new transaction to not mess up the test_cr
+        with self.registry.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            view_id = env["ir.ui.view"].create(vals)
+            snippets.convert_html_content(
+                cr,
+                snippets.html_converter(
+                    not_doing_anything_converter, selector="//*[hasclass('fake_class_not_doing_anything')]"
+                ),
+            )
+            util.invalidate(view_id)
+            res = env["ir.ui.view"].search_read([("id", "=", view_id.id)], ["arch_db"])
+            # clean up committed data
+            view_id.unlink()
         self.assertEqual(len(res), 1)
         oneline = lambda s: re.sub(r"\s+", " ", s.strip())
         self.assertEqual(oneline(res[0]["arch_db"]), oneline(view_arch))
@@ -2593,6 +2630,29 @@ class TestRenameXMLID(UnitTestCase):
         self.assertIn('t-name="base.rename_view"', test_view_1.arch_db)
 
 
+class TestRefs(UnitTestCase):
+    def test_refs_found(self):
+        cr = self.env.cr
+        partner_id = util.ref(cr, "base.partner_root")
+        result = util.refs(cr, ["base.partner_root"])
+        self.assertEqual(result, {"base.partner_root": partner_id})
+
+    def test_refs_missing(self):
+        cr = self.env.cr
+        result = util.refs(cr, ["base.no_such_xmlid"])
+        self.assertEqual(result, {"base.no_such_xmlid": None})
+
+    def test_refs_strict_filters_missing(self):
+        cr = self.env.cr
+        partner_id = util.ref(cr, "base.partner_root")
+        result = util.refs(cr, ["base.partner_root", "base.no_such_xmlid"], strict=True)
+        self.assertEqual(result, {"base.partner_root": partner_id})
+
+    def test_refs_empty(self):
+        result = util.refs(self.env.cr, [])
+        self.assertEqual(result, {})
+
+
 class TestAssertUpdated(UnitTestCase):
     def test_assert_updated(self):
         p1 = self.env["res.partner"].create({"name": "Levi"})
@@ -2614,7 +2674,9 @@ class TestAssertUpdated(UnitTestCase):
             p1.city = "Underground"
             util.flush(p1)
         with self.assertRaises(AssertionError), self.assertUpdated("res_partner", ids=[]):
-            self.env["res.partner"].create({"name": "Annie Leonhart"})
+            if util.version_gte("13.0"):
+                # Before 13.0 creating a record will also update some of its fields
+                self.env["res.partner"].create({"name": "Annie Leonhart"})
 
         # when ids has multiple records, all records should be updated
         with self.assertUpdated("res_partner", ids=[p1.id, p2.id]):
@@ -2648,7 +2710,9 @@ class TestAssertUpdated(UnitTestCase):
 
         # when ids is [], assert no record is updated
         with self.assertNotUpdated("res_partner", ids=[]):
-            self.env["res.partner"].create({"name": "Marco Bodt"})
+            if util.version_gte("13.0"):
+                # Before 13.0 creating a record will also update some of its fields
+                self.env["res.partner"].create({"name": "Marco Bodt"})
         with self.assertRaises(AssertionError), self.assertNotUpdated("res_partner", ids=[]):
             p2.city = "Shiganshina"
             util.flush(p2)

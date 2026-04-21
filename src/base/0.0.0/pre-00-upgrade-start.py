@@ -1,4 +1,10 @@
-# -*- coding: utf-8 -*-
+try:
+    from odoo.addons.base.maintenance.migrations import util
+    from odoo.addons.base.maintenance.migrations.util.modules import _get_autoinstallable_modules
+except ImportError:
+    # for symlinked versions
+    from openerp.addons.base.maintenance.migrations import util
+    from openerp.addons.base.maintenance.migrations.util.modules import _get_autoinstallable_modules
 
 
 def migrate(cr, version):
@@ -13,3 +19,4 @@ def migrate(cr, version):
          WHERE EXCLUDED.value::timestamp - ir_config_parameter.value::timestamp > interval '72 hours'
         """
     )
+    util.ENVIRON["__modules_to_skip_autoinstall"] = _get_autoinstallable_modules(cr)

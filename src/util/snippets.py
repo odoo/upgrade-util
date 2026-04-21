@@ -1,4 +1,7 @@
-# -*- coding: utf-8 -*-
+import concurrent
+import contextlib
+import enum
+import functools
 import logging
 import multiprocessing
 import re
@@ -10,10 +13,14 @@ from psycopg2 import sql
 from psycopg2.extensions import quote_ident
 from psycopg2.extras import Json
 
+with contextlib.suppress(ImportError):
+    from odoo import sql_db
+
 from .const import NEARLYWARN
 from .helpers import table_of_model
-from .misc import log_progress, make_pickleable_callback
-from .pg import column_exists, column_type, get_max_workers, table_exists
+from .misc import log_progress, make_pickleable_callback, version_gte
+from .modules import INSTALLED_MODULE_STATES
+from .pg import SQLStr, column_exists, column_type, format_query, get_max_workers, table_exists
 
 _logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")
@@ -82,6 +89,11 @@ def get_regex_from_snippets_list(snippets):
     return "(%s)" % "|".join(snippet.klass for snippet in snippets)
 
 
+class FieldScope(enum.Enum):
+    ALL = 1
+    SNIPPETS = 2
+
+
 def get_html_fields(cr):
     # yield (table, column) of stored html fields (that needs snippets updates)
     for table, columns in html_fields(cr):
@@ -89,20 +101,62 @@ def get_html_fields(cr):
             yield table, quote_ident(column, cr._cnx)
 
 
-def html_fields(cr):
-    cr.execute(
+def _html_fields(cr, modules):
+    if modules is None:
+        module_cte = extra_join = ""
+    else:
+        module_cte = """
+            _modules AS (
+                SELECT name
+                  FROM ir_module_module
+                 WHERE name = ANY(%(root_modules)s)
+                   AND state IN %(states)s
+                 UNION
+                SELECT m.name
+                  FROM ir_module_module m
+                  JOIN ir_module_module_dependency d
+                    ON d.module_id = m.id
+                  JOIN _modules w
+                    ON w.name = d.name
+                 WHERE m.state IN %(states)s
+            ),
         """
-        SELECT f.model, array_agg(f.name)
-          FROM ir_model_fields f
-          JOIN ir_model m ON m.id = f.model_id
-         WHERE f.ttype = 'html'
-           AND f.store = true
-           AND m.transient = false
-           AND f.model NOT LIKE 'ir.actions%'
-           AND f.model != 'mail.message'
-      GROUP BY f.model
-    """
+        extra_join = """
+              JOIN ir_model_data imd
+                ON imd.model = 'ir.model.fields'
+               AND imd.res_id = f.id
+              JOIN _modules
+                ON imd.module = _modules.name
+        """
+
+    query = format_query(
+        cr,
+        """
+        WITH RECURSIVE
+        {}
+        _fields AS (
+            SELECT f.model, f.name
+              FROM ir_model_fields f
+              JOIN ir_model m
+                ON m.id = f.model_id
+                {}
+             WHERE f.ttype = 'html'
+               AND f.store = true
+               AND m.transient = false
+               AND f.model NOT LIKE 'ir.actions%%'
+               AND f.model NOT IN ('mail.message', 'mail.mail')
+          GROUP BY f.model, f.name
+        )
+        SELECT model, array_agg(name ORDER BY name)
+          FROM _fields
+      GROUP BY model
+      ORDER BY model
+        """,
+        SQLStr(module_cte),
+        SQLStr(extra_join),
     )
+
+    cr.execute(query, {"root_modules": modules, "states": INSTALLED_MODULE_STATES})
     for model, columns in cr.fetchall():
         table = table_of_model(cr, model)
         if not table_exists(cr, table):
@@ -111,6 +165,15 @@ def html_fields(cr):
         existing_columns = [column for column in columns if column_exists(cr, table, column)]
         if existing_columns:
             yield table, existing_columns
+
+
+def html_fields(cr):
+    return _html_fields(cr, modules=None)
+
+
+def snippet_fields(cr):
+    root_modules = ["html_builder"] if version_gte("19.0") else ["website", "mass_mailing"]
+    return _html_fields(cr, modules=root_modules)
 
 
 def parse_style(attr):
@@ -219,11 +282,26 @@ class QWebConverter(BaseConverter):
 
 
 class Convertor:
-    def __init__(self, converters, callback):
+    def __init__(self, converters, callback, dbname=None, update_query=None):
         self.converters = converters
         self.callback = callback
+        self.dbname = dbname
+        self.update_query = update_query
+        # when db_name is set update_query must be set also
+        assert not (self.dbname is None) ^ (self.update_query is None)
 
-    def __call__(self, row):
+    def __call__(self, row_or_query):
+        # backwards compatibility: caller passes rows and expects us to return them converted
+        if not self.dbname:
+            return self._convert_row(row_or_query)
+        # improved interface: caller passes a query for us to fetch input rows, convert and update them
+        with sql_db.db_connect(self.dbname).cursor() as cr:
+            cr.execute(row_or_query)
+            for changes in filter(None, map(self._convert_row, cr.fetchall())):
+                cr.execute(self.update_query, changes)
+        return None
+
+    def _convert_row(self, row):
         converters = self.converters
         columns = self.converters.keys()
         converter_callback = self.callback
@@ -243,7 +321,7 @@ class Convertor:
             changes[column] = new_content
             if has_changed:
                 changes["id"] = res_id
-        return changes
+        return changes if "id" in changes else None
 
 
 def convert_html_columns(cr, table, columns, converter_callback, where_column="IS NOT NULL", extra_where="true"):
@@ -277,22 +355,44 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
         (base_select_query + "\n       AND id BETWEEN {} AND  {}".format(*x))
         for x in determine_chunk_limit_ids(cr, table, columns, "({}) AND ({})".format(where, extra_where))
     ]
+    if not split_queries:
+        return
 
     update_sql = ", ".join(f'"{column}" = %({column})s' for column in columns)
     update_query = f"UPDATE {table} SET {update_sql} WHERE id = %(id)s"
 
-    extrakwargs = {"mp_context": multiprocessing.get_context("fork")} if sys.version_info >= (3, 7) else {}
-    with ProcessPoolExecutor(max_workers=get_max_workers(), **extrakwargs) as executor:
-        convert = Convertor(converters, converter_callback)
-        for query in log_progress(split_queries, logger=_logger, qualifier=f"{table} updates"):
-            cr.execute(query)
-            for data in executor.map(convert, cr.fetchall(), chunksize=1000):
-                if "id" in data:
-                    cr.execute(update_query, data)
+    # children cannot borrow from copies of the same pool, it will cause protocol error
+    def init_worker_process():
+        sql_db._Pool = None
+
+    cr.commit()
+    with ProcessPoolExecutor(
+        max_workers=get_max_workers(), initializer=init_worker_process, mp_context=multiprocessing.get_context("fork")
+    ) as executor:
+        convert = Convertor(converters, converter_callback, cr.dbname, update_query)
+        futures = [executor.submit(convert, query) for query in split_queries]
+        for future in log_progress(
+            concurrent.futures.as_completed(futures),
+            logger=_logger,
+            qualifier=f"{table} updates",
+            size=len(split_queries),
+            estimate=False,
+            log_hundred_percent=True,
+        ):
+            # just for raising any worker exception
+            future.result()
+    cr.commit()
+
+
+if sys.version_info < (3, 7):
+
+    @functools.wraps(convert_html_columns)
+    def convert_html_columns(*args, **kwargs):
+        raise RuntimeError("This function only works on python >= 3.7 (Odoo 15 minimum)")
 
 
 def determine_chunk_limit_ids(cr, table, column_arr, where):
-    bytes_per_chunk = 100 * 1024 * 1024
+    bytes_per_chunk = 10 * 1024 * 1024
     columns = ", ".join(quote_ident(column, cr._cnx) for column in column_arr if column != "id")
     cr.execute(
         f"""
@@ -311,6 +411,7 @@ def convert_html_content(
     cr,
     converter_callback,
     where_column="IS NOT NULL",
+    scope=FieldScope.ALL,
     **kwargs,
 ):
     r"""
@@ -323,6 +424,8 @@ def convert_html_content(
     :param str where_column: filtering such as
         - "like '%abc%xyz%'"
         - "~* '\yabc.*xyz\y'"
+    :param FieldScope scope: if `FieldScope.SNIPPETS`, only process HTML fields defined by
+                             modules that depend on the snippet-engine module (version dependent).
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
     if hasattr(converter_callback, "for_html"):  # noqa: SIM108
@@ -331,7 +434,8 @@ def convert_html_content(
         # trust the given converter to handle HTML
         html_converter = converter_callback
 
-    for table, columns in html_fields(cr):
+    fields_iterator = snippet_fields if scope == FieldScope.SNIPPETS else html_fields
+    for table, columns in fields_iterator(cr):
         convert_html_columns(cr, table, columns, html_converter, where_column=where_column, **kwargs)
 
     if hasattr(converter_callback, "for_qweb"):

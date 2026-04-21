@@ -190,7 +190,23 @@ def _remove_field_from_context(context, fieldname):
     return changed
 
 
-def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inherit=(), keep_as_attachments=False):
+def _rm_field_adapter(leaf, is_or, negated):
+    # replace by TRUE_LEAF, unless negated or in a OR operation but not negated
+    if is_or ^ negated:
+        return [FALSE_LEAF]
+    return [TRUE_LEAF]
+
+
+def remove_field(
+    cr,
+    model,
+    fieldname,
+    cascade=False,
+    drop_column=True,
+    skip_inherit=(),
+    keep_as_attachments=False,
+    update_references=True,
+):
     """
     Remove a field and its references from the database.
 
@@ -206,42 +222,42 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
                                           of the field, use `"*"` to skip all
     :param bool keep_as_attachments: for binary fields, whether the data should be kept
                                      as attachments
+    :param bool update_references: whether to update all references.
+                                   If `False`, don't update dashboard, filters, export paths,
+                                   domains, and relations for related fields.
     """
     _validate_model(model)
 
     ENVIRON["__renamed_fields"][model][fieldname] = None
 
-    # clean dashboard's contexts
-    for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
-        context = safe_eval(action.get("context", "{}"))
-        changed = _remove_field_from_context(context, fieldname)
-        action.set("context", unicode(context))
-        if changed:
-            add_to_migration_reports(
-                ("ir.ui.view.custom", id_, action.get("string", "ir.ui.view.custom")), "Filters/Dashboards"
+    if update_references:
+        # clean dashboard's contexts
+        for id_, action in _dashboard_actions(cr, r"\y{}\y".format(fieldname), model):
+            context = safe_eval(action.get("context", "{}"))
+            changed = _remove_field_from_context(context, fieldname)
+            action.set("context", unicode(context))
+            if changed:
+                add_to_migration_reports(
+                    ("ir.ui.view.custom", id_, action.get("string", "ir.ui.view.custom")), "Filters/Dashboards"
+                )
+
+        _remove_field_from_filters(cr, model, fieldname)
+
+        _remove_import_export_paths(cr, model, fieldname)
+
+        related = None
+        if column_exists(cr, "ir_model_fields", "related"):
+            cr.execute("SELECT related FROM ir_model_fields WHERE model=%s AND name=%s", [model, fieldname])
+            if cr.rowcount:
+                related = cr.fetchone()[0]
+
+        if related:
+            update_field_usage(cr, model, fieldname, related, skip_inherit=skip_inherit)
+        else:
+            # clean domains
+            adapt_domains(
+                cr, model, fieldname, "ignored", adapter=_rm_field_adapter, skip_inherit=skip_inherit, force_adapt=True
             )
-
-    _remove_field_from_filters(cr, model, fieldname)
-
-    _remove_import_export_paths(cr, model, fieldname)
-
-    def adapter(leaf, is_or, negated):
-        # replace by TRUE_LEAF, unless negated or in a OR operation but not negated
-        if is_or ^ negated:
-            return [FALSE_LEAF]
-        return [TRUE_LEAF]
-
-    related = None
-    if column_exists(cr, "ir_model_fields", "related"):
-        cr.execute("SELECT related FROM ir_model_fields WHERE model=%s AND name=%s", [model, fieldname])
-        if cr.rowcount:
-            related = cr.fetchone()[0]
-
-    if related:
-        update_field_usage(cr, model, fieldname, related, skip_inherit=skip_inherit)
-    else:
-        # clean domains
-        adapt_domains(cr, model, fieldname, "ignored", adapter=adapter, skip_inherit=skip_inherit, force_adapt=True)
 
     if table_exists(cr, "ir_server_object_lines"):
         cr.execute(
@@ -441,6 +457,7 @@ def remove_field(cr, model, fieldname, cascade=False, drop_column=True, skip_inh
             drop_column=drop_column,
             skip_inherit=skip_inherit,
             keep_as_attachments=keep_as_attachments,
+            update_references=update_references,
         )
 
 
@@ -1164,22 +1181,39 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
     _validate_model(model)
     if not mapping:
         return
+    if not all(
+        isinstance(k, (basestring, type(None))) and isinstance(v, (basestring, type(None))) for k, v in mapping.items()
+    ):
+        raise ValueError("mapping keys and values should be string or None")
     table = table_of_model(cr, model)
 
     if column_exists(cr, table, field):
         ctype = column_type(cr, table, field)
         if ctype == "varchar":
-            query = "UPDATE {table} t SET {column} = %(json)s::jsonb->>t.{column} WHERE t.{column} = ANY(%(keys)s)"
+            query = """
+                WITH _mapping AS (
+                    SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+                )
+                UPDATE {table} t
+                   SET {column} = m.new
+                  FROM _mapping m
+                 WHERE m.old IS NOT DISTINCT FROM t.{column}
+            """
         elif ctype == "jsonb":
             # company dependent selection field
             query = """
-                WITH upd AS (
+                WITH _mapping AS (
+                    SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+                ),
+                upd AS (
                      SELECT t.id,
-                            jsonb_object_agg(v.key, COALESCE(%(json)s::jsonb->>v.value, v.value)) AS value
+                            jsonb_object_agg(v.key, COALESCE(m.new, v.value)) AS value
                        FROM {table} t
                        JOIN LATERAL jsonb_each_text(t.{column}) v
                          ON true
-                      WHERE jsonb_path_query_array(t.{column}, '$.*') ?| %(keys)s
+                  LEFT JOIN _mapping m
+                         ON m.old IS NOT DISTINCT FROM v.value
+                      WHERE jsonb_path_query_array(t.{column}, '$.*') ?| (SELECT array_agg(old) FROM _mapping)
                         AND {{parallel_filter}}
                       GROUP BY t.id
                 )
@@ -1191,10 +1225,7 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
         else:
             raise UpgradeError("unsupported column type for selection field: {}".format(ctype))
 
-        data = {
-            "keys": list(mapping),
-            "json": json.dumps(mapping),
-        }
+        data = [list(mapping.keys()), list(mapping.values())]
         queries = [
             cr.mogrify(q, data).decode()
             for q in explode_query_range(cr, format_query(cr, query, table=table, column=field), table=table, alias="t")
@@ -1206,17 +1237,19 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
         if cr.rowcount:
             fields_id = cr.fetchone()[0]
             query = """
-                UPDATE ir_property
-                   SET value_text = %(json)s::jsonb->>value_text
-                 WHERE value_text IN %(keys)s
-                   AND fields_id = %(fields_id)s
+                WITH _mapping AS (
+                    SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+                )
+                UPDATE ir_property p
+                   SET value_text = m.new
+                  FROM _mapping m
+                 WHERE p.value_text IS NOT DISTINCT FROM m.old
+                   AND p.fields_id = %s
             """
-            data = {
-                "keys": tuple(mapping),
-                "json": json.dumps(mapping),
-                "fields_id": fields_id,
-            }
-            queries = [cr.mogrify(q, data).decode() for q in explode_query_range(cr, query, table="ir_property")]
+            data = [list(mapping.keys()), list(mapping.values()), fields_id]
+            queries = [
+                cr.mogrify(q, data).decode() for q in explode_query_range(cr, query, table="ir_property", alias="p")
+            ]
             parallel_execute(cr, queries)
 
     if table_exists(cr, "ir_model_fields_selection"):
@@ -1229,45 +1262,48 @@ def change_field_selection_values(cr, model, field, mapping, skip_inherit=()):
                     AND f.name = %s
                     AND s.value = ANY(%s)
             """,
-            [model, field, [k for k in mapping if k not in mapping.values()]],
+            [model, field, [k for k in mapping if k is not None and k not in mapping.values()]],
         )
 
     if table_exists(cr, "ir_default"):
         query = """
+            WITH _mapping AS (
+                SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+            )
             UPDATE ir_default d
-               SET json_value = (%(json)s::jsonb->>d.json_value)
-              FROM ir_model_fields f
+               SET json_value = m.new
+              FROM _mapping m,
+                   ir_model_fields f
              WHERE d.field_id = f.id
-               AND f.model = %(model)s
-               AND f.name = %(name)s
-               AND d.json_value IN %(keys)s
+               AND f.model = %s
+               AND f.name = %s
+               AND d.json_value = m.old
         """
         dumped_map = {json.dumps(k): json.dumps(v) for k, v in mapping.items()}
     else:
         query = """
-            UPDATE ir_values
-               SET value = %(json)s::jsonb->>value
-             WHERE model = %(model)s
-               AND name = %(name)s
-               AND key = 'default'
-               AND value IN %(keys)s
+            WITH _mapping AS (
+                SELECT * FROM UNNEST(%s::text[], %s::text[]) AS u(old, new)
+            )
+            UPDATE ir_values d
+               SET value = m.new
+              FROM _mapping m
+             WHERE d.model = %s
+               AND d.name = %s
+               AND d.key = 'default'
+               AND d.value = m.old
         """
         dumped_map = {pickle.dumps(k): pickle.dumps(v) for k, v in mapping.items()}
 
-    data = {
-        "keys": tuple(dumped_map),
-        "json": json.dumps(dumped_map),
-        "model": model,
-        "name": field,
-    }
+    data = [list(dumped_map.keys()), list(dumped_map.values()), model, field]
     cr.execute(query, data)
 
     def adapter(leaf, _or, _neg):
         left, op, right = leaf
-        if isinstance(right, (tuple, list)):  # noqa: SIM108
-            right = [mapping.get(r, r) for r in right]
+        if isinstance(right, (tuple, list)):
+            right = [mapping.get(r or None, r or False) for r in right]
         else:
-            right = mapping.get(right, right)
+            right = mapping.get(right or None, right or False)
         return [(left, op, right)]
 
     # skip all inherit, they will be handled by the recursive call
@@ -1319,6 +1355,8 @@ def update_field_usage(cr, model, old, new, domain_adapter=None, skip_inherit=()
         - ir_act_server
         - mail_alias
         - ir_ui_view_custom (dashboard)
+        - sign_item_type
+        - sign_item
         - domains (using `domain_adapter`)
         - related fields
 
@@ -1419,32 +1457,115 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
         "models": tuple(only_models) if only_models else (),
     }
 
-    # ir.action.server
-    if column_exists(cr, "ir_act_server", "update_path") and only_models:
-        cr.execute(
-            """
-            SELECT a.id,
-                   a.update_path,
-                   m.model
+    if only_models:
+        # ir.action.server, sign.item.type, sign.item
+        searches = []
+        sa_query = """
+            SELECT a.id, a.update_path, m.model
               FROM ir_act_server a
               JOIN ir_model m
-                ON a.model_id = m.id
+                ON m.id = a.model_id
              WHERE a.state = 'object_write'
                AND a.update_path ~ %(old)s
-            """,
-            p,
-        )
-        to_update = {}
-        for act_id, update_path, src_model in cr.fetchall():
-            for dst_model in only_models:
-                new_path = _replace_path(cr, old, new, src_model, dst_model, update_path)
-                if new_path != update_path:
-                    to_update[act_id] = new_path
-        if to_update:
-            cr.execute(
-                "UPDATE ir_act_server SET update_path = %s::jsonb->>id::text WHERE id IN %s",
-                [Json(to_update), tuple(to_update)],
+        """
+        searches.append(("ir_act_server", "update_path", sa_query))
+
+        if column_exists(cr, "sign_item_type", "model_id"):
+            # introduced in saas~18.1
+            sign_item_type_query = """
+                SELECT t.id, t.auto_field, m.model
+                  FROM sign_item_type t
+                  JOIN ir_model m
+                    ON m.id = t.model_id
+                 WHERE t.auto_field ~ %(old)s
+            """
+        else:
+            # before, model was always "res.partner"
+            sign_item_type_query = """
+                SELECT t.id, t.auto_field, 'res.partner'
+                  FROM sign_item_type t
+                 WHERE t.auto_field ~ %(old)s
+            """
+
+        searches.append(("sign_item_type", "auto_field", sign_item_type_query))
+        if table_exists(cr, "hr_contract_salary_offer"):
+            # `sign.item.name` is a field path of `hr.{contract,version}` if
+            # they are linked to a template used by a `hr.contract.salary.offer` record.
+            # https://github.com/odoo/enterprise/blob/61b46e9ac8397be04a896da2cbea5fa9b7db7766/hr_contract_salary/controllers/main.py#L1046
+            #
+            # The template in an offer:
+            # * From 19, directly stored
+            #   https://github.com/odoo/enterprise/blob/1d10ee238a50e7bdb552efdeafc068c5127cd49a/hr_contract_salary/controllers/main.py#L995
+            # * Before 19, read from the linked contract/version.
+            #   https://github.com/odoo/enterprise/blob/f1573a1e2546f47f1a351d21764ba5433c205530/hr_contract_salary/controllers/main.py#L975
+            #
+            # The template in the sign item:
+            # * From 18.3, related via the sign document
+            #   https://github.com/odoo/enterprise/blob/b3bd0601c5bf2783b891ced414d85161c5cc2c3c/sign/models/sign_item.py#L13
+            # * Before, directly stored
+            #   https://github.com/odoo/enterprise/blob/2a7bc7896f808cf085aa97448f3e417faf94d124/sign/models/sign_item.py#L12
+            if column_exists(cr, "hr_contract_salary_offer", "sign_template_id"):
+                offer_template = SQLStr(
+                    "SELECT sign_template_id AS id FROM hr_contract_salary_offer GROUP BY sign_template_id"
+                )
+            else:
+                offer_template = format_query(
+                    cr,
+                    """
+                    SELECT CASE
+                               WHEN o.employee_id IS NOT NULL THEN c.contract_update_template_id
+                               ELSE c.sign_template_id
+                           END AS id
+                      FROM hr_contract_salary_offer o
+                      JOIN {contract} c
+                        ON c.id = o.contract_template_id
+                  GROUP BY 1
+                    """,
+                    contract="hr_version" if table_exists(cr, "hr_version") else "hr_contract",
+                )
+
+            if column_exists(cr, "sign_item", "template_id"):
+                item_template = "i.template_id"
+                doc_join = ""
+            else:
+                item_template = "d.template_id"
+                doc_join = "JOIN sign_document d ON i.document_id = d.id"
+            sign_item_query = format_query(
+                cr,
+                r"""
+                WITH _offer_template AS (
+                    {offer_template}
+                )
+                SELECT i.id, i.name, f.model
+                  FROM sign_item i
+                       {doc_join}
+                  JOIN _offer_template t
+                    ON {item_template} = t.id
+                  JOIN ir_model_fields f
+                    ON f.model IN ('hr.version', 'hr.contract')
+                   AND i.name ~ CONCAT('^', f.name, '(\..+)?$')  -- too broad :/
+                 WHERE i.name ~ %(old)s
+                """,
+                doc_join=SQLStr(doc_join),
+                item_template=SQLStr(item_template),
+                offer_template=offer_template,
             )
+            searches.append(("sign_item", "name", sign_item_query))
+
+        for table, column, query in searches:
+            if not column_exists(cr, table, column):
+                continue
+            cr.execute(query, p)
+
+            to_update = {}
+            for rec_id, field_path, src_model in cr.fetchall():
+                for dst_model in only_models:
+                    new_path = _replace_path(cr, old, new, src_model, dst_model, field_path)
+                    if new_path != field_path:
+                        to_update[rec_id] = new_path
+            if to_update:
+                upd_query = format_query(cr, "UPDATE {} SET {} = %s::jsonb->>id::text WHERE id IN %s", table, column)
+                cr.execute(upd_query, [Json(to_update), tuple(to_update)])
 
     # Modifying server action is dangerous.
     # The search pattern can be anywhere in the code, leading to invalid codes.

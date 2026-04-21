@@ -27,6 +27,7 @@ from .pg import (
     get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
+    query_ids,
     table_exists,
     update_m2m_tables,
     view_exists,
@@ -119,6 +120,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                   JOIN "{}" r ON d.model = %s AND d.res_id = r.id
                  WHERE d.module != '__export__'
                    AND {}
+                GROUP BY d.res_id
             """.format(ir.table, ir.model_filter(prefix="r.")),
             [ref_model, model],
         ).decode()
@@ -128,17 +130,17 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                 'SELECT id FROM "{}" r WHERE {}'.format(ir.table, ir.model_filter(prefix="r.")), [model]
             ).decode()
 
-        cr.execute(query)
-        if ir.table == "ir_ui_view":
-            for (view_id,) in cr.fetchall():
-                remove_view(cr, view_id=view_id, silent=True)
-        else:
-            # remove in batch
-            size = (cr.rowcount + chunk_size - 1) / chunk_size
-            it = chunks([id for (id,) in cr.fetchall()], chunk_size, fmt=tuple)
-            for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
-                remove_records(cr, ref_model, sub_ids)
-                _rm_refs(cr, ref_model, sub_ids)
+        with query_ids(cr, query, itersize=chunk_size) as ids_:
+            if ir.table == "ir_ui_view":
+                for view_id in ids_:
+                    remove_view(cr, view_id=view_id, silent=True)
+            else:
+                # remove in batch
+                size = (len(ids_) + chunk_size - 1) / chunk_size
+                it = chunks(ids_, chunk_size, fmt=tuple)
+                for sub_ids in log_progress(it, _logger, qualifier=ir.table, size=size):
+                    remove_records(cr, ref_model, sub_ids)
+                    _rm_refs(cr, ref_model, sub_ids)
 
         if ir.set_unknown:
             # Link remaining records not linked to a XMLID
@@ -587,7 +589,9 @@ def merge_model(cr, source, target, drop_table=True, fields_mapping=None, ignore
     remove_model(cr, source, drop_table=drop_table, ignore_m2m=ignore_m2m)
 
 
-def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with_inherit_parents=True):
+def remove_inherit_from_model(
+    cr, model, inherit, keep=(), skip_inherit=(), with_inherit_parents=True, skip_update_references=()
+):
     """
     Remove ``inherit`` from ``model``.
 
@@ -604,6 +608,8 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
     :param tuple(str) skip_inherit: list of descendant models of ``model`` to not process
     :param boolean with_inherit_parents: if unset, remove fields coming from ``inherit``
                                          only, keeping all fields from its parents
+    :param tuple(str) or "*" skip_update_references: field names whose references should not be
+                                                     updated upon deletion. Use `"*"` for all fields.
     """
     _validate_model(model)
     _validate_model(inherit)
@@ -645,12 +651,20 @@ def remove_inherit_from_model(cr, model, inherit, keep=(), skip_inherit=(), with
                     format_query(cr, "DELETE FROM {} WHERE ({})", ir.table, sql.SQL(ir.model_filter())), [model]
                 ).decode()
                 explode_execute(cr, query, table=table)
-        remove_field(cr, model, field, skip_inherit="*")  # inherits will be removed by the recursive call.
+        # skip_inherit set to `*` as inherits will be removed by the recursive call.
+        update_references = False if skip_update_references == "*" else field not in skip_update_references
+        remove_field(cr, model, field, skip_inherit="*", update_references=update_references)
 
     # down on inherits of `model`
     for inh in for_each_inherit(cr, model, skip_inherit):
         remove_inherit_from_model(
-            cr, inh.model, inherit, keep=keep, skip_inherit=skip_inherit, with_inherit_parents=with_inherit_parents
+            cr,
+            inh.model,
+            inherit,
+            keep=keep,
+            skip_inherit=skip_inherit,
+            with_inherit_parents=with_inherit_parents,
+            skip_update_references=skip_update_references,
         )
 
 

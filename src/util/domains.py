@@ -35,7 +35,7 @@ from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext, ast_unparse, literal_replace, safe_eval, version_gte
-from .pg import column_exists, get_value_or_en_translation, table_exists
+from .pg import SQLStr, column_exists, format_query, get_value_or_en_translation, table_exists
 from .records import edit_view
 
 # python3 shims
@@ -462,15 +462,21 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
     target_model = model
 
     match_old = r"\y{}\y".format(re.escape(old))
+    dot_old = r"\.{}\y".format(re.escape(old))
     for df in _get_domain_fields(cr):
-        cr.execute(
+        query = format_query(
+            cr,
             """
-            SELECT id, {df.model_select}, {df.domain_column}
-              FROM {df.table} t
-             WHERE {df.domain_column} ~ %s
-        """.format(df=df),
-            [match_old],
+                SELECT id, {model}, {domain}
+                  FROM {table} t
+                 WHERE {domain} ~ CASE WHEN {model} = %s THEN %s ELSE %s END
+            """,
+            table=df.table,
+            model=SQLStr(df.model_select),
+            domain=df.domain_column,
         )
+        cr.execute(query, [target_model, match_old, dot_old])
+
         for id_, model, domain in cr.fetchall():  # noqa: PLR1704
             new_domain = _adapt_one_domain(
                 cr, target_model, old, new, model, domain, adapter=adapter, force_adapt=force_adapt

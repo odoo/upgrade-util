@@ -37,12 +37,15 @@ if html.status_code != 200:
     sys.exit(f"Cannot fetch release notes page for version {version}")
 
 root = etree.fromstring(html.text, parser=etree.HTMLParser())
-iframe = root.xpath("//main//iframe[contains(@src, 'youtube.com') or contains(@src, 'youtube-nocookie.com')]")
-if not iframe:
+
+if widget := root.xpath("//main//div[@data-oe-expression][@class='media_iframe_video']"):
+    yt_link = widget[0].attrib["data-oe-expression"]
+elif iframe := root.xpath("//main//iframe[contains(@src, 'youtube.com') or contains(@src, 'youtube-nocookie.com')]"):
+    yt_link = iframe[0].attrib["src"]
+else:
     sys.exit(f"Cannot find youtube video in {html.url}")
 
-yt_link = httpx.URL(iframe[0].attrib["src"])
-video_id = yt_link.path.removeprefix("/embed/")
+video_id = httpx.URL(yt_link).path.removeprefix("/embed/")
 
 
 report_py = Path(__file__).parent.parent / "src" / "util" / "report.py"
