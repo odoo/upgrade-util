@@ -8,7 +8,7 @@ atomically before any model/view loading takes place.
 
 Renames performed:
   - account_auto_transfer_features → account_transfer_features
-  - payment_azul                   → payment_azul_web_pages
+  - payment_azul                   → payment_azul_webpages
 
 Affects (for each rename):
   - ir_module_module          — module registry entry
@@ -25,7 +25,7 @@ _logger = logging.getLogger(__name__)
 
 _RENAMES = [
     ("account_auto_transfer_features", "account_transfer_features"),
-    ("payment_azul", "payment_azul_web_pages"),
+    ("payment_azul", "payment_azul_webpages"),
 ]
 
 
