@@ -102,6 +102,7 @@ INDIRECT_REFERENCES = [
 
 
 def indirect_references(cr, bound_only=False):
+    known = []
     for ir in INDIRECT_REFERENCES:
         if bound_only and not ir.res_id:
             continue
@@ -119,6 +120,9 @@ def indirect_references(cr, bound_only=False):
             continue
 
         yield ir
+        if ir.res_id:
+            model = model_of_table(cr, ir.table)
+            known.append([model, ir.res_id])
 
     if column_exists(cr, "ir_model_fields", "company_dependent"):
         cr.execute(
@@ -132,8 +136,22 @@ def indirect_references(cr, bound_only=False):
         for model_name, column_name, comodel_name in cr.fetchall():
             yield _IR(table_of_model(cr, model_name), None, column_name, company_dependent_comodel=comodel_name)
 
-    # XXX Once we will get the model field of `many2one_reference` fields in the database, we should get them also
-    # (and filter the one already hardcoded)
+    if column_exists(cr, "ir_model_fields", "relation_model_field"):
+        query = """
+            WITH _known AS (SELECT * FROM unnest(%s, %s) as u(model, name))
+            SELECT model, relation_model_field, name
+              FROM ir_model_fields
+ NATURAL LEFT JOIN _known
+             WHERE ttype = 'many2one_reference'
+               AND relation_model_field IS NOT NULL
+               AND store is true
+               AND _known IS NULL
+        """
+        cr.execute(query, list(map(list, zip(*known))))
+        for model_name, res_model, res_id in cr.fetchall():
+            table = table_of_model(cr, model_name)
+            if column_exists(cr, table, res_model) and column_exists(cr, table, res_id):
+                yield _IR(table, res_model, res_id)
 
 
 def generate_indirect_reference_cleaning_queries(cr, ir):
