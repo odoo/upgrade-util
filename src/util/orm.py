@@ -16,6 +16,8 @@ from functools import wraps
 from itertools import chain
 from textwrap import dedent
 
+from psycopg2 import sql
+
 try:
     from unittest.mock import patch
 except ImportError:
@@ -602,34 +604,68 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     # if the field was not correctly removed from the database during past upgrades, the field remains in the database.
     reserved_words = ["env"]
     ignores = {"ir.actions.server": ["condition"], "ir.ui.view": ["page"]}
+
+    cte = ""
+    include = ""
+    if version_gte("17.0"):
+        cte = """
+                WITH delegated_fields AS (
+                    SELECT array_agg(f.id) AS ids
+                      FROM ir_model_fields f
+                      JOIN ir_model m
+                        ON m.id = f.model_id
+                       AND m.model = %s
+                      JOIN ir_model_inherit i
+                        ON i.model_id = m.id
+                       AND i.parent_field_id IS NOT NULL
+                      JOIN ir_model_fields lf
+                        ON lf.id = i.parent_field_id
+                     WHERE f.related = lf.name || '.' || f.name
+                )
+              """
+        include = "AND id NOT IN (SELECT unnest(ids) FROM delegated_fields)"
+
+    query = format_query(
+        env.cr,
+        """
+                {cte}
+                UPDATE ir_model_fields
+                   SET state = 'manual'
+                 WHERE state = 'base'
+                   AND model = %s
+                   AND name NOT IN %s
+                {include}
+            RETURNING id
+            """,
+        cte=sql.SQL(cte),
+        include=sql.SQL(include),
+    )
     for model in models:
         model_fields = tuple(list(env.registry[model]._fields) + reserved_words + ignores.get(model, []))
-        env.cr.execute(
-            """
-            UPDATE ir_model_fields
-               SET state = 'manual'
-             WHERE state = 'base'
-               AND model = %s
-               AND name not in %s
-         RETURNING id
-        """,
-            [model, model_fields],
-        )
+        if not cte:
+            env.cr.execute(
+                query,
+                [model, model_fields],
+            )
+        else:
+            env.cr.execute(
+                query,
+                [model, model, model_fields],
+            )
         updated_field_ids += [r[0] for r in env.cr.fetchall()]
 
     # 2.2 Convert fields of custom models, models that were just converted to `manual` models in the previous step.
     for model in custom_models:
-        env.cr.execute(
-            """
-            UPDATE ir_model_fields
-               SET state = 'manual'
-             WHERE state = 'base'
-               AND model = %s
-               AND name not in %s
-         RETURNING id
-        """,
-            (model, tuple(reserved_words)),
-        )
+        if not cte:
+            env.cr.execute(
+                query,
+                [model, tuple(reserved_words)],
+            )
+        else:
+            env.cr.execute(
+                query,
+                [model, model, tuple(reserved_words)],
+            )
         updated_field_ids += [r[0] for r in env.cr.fetchall()]
 
     # 2.3 Temporarily disable rules that come from custom modules
