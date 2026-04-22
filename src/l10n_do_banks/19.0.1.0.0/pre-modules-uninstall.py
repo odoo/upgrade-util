@@ -31,7 +31,7 @@ def uninstall_modules(cr):
         "advanced_web_domain_widget",
         "hr_employee_relative",
         "account_payment_cash_custom_workflow",
-        "account_payment_compensation_news",
+        "looker_connector",
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
