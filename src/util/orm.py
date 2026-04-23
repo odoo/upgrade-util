@@ -229,6 +229,25 @@ def invalidate(records, *args):
     ((env and getattr(records.env, "invalidate_all", None)) or records.invalidate_cache)(*args)
 
 
+def get_inherit_model_names(model):
+    """
+    Get the names of the models the model directly or indirectly `_inherit`
+
+    :param model: recordset
+    :return: the names of the models the model directly or indirectly `_inherit`.
+        If ``model._name`` is not in the returned set, the model is defined once.
+        ``base`` is always in the returned set for non-``base`` models.
+    :rtype: list[str]
+    """
+    inherit_model_names = set()
+    for cls in type(model).mro():
+        if getattr(cls, "pool", None) is None and getattr(cls, "_inherit", None) is not None:
+            inherit_model_names.update(cls._inherit)
+    if model._name != "base":
+        inherit_model_names.add("base")
+    return sorted(inherit_model_names)
+
+
 def no_selection_cache_validation(f=None):
     if not version_gte("8.0"):
         return f
