@@ -32,7 +32,6 @@ def uninstall_modules(cr):
         "hr_employee_relative",
         "account_payment_cash_custom_workflow",
         "looker_connector",
-        "payment_azul_webservices",
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
