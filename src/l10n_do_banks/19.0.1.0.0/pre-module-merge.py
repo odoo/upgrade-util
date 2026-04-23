@@ -26,6 +26,7 @@ _logger = logging.getLogger(__name__)
 _MERGES = [
     ("account_auto_transfer_features", "account_transfer_features"),
     ("payment_azul", "payment_azul_webpages"),
+    ("account_reconcile_payment", "l10n_do_account_withholding_tax")
 ]
 
 
