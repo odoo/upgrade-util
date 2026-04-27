@@ -7,7 +7,7 @@ from .fields import *
 from .helpers import *
 from .indirect_references import *
 from .inherit import *
-from .logger import _logger
+from .logger import _logger, getLogger
 from .misc import *
 from .models import *
 from .modules import *
