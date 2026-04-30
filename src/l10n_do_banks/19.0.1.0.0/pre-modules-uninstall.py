@@ -35,7 +35,6 @@ def uninstall_modules(cr):
         "hr_course",
         "advanced_web_domain_widget",
         "hr_employee_relative",
-        # account_payment_cash_custom_workflow: handled by pre-00-migrate-cash-workflow.py + end-00-finalize-cash-workflow.py
         "looker_connector",
         "stock_account_fields_tracking",
         "account_invoice_rate",
