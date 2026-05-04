@@ -2,7 +2,7 @@ r"""
 There are two main classes used testing during the upgrade.
 
 * :class:`~odoo.upgrade.testing.UpgradeCase` for testing upgrade scripts,
-* :class:`~odoo.upgrade.testing.UpgradeCase` for testing invariants across versions.
+* :class:`~odoo.upgrade.testing.IntegrityCase` for testing invariant values that must hold across versions.
 
 Subclasses must implement:
 
@@ -13,7 +13,7 @@ Subclasses must implement:
 
 * For ``IntegrityCase``:
 
-  - ``invariant`` method: compute an invariant to check.
+  - ``invariant`` method: compute a value that must remain consistent before and after the upgrade.
 
 Put your test classes in a ``tests`` Python module (folder) in any of the folders
 containing the upgrade scripts of your modules. The script containing your tests must
