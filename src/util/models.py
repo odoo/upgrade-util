@@ -288,6 +288,9 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 
 # compat layer...
 delete_model = remove_model
+"""
+:meta private: exclude from online docs
+"""
 
 
 def _replace_model_in_computed_custom_fields(cr, source, target):
