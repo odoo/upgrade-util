@@ -382,8 +382,9 @@ def log_progress(it, logger, qualifier="elements", size=None, estimate=True, log
                 tail = ""
 
             logger.info(
-                "[%.02f%%] %d/%d %s processed in %s%s",
+                "[%6.02f%%] %*d/%d %s processed in %s%s",
                 (j / size * 100.0),
+                len(str(size)),
                 i,
                 size,
                 qualifier,
