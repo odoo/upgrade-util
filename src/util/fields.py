@@ -48,7 +48,7 @@ from . import json
 from .const import ENVIRON
 from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_domains
 from .exceptions import SleepyDeveloperError, UpgradeError
-from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path, table_of_model
+from .helpers import _dashboard_actions, _validate_model, model_of_table, resolve_model_fields_path, table_of_model
 from .inherit import for_each_inherit
 from .misc import AUTO, log_progress, safe_eval, version_gte
 from .orm import env, invalidate
@@ -65,13 +65,14 @@ from .pg import (
     get_columns,
     get_value_or_en_translation,
     parallel_execute,
+    pg_html_escape,
     pg_replace,
     pg_text2html,
     remove_column,
     table_exists,
     target_of,
 )
-from .records import _remove_import_export_paths
+from .records import _remove_import_export_paths, ref
 from .report import add_to_migration_reports, get_anchor_link_to_record
 
 # python3 shims
@@ -1913,3 +1914,175 @@ def update_server_actions_fields(cr, src_model, dst_model=None, fields_mapping=N
         ) % {"src_model": src_model, "dst_model": dst_model, "actions": ", ".join(action_names)}
 
         add_to_migration_reports(message=msg, category="Server Actions")
+
+
+def dump_column_to_chatter(
+    cr,
+    table,
+    column,
+    res_id="id",
+    res_model=None,
+    label="%s",
+    fk_display=None,
+    where=None,
+    html_escape=True,
+    message_type="notification",
+    subtype_xmlid=None,
+):
+    """
+    Post a chatter message on each record to preserve a column value before it is dropped.
+
+    This is useful when a field is being removed during a migration but clients may need to
+    recover its values. The value is posted as a ``mail_message`` on the record's chatter.
+
+    If the ``mail`` module is not installed, the function silently does nothing.
+
+    .. example::
+       .. code-block:: python
+
+          # Simple varchar column
+          util.dump_column_to_chatter(
+              cr, "crm_lead", "mobile", label="Previous Mobile", where="phone != mobile"
+          )
+
+          # Drop team_id, save the team name
+          util.dump_column_to_chatter(
+              cr, "res_partner", "team_id", label="Former Sales Team", fk_display="name"
+          )
+
+          # Dump from hr_version onto hr_employee's chatter
+          util.dump_column_to_chatter(
+              cr, "hr_employee", "current_version_id", label="SSN", fk_display="ssnid"
+          )
+
+          # Raw HTML body (no label prefix)
+          util.dump_column_to_chatter(
+              cr, "hr_employee", "notes", html_escape=False,
+              message_type="comment", subtype_xmlid="mail.mt_note"
+          )
+
+    :param str table: source table containing the column to dump
+    :param str column: column whose value to preserve
+    :param str label: message format. Any valid PG ``format`` string with a single ``%s``
+                      is allowed. If ``%s`` is missing, ``: %s`` is appended automatically.
+                      Default ``"%s"`` produces the raw value with no prefix.
+    :param str res_id: column that identifies the id of the record to put in the chatter.
+    :param str or None res_model: model of the record to post in the chatter, by default
+                                  it is inferred from ``res_id`` target.
+    :param str or None fk_display: when ``column`` is a foreign key, the column from the
+                                   FK target table to use as display value (e.g.
+                                   ``"name"``). The FK target table is auto-detected. When
+                                   omitted, only the id is shown. The id is always
+                                   appended in parentheses.
+    :param str where: extra SQL ``WHERE`` condition. By default, only rows where the
+                      column is not ``NULL`` (and not empty for text types) are included.
+    :param bool html_escape: whether to HTML-escape the value (default ``True``).
+    :param str message_type: ``mail_message.message_type`` (default ``"notification"``).
+    :param str subtype_xmlid: optional XML ID for the message subtype (e.g.
+                              ``"mail.mt_note"``).
+    """
+    if not table_exists(cr, "mail_message"):
+        _logger.warning(
+            "dump_column_to_chatter: mail_message doesn't exist, cannot dump column %s.%s to chatter",
+            table,
+            column,
+        )
+        return
+
+    fk_join = SQLStr("")
+    if res_id != "id":
+        fk_target = target_of(cr, table, res_id)
+        if not fk_target:
+            raise UpgradeError("Column {}.{} is not a Foreign Key".format(table, res_id))
+        fk_table = fk_target[0]
+        if res_model is None:
+            res_model = model_of_table(cr, fk_table)
+        fk_join = format_query(
+            cr,
+            "JOIN {fk_table} fk_t ON t.{res_id} = fk_t.{fk_col}",
+            fk_table=fk_table,
+            res_id=res_id,
+            fk_col=fk_target[1],
+        )
+
+    if res_model is None:
+        res_model = model_of_table(cr, table)
+
+    value_join = SQLStr("")
+    fk_value = target_of(cr, table, column)
+    if not fk_value and fk_display:
+        raise UpgradeError(
+            "Column {}.{} is not a Foreign Key and fk_display={!r} is set".format(table, column, fk_display)
+        )
+    if fk_value:
+        col_expr = SQLStr("'(id=' || vt.id::text || ')'")
+        if fk_display:
+            if column_type(cr, fk_value[0], fk_display) == "jsonb":
+                fk_display = format_query(cr, "vt.{}->>'en_US'", fk_display)
+            else:
+                fk_display = format_query(cr, "vt.{}", fk_display)
+            if html_escape:
+                fk_display = pg_html_escape(fk_display)
+            col_expr = format_query(cr, "CONCAT_WS(' ', {}, {})", fk_display, col_expr)
+        value_join = format_query(
+            cr,
+            "JOIN {value_table} vt ON t.{column} = vt.{fk_col}",
+            value_table=fk_value[0],
+            column=column,
+            fk_col=fk_value[1],
+        )
+    else:
+        col_expr = format_query(cr, "t.{}->>'en_US'" if column_type(cr, table, column) == "jsonb" else "t.{}", column)
+        if html_escape:
+            col_expr = pg_html_escape(col_expr)
+
+    where = SQLStr(where) if where else format_query(cr, "NULLIF({}::text, '') IS NOT NULL", column)
+    root_id = ref(cr, "base.partner_root")
+    subtype_id = ref(cr, subtype_xmlid) if subtype_xmlid else None
+
+    if label and "%s" not in label:
+        label += ": %s"
+
+    query = format_query(
+        cr,
+        """
+        WITH batch AS (
+            SELECT id
+              FROM {table}
+             WHERE ({where})
+               AND {res_id} IS NOT NULL
+               AND {{parallel_filter}}
+        )
+        INSERT INTO mail_message (
+                        model, author_id, message_type, subtype_id,
+                        date, create_date,
+                        res_id, body
+                    )
+             SELECT %(res_model)s, %(root_id)s, %(message_type)s, %(subtype_id)s,
+                    NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC',
+                    t.{res_id}, format(%(label)s, {esc_column})
+               FROM batch
+               JOIN {table} t
+                 ON batch.id = t.id
+               {fk_join}
+               {value_join}
+        """,
+        table=table,
+        res_id=res_id,
+        where=where,
+        fk_join=fk_join,
+        value_join=value_join,
+        esc_column=col_expr,
+    )
+    query = cr.mogrify(
+        query,
+        {
+            "res_model": res_model,
+            "root_id": root_id,
+            "message_type": message_type,
+            "subtype_id": subtype_id,
+            "label": label,
+        },
+    ).decode()
+
+    explode_execute(cr, query, table=table)
