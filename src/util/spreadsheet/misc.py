@@ -10,6 +10,7 @@ from .. import json, pg
 from ..misc import make_pickleable_callback
 
 MEMORY_CAP = 2 * 10**8  # 200MB
+COUNT_CAP = 1000
 
 
 def _search_ids(cr, like_all=(), like_any=()):
@@ -24,31 +25,42 @@ def _search_ids(cr, like_all=(), like_any=()):
                 SELECT id,
                        LENGTH(commands) AS commands_length
                   FROM spreadsheet_revision
-                 WHERE commands LIKE {condition} (%s::text[])
+                 WHERE commands LIKE {condition} (%(like)s::text[])
             ), smaller AS (
                 SELECT id,
-                       sum(commands_length) OVER (ORDER BY id) / %s AS num
+                       sum(commands_length) OVER (ORDER BY id) / %(mem_cap)s AS num
                   FROM filtered
-                 WHERE commands_length <= %s
+                 WHERE commands_length <= %(mem_cap)s
+            ),
+            aggregated AS (
+                SELECT array_agg(id ORDER BY id) as arr
+                  FROM smaller
+              GROUP BY num
+
+                 UNION ALL
+
+                SELECT ARRAY[id] as arr
+                  FROM filtered
+                 WHERE commands_length > %(mem_cap)s
+            ),
+            chunked AS (
+                SELECT arr[i : i + %(count_cap)s -1] as chunk
+                  FROM aggregated,
+                       LATERAL generate_series(1, cardinality(arr), %(count_cap)s) AS i
             )
-            SELECT array_agg(id ORDER BY id),
-                   min(id) AS sort_key
-              FROM smaller
-          GROUP BY num
-
-             UNION ALL
-
-            SELECT ARRAY[id],
-                   id AS sort_key
-              FROM filtered
-             WHERE commands_length > %s
-          ORDER BY sort_key
+            SELECT chunk
+              FROM chunked
+          ORDER BY chunk[1]
             """,
             condition=pg.SQLStr("ALL" if like_all else "ANY"),
         ),
-        [list(like_any or like_all), MEMORY_CAP, MEMORY_CAP, MEMORY_CAP],
+        {
+            "like": list(like_any or like_all),
+            "mem_cap": MEMORY_CAP,
+            "count_cap": COUNT_CAP,
+        },
     )
-    for ids, _ in cr.fetchall():
+    for (ids,) in cr.fetchall():
         yield ids
 
 
