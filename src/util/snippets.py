@@ -92,6 +92,7 @@ def get_regex_from_snippets_list(snippets):
 class FieldScope(enum.Enum):
     ALL = 1
     SNIPPETS = 2
+    WEBSITE = 3
 
 
 def get_html_fields(cr):
@@ -167,13 +168,20 @@ def _html_fields(cr, modules):
             yield table, existing_columns
 
 
-def html_fields(cr):
-    return _html_fields(cr, modules=None)
+def html_fields(cr, scope=FieldScope.ALL):
+    if scope == FieldScope.ALL:
+        root_modules = None
+    elif scope == FieldScope.SNIPPETS:
+        root_modules = ["html_builder"] if version_gte("19.0") else ["website", "mass_mailing"]
+    elif scope == FieldScope.WEBSITE:
+        root_modules = ["website"]
+    else:
+        raise ValueError(scope)
+    return _html_fields(cr, modules=root_modules)
 
 
 def snippet_fields(cr):
-    root_modules = ["html_builder"] if version_gte("19.0") else ["website", "mass_mailing"]
-    return _html_fields(cr, modules=root_modules)
+    return html_fields(cr, scope=FieldScope.SNIPPETS)
 
 
 def parse_style(attr):
@@ -426,6 +434,8 @@ def convert_html_content(
         - "~* '\yabc.*xyz\y'"
     :param FieldScope scope: if `FieldScope.SNIPPETS`, only process HTML fields defined by
                              modules that depend on the snippet-engine module (version dependent).
+                             If `FieldScope.WEBSITE`, only process HTML fields defined by modules
+                             that depend on website.
     :param dict kwargs: extra keyword arguments to pass to :func:`convert_html_column`
     """
     if hasattr(converter_callback, "for_html"):  # noqa: SIM108
@@ -434,8 +444,7 @@ def convert_html_content(
         # trust the given converter to handle HTML
         html_converter = converter_callback
 
-    fields_iterator = snippet_fields if scope == FieldScope.SNIPPETS else html_fields
-    for table, columns in fields_iterator(cr):
+    for table, columns in html_fields(cr, scope=scope):
         convert_html_columns(cr, table, columns, html_converter, where_column=where_column, **kwargs)
 
     if hasattr(converter_callback, "for_qweb"):
