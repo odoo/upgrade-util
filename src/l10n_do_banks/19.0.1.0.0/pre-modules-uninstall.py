@@ -21,6 +21,7 @@ def ensure_compensation_columns(cr):
 def uninstall_modules(cr):
     """Uninstall modules that are no longer needed or compatible with version 19.0."""
     modules_to_uninstall = [
+        "fleet_product_rules_renting",
         "pos_hr_minimal_rights",
         "product_label_layout",
         "recurring_sale_order_app",
