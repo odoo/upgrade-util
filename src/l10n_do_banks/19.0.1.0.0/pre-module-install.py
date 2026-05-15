@@ -3,9 +3,6 @@ Pre-migration script for l10n_do_banks 19.0.1.0.0
 
 Force-installs replacement modules whose functionality has been split out
 of legacy custom modules in v19.
-
-Installs performed:
-  - account_payment_internal_transfer (if account_payment_cash_custom_workflow is installed)
 """
 
 import logging
