@@ -53,6 +53,7 @@ from .pg import (
     get_m2m_tables,
     get_value_or_en_translation,
     parallel_execute,
+    rename_table,
     table_exists,
     target_of,
 )
@@ -1827,6 +1828,109 @@ def replace_record_references_batch(
                      WHERE t."{column}" = r.old
             """.format(table=table, column=column),
                 [model_src, model_dst],
+            )
+
+    # m2m fields
+    # in case of differ destination model only
+    if model_src != model_dst:
+        model_src_table = table_of_model(cr, model_src)
+        model_dst_table = table_of_model(cr, model_dst)
+        for foreign_table, foreign_column, conname, _ in get_fk(cr, model_src_table, quote_ident=False):
+            if foreign_table in ignores or foreign_table not in get_m2m_tables(cr, model_src_table):
+                continue
+            # to insert data properly, added later
+            cr.execute("ALTER TABLE {} DROP CONSTRAINT {}".format(foreign_table, conname))
+            (col2,) = get_columns(cr, foreign_table, ignore=(foreign_column,)).iter_unquoted()
+            # handle possible duplicates
+            cr.execute(
+                format_query(
+                    cr,
+                    """
+                    WITH rr2 AS (
+                        SELECT array_agg(t.{fk} ORDER BY t.{fk}) AS olds,
+                                r.new AS new,
+                                t.{col2} AS col2
+                            FROM {table} t
+                            JOIN _upgrade_rrr r
+                            ON r.old = t.{fk}
+                            GROUP BY r.new, t.{col2}
+                    )
+                    DELETE
+                      FROM {table} t
+                     USING rr2 r
+                     WHERE t.{col2} = r.col2
+                       AND t.{fk} = ANY(r.olds)
+                    """,
+                    table=foreign_table,
+                    fk=foreign_column,
+                    col2=col2,
+                )
+            )
+            cr.execute(
+                format_query(
+                    cr,
+                    """
+                    UPDATE {table} t
+                       SET {fk} = r.new
+                      FROM _upgrade_rrr r
+                     WHERE r.old = t.{fk}
+                    """,
+                    table=foreign_table,
+                    fk=foreign_column,
+                )
+            )
+            # cleaning orphan records
+            cr.execute(
+                """
+                DELETE FROM %s t
+                      USING _upgrade_rrr r
+                 RIGHT JOIN %s s
+                         ON r.old = s.id
+                      WHERE r.old IS NULL
+                        AND t.%s = s.id
+                """
+                % (foreign_table, model_src_table, foreign_column)
+            )
+            new_foreign_column = foreign_column.replace(model_src_table, model_dst_table)
+            # in case of customized column
+            if new_foreign_column != foreign_column:
+                cr.execute(
+                    'ALTER TABLE "{}" RENAME COLUMN "{}" TO "{}"'.format(
+                        foreign_table, foreign_column, new_foreign_column
+                    )
+                )
+            # rename_table will update constraint name later
+            cr.execute(
+                """
+                    ALTER TABLE %s
+                    ADD CONSTRAINT %s FOREIGN KEY (%s)
+                        REFERENCES %s(id) ON DELETE CASCADE
+                """
+                % (
+                    foreign_table,
+                    conname,
+                    new_foreign_column,
+                    model_dst_table,
+                )
+            )
+            new_foreign_table = foreign_table.replace(model_src_table, model_dst_table)
+            if table_exists(cr, new_foreign_table):
+                # keep it same(old name)
+                new_foreign_table = foreign_table
+            # in case of customized name
+            # ref: https://github.com/odoo/odoo/blob/8f5d7b5cd0c3e1808375baef8f0834d3f2e27a75/addons/account/models/account_tax.py#L128
+            if new_foreign_table != foreign_table:
+                rename_table(cr, foreign_table, new_foreign_table)
+            cr.execute(
+                """
+                UPDATE ir_model_fields
+                   SET relation = %s,
+                       column2 = %s,
+                       relation_table = %s
+                 WHERE relation = %s
+                   AND relation_table = %s
+                """,
+                [model_dst, new_foreign_column, new_foreign_table, model_src, foreign_table],
             )
 
     cr.execute("DROP TABLE _upgrade_rrr")
