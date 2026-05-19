@@ -865,6 +865,9 @@ def convert_m2o_field_to_m2m(cr, model, field, new_name=None, m2m_table=None, co
 
 # Because we can.
 m2o2m2m = convert_m2o_field_to_m2m
+"""
+:meta private: exclude from online docs
+"""
 
 
 def _convert_field_to_company_dependent(
@@ -1065,6 +1068,9 @@ else:
 
 # retro-compatibility
 convert_field_to_property = make_field_company_dependent
+"""
+:meta private: exclude from online docs
+"""
 
 
 def convert_binary_field_to_attachment(cr, model, field, encoded=True, name_field=None):

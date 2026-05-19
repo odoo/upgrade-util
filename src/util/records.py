@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import uuid
+from collections import OrderedDict  # used for python2 compatibility
 from contextlib import contextmanager
 from operator import itemgetter
 
@@ -12,12 +13,12 @@ from psycopg2 import sql
 from psycopg2.extras import Json, execute_values
 
 try:
-    from odoo import modules, release
+    from odoo import modules
     from odoo.tools.convert import xml_import
     from odoo.tools.misc import file_open
     from odoo.tools.translate import xml_translate
 except ImportError:
-    from openerp import modules, release
+    from openerp import modules
     from openerp.tools.convert import xml_import
     from openerp.tools.misc import file_open
 
@@ -34,7 +35,7 @@ from .helpers import (
 from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import AUTOMATIC, chunks, parse_version, version_gte
+from .misc import AUTOMATIC, chunks, version_between, version_gte
 from .orm import env, flush
 from .pg import (
     PGRegexp,
@@ -1152,9 +1153,7 @@ def __update_record_from_xml(
     )
     xpath = "//*[self::act_window or self::menuitem or self::record or self::report or self::template][{}]".format(id_match)  # fmt: skip
 
-    # use a data tag inside openerp tag to be compatible with all supported versions
-    new_root = lxml.etree.fromstring("<openerp><data/></openerp>")
-
+    roots = OrderedDict()
     manifest = get_manifest(from_module)
     template = False
     found = False
@@ -1173,15 +1172,20 @@ def __update_record_from_xml(
             doc = lxml.etree.parse(fp)
             for node in doc.xpath(xpath):
                 found = True
+                xml_filename = "{}/{}".format(from_module, f)
+                root = roots.get(xml_filename)
+                if root is None:
+                    # use a data tag inside openerp tag to be compatible with all supported versions
+                    root = roots[xml_filename] = lxml.etree.fromstring("<openerp><data/></openerp>")
                 parent = node.getparent()
                 if node.tag == "record" and fields is not None:
                     for fn in node.xpath("./field[@name]"):
                         if fn.attrib["name"] not in fields:
                             node.remove(fn)
-                new_root[0].append(node)
+                root[0].append(node)
 
                 if node.tag == "menuitem" and parent.tag == "menuitem" and "parent_id" not in node.attrib:
-                    new_root[0].append(
+                    root[0].append(
                         lxml.builder.E.record(
                             lxml.builder.E.field(name="parent_id", ref=parent.attrib["id"]),
                             model="ir.ui.menu",
@@ -1226,9 +1230,12 @@ def __update_record_from_xml(
         )
 
     cr_or_env = env(cr) if version_gte("saas~16.2") else cr
-    importer = xml_import(cr_or_env, from_module, idref={}, mode="update")
-    kw = {"mode": "update"} if parse_version("8.0") <= parse_version(release.series) <= parse_version("12.0") else {}
-    importer.parse(new_root, **kw)
+    parse_kw = {"mode": "update"} if version_between("8.0", "12.0") else {}
+    for xml_filename, root in roots.items():
+        kw = {"xml_filename": xml_filename} if version_gte("8.saas~6") else {}
+        importer = xml_import(cr_or_env, from_module, idref={}, mode="update", **kw)
+        importer.parse(root, **parse_kw)
+
     if version_gte("13.0"):
         flush(env(cr)["base"])
 

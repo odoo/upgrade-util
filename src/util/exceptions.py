@@ -19,3 +19,6 @@ class UpgradeWarning(Warning):
 
 # Compat
 MigrationError = UpgradeError
+"""
+:meta private: exclude from online docs
+"""

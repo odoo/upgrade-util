@@ -24,6 +24,14 @@ except ImportError:
     from openerp.modules.module import get_module_path
     from openerp.tools.parse_version import parse_version
 
+if release.major_version == "7.0":
+    # This version doesn't handle `saas~` part in versions
+    _parse_version = parse_version
+
+    def parse_version(version):
+        return _parse_version(version.replace("saas~", ""))
+
+
 from .exceptions import MigrationError, SleepyDeveloperError
 
 # python3 shim
@@ -249,12 +257,17 @@ try:
                          .. note::
                             The script must be available in the upgrade path.
 
-        :param str or None name: name to assign to the returned module, take the name from
-                                 the imported file if `None`
+        :param str or None name: name to assign to the returned module. When `None`,
+                                 a name is derived from `path` to mirror the name set
+                                 by Odoo (>=16) when loading migration scripts:
+                                 `odoo.upgrade.<module>.<version>.<script>`.
         :return: a module created from the imported upgrade script
         """
         if not name:
-            name, _ = os.path.splitext(os.path.basename(path))
+            parts = os.path.normpath(path).split(os.sep)
+            module, version, script = parts[-3], parts[-2], os.path.splitext(parts[-1])[0]
+            prefix = __name__.rsplit(".", 2)[0]
+            name = ".".join([prefix, module, version, script])
         for full_path in (sp / path for sp in _search_path):
             if full_path.exists():
                 break
@@ -271,10 +284,20 @@ except ImportError:
 
     def import_script(path, name=None):
         if not name:
-            name, _ = os.path.splitext(os.path.basename(path))
-        full_path = os.path.join(os.path.dirname(__file__), "..", path)
+            parts = os.path.normpath(path).split(os.sep)
+            module, version, script = parts[-3], parts[-2], os.path.splitext(parts[-1])[0]
+            prefix = __name__.rsplit(".", 2)[0]
+            name = ".".join([prefix, module, version, script])
+        full_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", path))
+        # In order to avoid `RuntimeWarning: Parent module ... not found` we need to read
+        # the file into a package-less module
+        mod = imp.new_module(name)
+        mod.__file__ = full_path
+        mod.__package__ = ""
+        sys.modules[name] = mod
         with open(full_path) as fp:
-            return imp.load_source(name, full_path, fp)
+            exec(compile(fp.read(), full_path, "exec"), mod.__dict__)
+        return mod
 
 
 @contextmanager
@@ -359,8 +382,9 @@ def log_progress(it, logger, qualifier="elements", size=None, estimate=True, log
                 tail = ""
 
             logger.info(
-                "[%.02f%%] %d/%d %s processed in %s%s",
+                "[%6.02f%%] %*d/%d %s processed in %s%s",
                 (j / size * 100.0),
+                len(str(size)),
                 i,
                 size,
                 qualifier,
