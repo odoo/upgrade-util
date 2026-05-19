@@ -231,7 +231,7 @@ def invalidate(records, *args):
 
 def get_inherit_model_names(model):
     """
-    Get the names of the models the model directly or indirectly `_inherit`
+    Get the names of the models the model directly or indirectly `_inherit`.
 
     :param model: recordset
     :return: the names of the models the model directly or indirectly `_inherit`.
