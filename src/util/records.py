@@ -122,7 +122,19 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
 
     if not view_id:
         return
-
+    theme_view_ids = []
+    if table_exists(cr, "theme_ir_ui_view"):
+        cr.execute(
+            """
+            SELECT array_agg(view.id)
+              FROM theme_ir_ui_view theme
+              JOIN ir_ui_view view
+                ON theme.id = view.theme_template_id
+             WHERE theme.inherit_id = 'ir.ui.view,'|| %s
+            """,
+            [view_id],
+        )
+        theme_view_ids = cr.fetchone()[0] or []
     cr.execute(
         """
         SELECT v.id, x.module || '.' || x.name, v.name
@@ -169,10 +181,11 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
 
             disable_view_query = disable_view_query % extra_set_sql
             cr.execute(disable_view_query, (key or xml_id, child_id))
-            add_to_migration_reports(
-                {"id": child_id, "name": child_name},
-                "Disabled views",
-            )
+            if child_id not in theme_view_ids:
+                add_to_migration_reports(
+                    {"id": child_id, "name": child_name},
+                    "Disabled views",
+                )
     if not silent:
         _logger.info("remove deprecated %s view %s (ID %s)", (key and "COWed") or "built-in", key or xml_id, view_id)
 
