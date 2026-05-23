@@ -32,6 +32,22 @@ _MERGES = [
 
 
 def migrate(cr, version):
+    # Seed a fake previous version for l10n_do_account_withholding_tax so that
+    # Odoo treats force_install_module as an UPGRADE (not a fresh install).
+    # Without this, the module has no latest_version → state = 'to install' →
+    # upgrade/19.0.1.0.0/post-migrate.py is skipped entirely.
+    cr.execute("""
+        INSERT INTO ir_module_module (name, state, latest_version)
+        VALUES ('l10n_do_account_withholding_tax', 'installed', '17.0.1.0.0')
+        ON CONFLICT (name) DO UPDATE
+            SET latest_version = '17.0.1.0.0'
+            WHERE ir_module_module.latest_version IS NULL
+    """)
+    _logger.info(
+        "Seeded latest_version=17.0.1.0.0 for l10n_do_account_withholding_tax "
+        "so its post-migrate.py runs as an upgrade."
+    )
+
     # Force-install replacement modules BEFORE merging so that
     # account_reconcile_payment is still in 'installed' state for the checks.
     mig_util.force_upgrade_of_fresh_module(
