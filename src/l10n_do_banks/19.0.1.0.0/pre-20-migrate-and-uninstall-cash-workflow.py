@@ -16,7 +16,7 @@ _TABLE = "account_payment"
 # Manual fields in Odoo must be named with the `x_` prefix, enforced by the
 # `ir_model_fields_name_manual_field` CHECK constraint on ir_model_fields.
 _FIELD = "x_legacy_cash_workflow_info"
-_FIELD_LABEL = "Histórico Flujo Caja v17"
+_FIELD_LABEL = "Histórico v17"
 
 _ROLE_TOKENS = {
     "refunded": "reembolsado",
@@ -50,14 +50,16 @@ def _register_manual_field(cr):
     # label under both en_US (Odoo's default fallback) and es_DO so the field
     # name is rendered correctly in both locales without a separate
     # translation pass.
+    # `selectable=TRUE` is required for the field to appear in the
+    # "Add custom filter" dropdown and to be searchable from the UI.
     cr.execute(
         """
         INSERT INTO ir_model_fields
             (model_id, model, name, field_description, ttype,
-             state, store, copied, readonly, required, "index")
+             state, store, copied, readonly, required, "index", selectable)
         SELECT m.id, 'account.payment', %(name)s,
                jsonb_build_object('en_US', %(label)s, 'es_DO', %(label)s),
-               'text', 'manual', TRUE, FALSE, TRUE, FALSE, FALSE
+               'text', 'manual', TRUE, FALSE, TRUE, FALSE, FALSE, TRUE
           FROM ir_model m
          WHERE m.model = 'account.payment'
            AND NOT EXISTS (
