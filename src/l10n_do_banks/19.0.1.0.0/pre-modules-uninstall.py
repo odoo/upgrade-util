@@ -39,7 +39,6 @@ def uninstall_modules(cr):
         "stock_account_fields_tracking",
         "account_invoice_rate",
         "account_payment_widget_amount",
-        "account_payment_cash_custom_workflow"
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
