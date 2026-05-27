@@ -4,6 +4,7 @@
 import collections
 import logging
 import os
+import random
 import re
 import string
 import threading
@@ -379,9 +380,11 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
     parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
     query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
 
-    return [
+    queries = [
         cr.mogrify(query, {"lower-bound": ids[i], "upper-bound": ids[i + 1] - 1}).decode() for i in range(len(ids) - 1)
     ]
+    random.shuffle(queries)
+    return queries
 
 
 def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, logger=_logger, qualifier="queries"):
