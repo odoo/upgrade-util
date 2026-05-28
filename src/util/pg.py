@@ -154,7 +154,7 @@ else:
     _parallel_execute_threaded = _parallel_execute_serial
 
 
-def parallel_execute(cr, queries, logger=_logger, qualifier="queries"):
+def parallel_execute(cr, queries, logger=_logger, qualifier="queries", order="verbatim"):
     """
     Execute queries in parallel.
 
@@ -169,6 +169,7 @@ def parallel_execute(cr, queries, logger=_logger, qualifier="queries"):
     :param list(str) queries: list of queries to execute concurrently
     :param `~logging.Logger` logger: logger used to report the progress
     :param str qualifier: qualifier of the queries. Used in the progression log
+    :param str order: order of processing of the queries. Accepted values are "verbatim" or "shuffle".
     :return: the sum of `cr.rowcount` for each query run
     :rtype: int
 
@@ -182,6 +183,11 @@ def parallel_execute(cr, queries, logger=_logger, qualifier="queries"):
     .. note::
        If a concurrency issue occurs, the *failing* queries will be retried sequentially.
     """
+    if order not in ["verbatim", "shuffle"]:
+        raise ValueError("Invalid order; expected `verbatim` or `shuffle`: %r" % (order,))
+    if order == "shuffle":
+        queries = list(queries)
+        random.shuffle(queries)
     parallel_execute_impl = (
         _parallel_execute_serial
         if getattr(threading.current_thread(), "testing", False)
@@ -380,11 +386,9 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
     parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
     query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
 
-    queries = [
+    return [
         cr.mogrify(query, {"lower-bound": ids[i], "upper-bound": ids[i + 1] - 1}).decode() for i in range(len(ids) - 1)
     ]
-    random.shuffle(queries)
-    return queries
 
 
 def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, logger=_logger, qualifier="queries"):
@@ -434,6 +438,7 @@ def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZ
         explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size),
         logger=logger,
         qualifier=qualifier,
+        order="shuffle",
     )
 
 
