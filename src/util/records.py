@@ -36,7 +36,7 @@ from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
 from .misc import AUTOMATIC, chunks, version_between, version_gte
-from .orm import env, flush
+from .orm import env, flush, invalidate
 from .pg import (
     PGRegexp,
     SQLStr,
@@ -1250,7 +1250,8 @@ def __update_record_from_xml(
         importer.parse(root, **parse_kw)
 
     if version_gte("13.0"):
-        flush(env(cr)["base"])
+        flush(cr_or_env["base"])
+        invalidate(cr_or_env["base"])
 
     if noupdate:
         force_noupdate(cr, xmlid, noupdate=True)
