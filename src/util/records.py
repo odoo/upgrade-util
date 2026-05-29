@@ -1242,7 +1242,16 @@ def __update_record_from_xml(
             done_refs=done_refs,
         )
 
-    cr_or_env = env(cr) if version_gte("saas~16.2") else cr
+    new_env = env(cr)
+
+    if version_gte("saas~15.4"):
+        new_env.invalidate_all()
+    elif version_gte("11.0"):
+        new_env.cache.invalidate()
+    elif version_gte("8.0"):
+        new_env.invalidate_all()
+
+    cr_or_env = new_env if version_gte("saas~16.2") else cr
     parse_kw = {"mode": "update"} if version_between("8.0", "12.0") else {}
     for xml_filename, root in roots.items():
         kw = {"xml_filename": xml_filename} if version_gte("8.saas~6") else {}
@@ -1250,7 +1259,7 @@ def __update_record_from_xml(
         importer.parse(root, **parse_kw)
 
     if version_gte("13.0"):
-        flush(env(cr)["base"])
+        flush(new_env["base"])
 
     if noupdate:
         force_noupdate(cr, xmlid, noupdate=True)

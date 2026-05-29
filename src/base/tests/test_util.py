@@ -1760,6 +1760,28 @@ class TestRecords(UnitTestCase):
         self.assertEqual(usd.symbol, "$")
         self.assertEqual(usd.name, "XXX")
 
+    def test_update_record_from_xml_cache(self):
+        cr = self.env.cr
+        xmlid = "base.action_attachment"
+
+        record_id = util.ref(cr, xmlid)
+        query = "SELECT name FROM ir_act_window WHERE id = %s"
+        if util.column_type(cr, "ir_act_window", "name") == "jsonb":
+            query = "SELECT name->>'en_US' FROM ir_act_window WHERE id = %s"
+
+        cr.execute(query, [record_id])
+        original = cr.fetchone()[0]
+
+        # Load, SQL update, then load shouldn't skip the last load override
+        util.update_record_from_xml(cr, xmlid)
+        cr.execute("""UPDATE ir_act_window SET name = '{"en_US": "hack"}' WHERE id = %s""", [record_id])
+        util.update_record_from_xml(cr, xmlid)
+
+        # Ensure last load restored the value
+
+        cr.execute(query, [record_id])
+        self.assertEqual(cr.fetchone()[0], original)
+
     def test_ensure_xmlid_match_record(self):
         cr = self.env.cr
         tx1 = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})
