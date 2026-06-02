@@ -191,7 +191,7 @@ def parametrize(argvalues):
     return decorator
 
 
-def _create_meta(sequence: int, *tags: str) -> type:
+def _create_meta(sequence: int, *tags: str, **kwargs) -> type:
     if MetaCase:
 
         class UpgradeMetaCase(MetaCase):
@@ -211,7 +211,7 @@ def _create_meta(sequence: int, *tags: str) -> type:
         return UpgradeMetaCase("UpgradeMetaCase", (), {})
     else:
 
-        class UpgradeMetaCase(BaseCase):
+        class UpgradeMetaCase(kwargs.get("base", BaseCase)):
             def __init_subclass__(cls):
                 super().__init_subclass__()
 
@@ -592,8 +592,11 @@ class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
         self.cr.commit()
 
 
+__base = TransactionCase if util.version_gte("saas~19.1") else BaseCase
+
+
 # pylint: disable=inherit-non-class
-class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case")):
+class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case", base=__base)):
     """
     Test case for validating upgrade invariants.
 
