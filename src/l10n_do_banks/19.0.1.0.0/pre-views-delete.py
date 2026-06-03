@@ -177,7 +177,16 @@ def migrate(cr, version):
     # Crons whose auto-generated ir.actions.server Odoo will try to delete in
     # _process_end. The FK ir_cron.ir_actions_server_id must be freed first.
     deprecated_crons_list = [
+        # account_invoice_rate [DELETED in v19]
+        'account_invoice_rate.recompute_invoice_rate',
+        # l10n_do_ecf_invoicing
+        'l10n_do_ecf_invoicing.try_loading_xsd',
+        # purchase_order_rate
+        'purchase_order_rate.recompute_po_rate',
+        # sale_order_rate
         'sale_order_rate.recompute_so_rate',
+        # serial_number_report [DELETED in v19]
+        'serial_number_report.ir_cron_scheduler_demo_action',
     ]
 
     delete_deprecated_crons(cr, deprecated_crons_list)
