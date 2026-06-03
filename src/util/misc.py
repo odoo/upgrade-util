@@ -366,8 +366,13 @@ def chunks(iterable, size, fmt=None):
 
 def log_progress(it, logger, qualifier="elements", size=None, estimate=True, log_hundred_percent=False):
     if size is None:
-        size = len(it)
+        try:  # noqa: SIM105
+            size = len(it)
+        except TypeError:
+            # object of type 'generator' has no len()
+            pass
     t0 = t1 = datetime.datetime.now()
+    i = 0
     for i, e in enumerate(it, 1):
         yield e
         t2 = datetime.datetime.now()
@@ -375,22 +380,30 @@ def log_progress(it, logger, qualifier="elements", size=None, estimate=True, log
         if secs_last > 60 or (log_hundred_percent and i == size and secs_start > 10):
             t1 = datetime.datetime.now()
             tdiff = t2 - t0
-            j = float(i)
-            if estimate:
-                tail = " (total estimated time: %s)" % (datetime.timedelta(seconds=tdiff.total_seconds() * size / j),)
-            else:
-                tail = ""
+            if size is not None:
+                j = float(i)
+                if estimate:
+                    ett = datetime.timedelta(seconds=tdiff.total_seconds() * size / j)
+                    tail = " (total estimated time: {})".format(ett)
+                else:
+                    tail = ""
 
-            logger.info(
-                "[%6.02f%%] %*d/%d %s processed in %s%s",
-                (j / size * 100.0),
-                len(str(size)),
-                i,
-                size,
-                qualifier,
-                tdiff,
-                tail,
-            )
+                logger.info(
+                    "[%6.02f%%] %*d/%d %s processed in %s%s",
+                    (j / size * 100.0),
+                    len(str(size)),
+                    i,
+                    size,
+                    qualifier,
+                    tdiff,
+                    tail,
+                )
+            else:
+                logger.info("[....] %d %s processed in %s", i, qualifier, tdiff)
+
+    if size is None and log_hundred_percent:
+        tdiff = datetime.datetime.now() - t0
+        logger.info("[100%%] %d %s processed in %s", i, qualifier, tdiff)
 
 
 def log_chunks(it, logger, chunk_size, qualifier="items"):
