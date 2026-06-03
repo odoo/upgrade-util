@@ -4,6 +4,23 @@ from odoo import api, SUPERUSER_ID
 _logger = logging.getLogger(__name__)
 
 
+def delete_deprecated_crons(cr, xml_ids):
+    """Delete cron jobs before _process_end runs, to avoid FK violations when
+    Odoo tries to clean up the auto-generated ir.actions.server they reference."""
+    env = api.Environment(cr, SUPERUSER_ID, {})
+    for xml_id in xml_ids:
+        try:
+            cron = env.ref(xml_id)
+            if cron:
+                try:
+                    cron.unlink()
+                    _logger.info(f"Successfully deleted deprecated cron {xml_id}")
+                except Exception as e:
+                    _logger.warning(f"Error deleting deprecated cron {xml_id}: {e}")
+        except Exception as e:
+            _logger.warning(f"Error finding deprecated cron {xml_id}: {e}")
+
+
 def delete_deprecated_views(cr, xml_ids):
     env = api.Environment(cr, SUPERUSER_ID, {})
     for xml_id in xml_ids:
@@ -156,3 +173,11 @@ def migrate(cr, version):
     ]
 
     delete_deprecated_views(cr, deprecated_views_list)
+
+    # Crons whose auto-generated ir.actions.server Odoo will try to delete in
+    # _process_end. The FK ir_cron.ir_actions_server_id must be freed first.
+    deprecated_crons_list = [
+        'sale_order_rate.recompute_so_rate',
+    ]
+
+    delete_deprecated_crons(cr, deprecated_crons_list)
