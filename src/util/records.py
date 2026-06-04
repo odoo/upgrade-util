@@ -710,7 +710,7 @@ def remove_group(cr, xml_id=None, group_id=None):
     fks = get_fk(cr, "res_groups", quote_ident=False)
 
     # Remove records referencing the group_id from the referencing tables (restrict fks)
-    standard_tables = ["ir_model_access", "rule_group_rel"]
+    standard_tables = ["ir_model_access", "rule_group_rel", "ir_access"]
     custom_tables = []
     for foreign_table, foreign_column, _, on_delete_action in fks:
         if on_delete_action == "r":

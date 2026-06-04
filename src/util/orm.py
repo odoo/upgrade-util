@@ -628,8 +628,8 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
         mock_x_email_fields = [r[0] for r in env.cr.fetchall()]
 
     temp_ir_model_access_ids = []
-    if version_gte("14.0") and custom_models:
-        # 1.2 Version 14.0 and above requires new access rights for transient models,
+    if version_between("14.0", "saas~19.3") and custom_models:
+        # 1.2 Version 14.0 - saas-19.3 requires new access rights for transient models,
         # and the rights are yet to be added post standard upgrade for custom modules.
         # To avoid access errors, create some temporary access rights for these models.
         env.cr.execute(
@@ -650,7 +650,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
 
     # 2. Convert fields which are not in the registry to `manual` fields
     # and list the fields that were converted, to restore them back afterwards.
-    # Also temporarily disable rules (ir.rule) that come from custom modules.
+    # Also temporarily disable rules (ir.rule/ir.access) that come from custom modules.
     updated_field_ids = []
 
     # 2.1 Convert fields not in the registry of models already in the registry.
@@ -696,23 +696,28 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     # 2.3 Temporarily disable rules that come from custom modules
     standard_modules = modules.get_modules()
 
-    env.cr.execute(
+    access_model = "ir.access" if version_gte("saas~19.4") else "ir.rule"
+    query = format_query(
+        env.cr,
         """
         WITH custom_rules AS (
                 SELECT r.id
-                  FROM ir_rule r
-             LEFT JOIN ir_model_data d ON d.model = 'ir.rule' AND d.res_id = r.id
+                  FROM {0} r
+             LEFT JOIN ir_model_data d
+                    ON d.model = %s
+                   AND d.res_id = r.id
                  WHERE COALESCE(d.module, '') NOT IN %s
                    AND r.active
                  )
-        UPDATE ir_rule r
+        UPDATE {0} r
            SET active = false
           FROM custom_rules c
          WHERE r.id = c.id
      RETURNING r.id
-         """,
-        (tuple(standard_modules),),
+        """,
+        table_of_model(env.cr, access_model),
     )
+    env.cr.execute(query, [access_model, tuple(standard_modules)])
     disabled_ir_rule_ids = [r[0] for r in env.cr.fetchall()]
 
     # 3. Alter fields which won't work by just changing their `state` to `manual`,
@@ -833,7 +838,12 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
                 """
             )
         if disabled_ir_rule_ids:
-            env.cr.execute("UPDATE ir_rule SET active = 't' WHERE id IN %s", (tuple(disabled_ir_rule_ids),))
+            query = format_query(
+                env.cr,
+                "UPDATE {} SET active = true WHERE id = ANY(%s)",
+                table_of_model(env.cr, access_model),
+            )
+            env.cr.execute(query, [disabled_ir_rule_ids])
         if temp_ir_model_access_ids:
             env.cr.execute("DELETE FROM ir_model_access WHERE id IN %s", [tuple(temp_ir_model_access_ids)])
         for field_id, selection in updated_selection_fields:

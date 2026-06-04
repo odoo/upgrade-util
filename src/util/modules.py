@@ -198,7 +198,7 @@ def uninstall_module(cr, module):
     model_ids, field_ids, menu_ids = [], [], []
 
     # some models' data needs to be remove before or after others.
-    firsts = ["ir.rule"]
+    firsts = ["ir.rule", "ir.access"]
     lasts = ["ir.actions.server"]
 
     cr.execute(
@@ -1264,6 +1264,7 @@ def move_model(cr, model, from_module, to_module, move_data=False, keep=()):
     update_imd("ir.model.relation", path="model.model")
     update_imd("ir.rule", path="model_id.model")
     update_imd("ir.model.access", path="model_id.model")
+    update_imd("ir.access", path="model_id.model")
     update_imd("ir.ui.view", path="model")
     update_imd("ir.actions.act_window", path="res_model")
     update_imd("ir.actions.server", path="model_id.model")

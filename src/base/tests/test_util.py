@@ -1293,13 +1293,17 @@ class TestORM(UnitTestCase):
 
 
 class TestField(UnitTestCase):
+    @unittest.skipUnless(
+        util.version_gte("saas~13.5"),
+        "test rely on `res_country.state_required` field added in saas~13.5",
+    )
     def test_invert_boolean_field(self):
         cr = self.env.cr
 
         with self.assertRaises(ValueError):
             util.invert_boolean_field(cr, "res.partner", "name", "nom")
 
-        model, old_name, new_name = "ir.model.access", "perm_unlink", "perm_delete"
+        model, old_name, new_name = "res.country", "state_required", "needs_state"
         table = util.table_of_model(cr, model)
 
         fltr = self.env["ir.filters"].create(

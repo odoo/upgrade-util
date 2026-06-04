@@ -233,30 +233,25 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
             ids = tuple(c for (c,) in cr.fetchall())
             cr.execute("DELETE FROM ir_model_data WHERE model = 'ir.model.constraint' AND res_id IN %s", [ids])
 
-        # Drop XML IDs of ir.rule and ir.model.access records that will be cascade-dropped,
+        # Drop XML IDs of ir.rule/ir.model.access/ir.access records that will be cascade-dropped,
         # when the ir.model record is dropped - just in case they need to be re-created
-        cr.execute(
-            """
-                DELETE
-                  FROM ir_model_data x
-                 USING ir_rule a
-                 WHERE x.res_id = a.id
-                   AND x.model = 'ir.rule'
-                   AND a.model_id = %s
-        """,
-            [mod_id],
-        )
-        cr.execute(
-            """
-                DELETE
-                  FROM ir_model_data x
-                 USING ir_model_access a
-                 WHERE x.res_id = a.id
-                   AND x.model = 'ir.model.access'
-                   AND a.model_id = %s
-        """,
-            [mod_id],
-        )
+        for cascade_model in ["ir.access", "ir.rule", "ir.model.access"]:
+            table = table_of_model(cr, cascade_model)
+            if not table_exists(cr, table):
+                continue
+            query = format_query(
+                cr,
+                """
+                    DELETE
+                      FROM ir_model_data x
+                     USING {} a
+                     WHERE x.res_id = a.id
+                       AND x.model = %s
+                       AND a.model_id = %s
+                """,
+                table,
+            )
+            cr.execute(query, [cascade_model, mod_id])
 
         cr.execute("DELETE FROM ir_model WHERE id=%s", (mod_id,))
 
