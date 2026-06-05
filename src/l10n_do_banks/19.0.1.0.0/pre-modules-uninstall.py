@@ -40,6 +40,7 @@ def uninstall_modules(cr):
         "account_invoice_rate",
         "account_payment_widget_amount",
         "account_payment_cash_custom_workflow"
+        "sale_product_template_tags",
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
