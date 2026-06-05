@@ -659,19 +659,15 @@ def create_column(cr, table, column, definition, **kwargs):
     fk_table = kwargs.pop("fk_table", no_def)
     on_delete_action = kwargs.pop("on_delete_action", no_def)
     if kwargs:
-        raise TypeError("create_column() got an unexpected keyword argument %r" % kwargs.popitem()[0])
+        raise TypeError("create_column() got an unexpected keyword argument {!r}".format(kwargs.popitem()[0]))
 
-    fk = ""
+    fk = SQLStr("")
     if fk_table is not no_def:
         if on_delete_action is no_def:
             on_delete_action = "NO ACTION"
         elif on_delete_action not in ON_DELETE_ACTIONS:
-            raise ValueError("unexpected value for the `on_delete_action` argument: %r" % (on_delete_action,))
-        fk = (
-            sql.SQL("REFERENCES {}(id) ON DELETE {}")
-            .format(sql.Identifier(fk_table), sql.SQL(on_delete_action))
-            .as_string(cr._obj)
-        )
+            raise ValueError("unexpected value for the `on_delete_action` argument: {!r}".format(on_delete_action))
+        fk = format_query(cr, "REFERENCES {}(id) ON DELETE {}", fk_table, SQLStr(on_delete_action))
     elif on_delete_action is not no_def:
         raise ValueError("`on_delete_action` argument can only be used if `fk_table` argument is set.")
 
@@ -687,17 +683,17 @@ def create_column(cr, table, column, definition, **kwargs):
         if fk_table is not no_def:
             create_fk(cr, table, column, fk_table, on_delete_action)
         if default is not no_def:
-            query = 'UPDATE "{0}" SET "{1}" = %s WHERE "{1}" IS NULL'.format(table, column)
+            query = format_query(cr, "UPDATE {0} SET {1} = %s WHERE {1} IS NULL", table, column)
             query = cr.mogrify(query, [default]).decode()
             parallel_execute(cr, explode_query_range(cr, query, table=table))
         return False
 
-    create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s %s""" % (table, column, definition, fk)
+    create_query = format_query(cr, "ALTER TABLE {} ADD COLUMN {} {} {}", table, column, SQLStr(definition), fk)
     if default is no_def:
         cr.execute(create_query)
     else:
-        cr.execute(create_query + " DEFAULT %s", [default])
-        cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
+        cr.execute(format_query(cr, "{} DEFAULT %s", create_query), [default])
+        cr.execute(format_query(cr, "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT", table, column))
     return True
 
 
