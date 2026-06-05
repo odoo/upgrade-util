@@ -39,7 +39,6 @@ def uninstall_modules(cr):
         "stock_account_fields_tracking",
         "account_invoice_rate",
         "account_payment_widget_amount",
-        "account_payment_cash_custom_workflow"
         "sale_product_template_tags",
     ]
 
