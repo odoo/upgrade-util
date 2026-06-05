@@ -2448,6 +2448,99 @@ def not_doing_anything_converter(el):
     return True
 
 
+class TestOnce(UnitTestCase):
+    # Each case: (source, lower, upper, steps_and_expected)
+    # source: the DB version before the upgrade starts target is inferred as the last step in steps_and_expected
+    # steps_and_expected: list of (series, expected), the steps visited in order.
+    # Exactly one step should be truthy (the first step whose dest lands in [lower, upper]);
+    # all others falsy. No-intersection cases have all falsy.
+    @parametrize(
+        [
+            # Default interval: fire on first step after source
+            ("16.0", None, None, [("17.0", True), ("18.0", False)]),
+            ("16.2", None, None, [("17.0", True), ("18.0", False)]),
+            ("saas~16.3", None, None, [("17.0", True), ("18.0", False)]),
+            ("16.0", None, None, [("17.0", True)]),
+            # Source minor to target minor across a major: first major .0 fires
+            ("18.4", None, None, [("19.0", True), ("saas~19.3", False)]),
+            ("saas~18.2", None, None, [("19.0", True)]),
+            # Same-major minor-to-minor: single step, fires
+            ("saas~19.0", None, None, [("saas~19.3", True)]),
+            ("saas~19.1", None, None, [("saas~19.3", True)]),
+            # Explicit interval covering the first step
+            ("16.0", "17.0", "18.0", [("17.0", True), ("18.0", False)]),
+            ("16.0", "17.0", None, [("17.0", True), ("18.0", False)]),
+            # Explicit interval starting mid-path
+            ("16.0", "18.0", "18.0", [("17.0", False), ("18.0", True)]),
+            ("16.0", "17.0", "18.0", [("17.0", True), ("18.0", False), ("19.0", False)]),
+            ("16.0", "17.0", "19.0", [("17.0", True), ("18.0", False), ("19.0", False)]),
+            ("16.0", "saas~17.2", None, [("17.0", False), ("18.0", True), ("19.0", False)]),
+            (
+                "16.0",
+                "saas~17.2",
+                "saas~18.4",
+                [("17.0", False), ("18.0", True), ("19.0", False), ("saas~19.3", False)],
+            ),
+            ("16.0", "17.0", "saas~18.4", [("17.0", True), ("18.0", False), ("19.0", False), ("saas~19.3", False)]),
+            ("18.4", "saas~19.0", "saas~19.3", [("19.0", True), ("saas~19.3", False)]),
+            ("saas~18.2", "saas~18.2", "saas~19.3", [("19.0", True), ("saas~19.3", False)]),
+            ("saas~16.3", "saas~16.3", "18.0", [("17.0", True), ("18.0", False)]),
+            # saas~12.3 mandatory stopover: it is an extra step between 12.0 and 13.0
+            ("10.0", None, None, [("11.0", True), ("12.0", False), ("saas~12.3", False), ("13.0", False)]),
+            ("11.0", None, None, [("12.0", True), ("saas~12.3", False), ("13.0", False)]),
+            ("11.0", "saas~12.3", "saas~12.3", [("12.0", False), ("saas~12.3", True), ("13.0", False)]),
+            ("11.0", "12.0", "saas~12.3", [("12.0", True), ("saas~12.3", False), ("13.0", False)]),
+            ("10.0", "saas~12.3", "13.0", [("11.0", False), ("12.0", False), ("saas~12.3", True), ("13.0", False)]),
+            # Interval entirely outside the upgrade path: never fire
+            ("16.0", "saas~17.2", "saas~17.4", [("17.0", False), ("18.0", False)]),
+            ("16.0", "18.0", "19.0", [("17.0", False)]),
+        ]
+    )
+    def test_once(self, source, lower, upper, steps_and_expected):
+        target = steps_and_expected[-1][0]
+        with mock.patch.object(util.misc, "_SOURCE_VERSION", source), mock.patch.object(
+            util.misc, "_TARGET_VERSION", target
+        ):
+            calls = set()
+            for series, expected in steps_and_expected:
+                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo
+                    msg = "series={!r} source={!r} target={!r} once({!r}, {!r})".format(
+                        series, source, target, lower, upper
+                    )
+
+                    o = util.once(lower, upper)
+                    self.assertEqual(bool(o), expected, msg)
+
+                    calls.clear()
+
+                    @util.once(lower, upper)
+                    def action():
+                        calls.add(1)
+
+                    action()
+                    self.assertEqual(calls, {1} if expected else set(), "decorator: " + msg)
+
+    def test_once_no_env_vars(self):
+        # When source/target are unknown, once is always truthy regardless of series
+        with mock.patch.object(util.misc, "_SOURCE_VERSION", None), mock.patch.object(
+            util.misc, "_TARGET_VERSION", None
+        ):
+            for series in ("16.0", "17.0", "18.0", "19.0", "saas~19.4"):
+                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo
+                    o = util.once("17.0", "18.0")
+                    self.assertTrue(o, "series={!r} should be True when env vars absent".format(series))
+
+    def test_once_same_source_target(self):
+        # master->master freeze: source == target, once is always truthy
+        with mock.patch.object(util.misc, "_SOURCE_VERSION", "saas~19.4"), mock.patch.object(
+            util.misc, "_TARGET_VERSION", "saas~19.4"
+        ):
+            for series in ("saas~19.4", "19.0", "18.0"):
+                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo
+                    o = util.once(None, None)
+                    self.assertTrue(o, "series={!r} should be True when source == target".format(series))
+
+
 @unittest.skipUnless(util.version_gte("15.0"), "Only works on Odoo >= 15 (python >= 3.7)")
 class TestHTMLFormat(UnitTestCase):
     def testsnip(self):
