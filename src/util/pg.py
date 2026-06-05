@@ -735,14 +735,15 @@ def create_fk(cr, table, column, fk_table, on_delete_action="NO ACTION"):
         if current_target[:2] == (fk_table, "id"):
             # assume the `on_delete_action` is correct
             return
-        cr.execute(
-            sql.SQL("ALTER TABLE {} DROP CONSTRAINT {}").format(
-                sql.Identifier(table), sql.Identifier(current_target[2])
-            )
-        )
+        cr.execute(format_query(cr, "ALTER TABLE {} DROP CONSTRAINT {}", table, current_target[2]))
 
-    query = sql.SQL("ALTER TABLE {} ADD FOREIGN KEY ({}) REFERENCES {}(id) ON DELETE {}").format(
-        sql.Identifier(table), sql.Identifier(column), sql.Identifier(fk_table), sql.SQL(on_delete_action)
+    query = format_query(
+        cr,
+        "ALTER TABLE {} ADD FOREIGN KEY ({}) REFERENCES {}(id) ON DELETE {}",
+        table,
+        column,
+        fk_table,
+        SQLStr(on_delete_action),
     )
     cr.execute(query)
 
@@ -751,7 +752,7 @@ def remove_column(cr, table, column, cascade=False):
     if column_exists(cr, table, column):
         drop_depending_views(cr, table, column)
         drop_cascade = " CASCADE" if cascade else ""
-        cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"{2}'.format(table, column, drop_cascade))
+        cr.execute(format_query(cr, "ALTER TABLE {} DROP COLUMN {}{}", table, column, SQLStr(drop_cascade)))
 
 
 def alter_column_type(cr, table, column, type, using=None, where=None, logger=_logger):
