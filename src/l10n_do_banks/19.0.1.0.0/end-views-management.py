@@ -5,6 +5,22 @@ from odoo.upgrade import util
 _logger = logging.getLogger(__name__)
 
 
+def delete_deprecated_views(cr, xml_ids):
+    env = api.Environment(cr, SUPERUSER_ID, {})
+    for xml_id in xml_ids:
+        try:
+            view = env.ref(xml_id)
+            if view:
+                try:
+                    view.write({'active': False})
+                    view.unlink()
+                    _logger.info(f"Successfully deleted deprecated view {xml_id}")
+                except Exception as e:
+                    _logger.warning(f"Error deleting deprecated view {xml_id}: {e}")
+        except Exception as e:
+            _logger.warning(f"Error finding deprecated view {xml_id}: {e}")
+
+
 def activate_database_views(cr, xml_ids):
     env = api.Environment(cr, SUPERUSER_ID, {})
     for xml_id in xml_ids:
