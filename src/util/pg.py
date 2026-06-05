@@ -219,7 +219,7 @@ def format_query(cr, query, *args, **kwargs):
 
     args = tuple(wrap(a) for a in args)
     kwargs = {k: wrap(v) for k, v in kwargs.items()}
-    return SQLStr(sql.SQL(query).format(*args, **kwargs).as_string(cr._cnx))
+    return SQLStr(sql.SQL(query).format(*args, **kwargs).as_string(cr._obj))
 
 
 class _ExplodeFormatter(string.Formatter):
@@ -670,7 +670,7 @@ def create_column(cr, table, column, definition, **kwargs):
         fk = (
             sql.SQL("REFERENCES {}(id) ON DELETE {}")
             .format(sql.Identifier(fk_table), sql.SQL(on_delete_action))
-            .as_string(cr._cnx)
+            .as_string(cr._obj)
         )
     elif on_delete_action is not no_def:
         raise ValueError("`on_delete_action` argument can only be used if `fk_table` argument is set.")
@@ -1126,10 +1126,10 @@ class ColumnList(UserList, sql.Composable):
         >>> list(columns)
         ['id', '"field_Yx"']
 
-        >>> columns.using(alias="t").as_string(cr._cnx)
+        >>> columns.using(alias="t").as_string(cr._obj)
         '"t"."id", "t"."field_Yx"'
 
-        >>> columns.using(leading_comma=True).as_string(cr._cnx)
+        >>> columns.using(leading_comma=True).as_string(cr._obj)
         ', "id", "field_Yx"'
 
         >>> util.format_query(cr, "SELECT {} t.name FROM table t", columns.using(alias="t", trailing_comma=True))
@@ -1175,7 +1175,7 @@ class ColumnList(UserList, sql.Composable):
 
         :param list(str) list_: list of unquoted column names
         """
-        quoted = [quote_ident(c, cr._cnx) for c in list_]
+        quoted = [quote_ident(c, cr._obj) for c in list_]
         return cls(list_, quoted)
 
     def using(self, leading_comma=KEEP_CURRENT, trailing_comma=KEEP_CURRENT, alias=KEEP_CURRENT):
