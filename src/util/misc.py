@@ -2,6 +2,7 @@
 
 import ast
 import collections
+import contextlib
 import datetime
 import functools
 import hashlib
@@ -129,6 +130,108 @@ def version_between(a, b):
     if "-" in a + b:
         raise SleepyDeveloperError("version cannot contains dash")
     return parse_version(a) <= parse_version(release.serie) <= parse_version(b)
+
+
+_SOURCE_VERSION = os.getenv("ODOO_UPG_DB_SOURCE_VERSION")
+_TARGET_VERSION = os.getenv("ODOO_UPG_DB_TARGET_VERSION")
+
+
+class once(object):
+    """
+    Run code only once in a version interval during a multi-step upgrade.
+
+    When the upgrade source and target are known (via the ``ODOO_UPG_DB_SOURCE_VERSION`` and
+    ``ODOO_UPG_DB_TARGET_VERSION`` environment variables), this object evaluates to truthy only
+    at the *first* upgrade step whose destination version falls within ``[lower, upper]``. At
+    every other step it evaluates to falsy.
+
+    When the environment variables are absent (e.g. in a single-step or standalone run), the
+    object is always truthy so the code is never accidentally skipped.
+
+    It can be used as a plain boolean or as a decorator:
+
+    .. example::
+
+       As a boolean, run a migration only during the first step that reaches Odoo 17:
+
+       .. code-block:: python
+
+          def migrate(cr, version):
+              if util.once("17.0", "18.0"):
+                  util.rename_field(cr, "sale.order", "old_name", "new_name")
+
+       As a decorator, same effect, wrapping the whole function body:
+
+       .. code-block:: python
+
+          @util.once("17.0", "18.0")
+          def migrate(cr, version):
+              util.rename_field(cr, "sale.order", "old_name", "new_name")
+
+    .. note::
+       This is only meaningful in multi-step upgrades, i.e. for ``0.0.0`` scripts or symlinked
+       scripts.
+
+    :param lower: lower bound of the version interval, inclusive. Defaults to the upgrade source
+                  version when ``None``.
+    :type lower: str or None
+    :param upper: upper bound of the version interval, inclusive. Defaults to the upgrade target
+                  version when ``None``.
+    :type upper: str or None
+    :param logger: when set, a message is emitted on each evaluation reporting whether the wrapped
+                   code runs or is skipped at the current version.
+    :type logger: logging.Logger or None
+    """
+
+    def __init__(self, lower, upper, logger=None):
+        self._logger = logger
+
+        # When running locally the env vars may be unset. In CI we do master->master upgrade for the freeze
+        if _SOURCE_VERSION is None or _TARGET_VERSION is None or _SOURCE_VERSION == _TARGET_VERSION:
+            self.check = True
+            return
+
+        s, t = parse_version(_SOURCE_VERSION), parse_version(_TARGET_VERSION)
+        assert s <= t, "check source and target env vars"
+
+        a = s if lower is None else parse_version(lower)
+        b = t if upper is None else parse_version(upper)
+        assert a <= b, "invalid interval"
+
+        s_maj = int(_SOURCE_VERSION.replace("saas~", "").replace("saas-", "").split(".", 1)[0])
+        t_parts = _TARGET_VERSION.replace("saas~", "").replace("saas-", "").split(".", 1)
+        t_maj = int(t_parts[0])
+        steps = ["{}.0".format(x) for x in range(s_maj + 1, t_maj + 1)]
+        if not steps or steps[-1] != _TARGET_VERSION:
+            steps.append(_TARGET_VERSION)
+        if steps[-1] != "12.0" and "12.0" in steps and "saas~12.3" not in steps:
+            steps.insert(steps.index("12.0") + 1, "saas~12.3")  # historical reasons
+
+        first_step = next((x for x in steps if a <= parse_version(x) <= b), None)
+        if not first_step:
+            self.check = False
+            return
+
+        once_step = parse_version(first_step)[:2]
+        self.check = parse_version(release.serie)[:2] == once_step
+
+    def __nonzero__(self):
+        return self.__bool__()
+
+    def __bool__(self):
+        if self._logger:
+            op = "run" if self.check else "skip"
+            self._logger.info("%s once in version %s", op, release.serie)
+        return self.check
+
+    def __call__(self, func=None):
+        assert callable(func)
+
+        @contextlib.wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs) if self else None
+
+        return wrapper
 
 
 @_cached
