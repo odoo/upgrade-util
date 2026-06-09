@@ -210,6 +210,38 @@ def format_style(styles):
     return style
 
 
+def wrap_element(el, wrapper_tag="div", move_classes=(), move_attributes=(), strip_classes=(), wrapper_classes=()):
+    """
+    Wrap an HTML element, and move classes or attributes onto that wrapper.
+
+    :param el: the HTML element to wrap
+    :param str wrapper_tag: tag name of the new wrapping element
+    :param tuple move_classes: classes to remove from ``el`` and add to the wrapper
+    :param tuple move_attributes: attribute names to pop from ``el`` and copy onto the wrapper
+    :param tuple strip_classes: classes to remove from ``el``
+    :param tuple wrapper_classes: classes to add to the wrapper
+    :return: the new wrapping element
+    """
+    wrapper_attrs = {}
+    wrapper_class_list = move_classes + wrapper_classes
+    if wrapper_class_list:
+        wrapper_attrs["class"] = " ".join(wrapper_class_list)
+    drop = set(move_classes + strip_classes)
+    if drop:
+        el.set(
+            "class",
+            " ".join(c for c in el.get("class", "").split() if c not in drop),
+        )
+    for attr in move_attributes:
+        val = el.attrib.pop(attr, None)
+        if val is not None:
+            wrapper_attrs[attr] = val
+    wrapper = el.makeelement(wrapper_tag, wrapper_attrs)
+    el.addprevious(wrapper)
+    wrapper.append(el)
+    return wrapper
+
+
 def html_converter(transform_callback, selector=None):
     """
     Create an upgrade converter for a single HTML text content or for HTML elements that match a selector.
