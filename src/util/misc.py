@@ -314,6 +314,8 @@ try:
     import importlib.util
     from pathlib import Path
 
+    import odoo
+
     try:
         import odoo.upgrade
     except ImportError:
@@ -381,6 +383,39 @@ try:
         spec.loader.exec_module(module)
         return module
 
+    def import_code_upgrade(name):
+        """
+        Import a code upgrade script.
+
+        Allow import of `upgrade_code scripts`_ to be used inside upgrade scripts.
+
+        .. _upgrade_code scripts: https://github.com/odoo/odoo/tree/HEAD/odoo/upgrade_code
+
+        :param str name: name of the script to import.
+        """
+        fname = name if name.endswith(".py") else name + ".py"
+        name = fname[:-3]
+        mod_name = "__upg_code_" + hashlib.sha256(name.encode()).hexdigest()
+
+        try:
+            return sys.modules[mod_name]
+        except KeyError:
+            pass
+
+        for path in odoo.__path__:
+            module_path = os.path.join(path, "upgrade_code", fname)
+            if os.path.isfile(module_path):
+                break
+        else:
+            raise ImportError(name)  # noqa: TRY301
+
+        spec = importlib.util.spec_from_file_location(mod_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = module
+        spec.loader.exec_module(module)
+        return module
+
+
 except ImportError:
     # python2 version
     import imp
@@ -401,6 +436,9 @@ except ImportError:
         with open(full_path) as fp:
             exec(compile(fp.read(), full_path, "exec"), mod.__dict__)
         return mod
+
+    def import_code_upgrade(name):
+        raise NotImplementedError()
 
 
 @contextmanager
