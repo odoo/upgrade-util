@@ -150,7 +150,7 @@ def target_elem_and_view_type(elem, comb_arch):
             else:
                 it = (
                     x
-                    for x in comb_arch.iter("field")
+                    for x in comb_arch.iter(elem.tag)
                     if all(x.get(k) == elem.get(k) for k in elem.attrib if k != "position")
                 )
             return next(it, elem)
