@@ -1199,6 +1199,23 @@ class TestPG(UnitTestCase):
         target = util.target_of(cr, "res_partner", "_test_lang_id")
         self.assertEqual(target, ("res_lang", "id", "res_partner__test_lang_id_fkey"))
 
+    def test_create_column_inferred_type_with_fk(self):
+        cr = self.env.cr
+        self.assertFalse(util.column_exists(cr, "res_partner", "_test_lang_id"))
+
+        with self.assertRaises(ValueError):
+            util.create_column(cr, "res_partner", "_test_lang_id", util.AUTO)
+
+        util.create_column(cr, "res_partner", "_test_lang_id", util.AUTO, fk_table="res_lang")
+
+        self.assertTrue(util.column_exists(cr, "res_partner", "_test_lang_id"))
+        expected_type = util.column_type(cr, "res_lang", "id")
+        actual_type = util.column_type(cr, "res_partner", "_test_lang_id")
+        self.assertEqual(actual_type, expected_type)
+
+        target = util.target_of(cr, "res_partner", "_test_lang_id")
+        self.assertEqual(target, ("res_lang", "id", "res_partner__test_lang_id_fkey"))
+
     def test_ColumnList(self):
         cr = self.env.cr
 
