@@ -645,9 +645,10 @@ def create_column(cr, table, column, definition, **kwargs):
 
     :param str table: table of the new column
     :param str column: name of the new column
-    :param str definition: column type of the new column
+    :param str definition: column type of the new column. Use :data:`~odoo.upgrade.util.misc.AUTO`
+                           to infer the type from the `id` column of `fk_table`.
     :param bool default: default value to set on the new column
-    :param bool fk_table: if the new column if a foreign key, name of the foreign table
+    :param str fk_table: if the new column is a foreign key, name of the foreign table
     :param str on_delete_action: `ON DELETE` clause, default `NO ACTION`, only valid if
                                   the column is a foreign key.
     :return: whether the column was created
@@ -675,7 +676,12 @@ def create_column(cr, table, column, definition, **kwargs):
     elif on_delete_action is not no_def:
         raise ValueError("`on_delete_action` argument can only be used if `fk_table` argument is set.")
 
-    definition = _normalize_pg_type(definition)
+    if definition is AUTO:
+        if fk_table is no_def:
+            raise ValueError("AUTO definition can only be used if `fk_table` argument is set.")
+        definition = column_type(cr, fk_table, "id")
+    else:
+        definition = _normalize_pg_type(definition)
 
     if definition == "bool" and default is no_def:
         default = False
