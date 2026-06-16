@@ -187,6 +187,8 @@ def migrate(cr, version):
         'sale_order_rate.recompute_so_rate',
         # serial_number_report [DELETED in v19]
         'serial_number_report.ir_cron_scheduler_demo_action',
+        # l10n_do_ecf_invoicing
+        'l10n_do_ecf_invoicing.l10n_do_ecf_fix_sign_date_ir_actions_server',
     ]
 
     delete_deprecated_crons(cr, deprecated_crons_list)
