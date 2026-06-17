@@ -33,6 +33,7 @@ if release.major_version == "7.0":
         return _parse_version(version.replace("saas~", ""))
 
 
+from .const import ENVIRON
 from .exceptions import MigrationError, SleepyDeveloperError
 
 # python3 shim
@@ -187,6 +188,12 @@ class once(object):
     def __init__(self, lower, upper, logger=None):
         self._logger = logger
 
+        # Symlinked scripts could run more than once in the same upgrade step. To ensure single run
+        # we keep the info in ENVIRON.
+        # NOTE: `once` via import_script gets the caller file and line
+        frame = sys._getframe(1)
+        self._key = "{}:{}".format(os.path.realpath(frame.f_code.co_filename), frame.f_lineno)
+
         # When running locally the env vars may be unset. In CI we do master->master upgrade for the freeze
         if _SOURCE_VERSION is None or _TARGET_VERSION is None or _SOURCE_VERSION == _TARGET_VERSION:
             assert lower is not None or upper is not None, "consider a 0.0.0 script instead"
@@ -226,10 +233,13 @@ class once(object):
         return self.__bool__()
 
     def __bool__(self):
+        must_run = self.check and self._key not in ENVIRON["__once_ran"]
+        if must_run:
+            ENVIRON["__once_ran"].add(self._key)
         if self._logger:
-            op = "run" if self.check else "skip"
-            self._logger.info("%s once in version %s", op, release.serie)
-        return self.check
+            op = "run" if must_run else "skip"
+            self._logger.info("%s key, %s once in version %s", self._key, op, release.serie)
+        return must_run
 
     def __call__(self, func=None):
         assert callable(func)
