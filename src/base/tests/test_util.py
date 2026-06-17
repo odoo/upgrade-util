@@ -2507,7 +2507,7 @@ class TestOnce(UnitTestCase):
         ):
             calls = set()
             for series, expected in steps_and_expected:
-                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo
+                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
                     msg = "series={!r} source={!r} target={!r} once({!r}, {!r})".format(
                         series, source, target, lower, upper
                     )
@@ -2530,7 +2530,7 @@ class TestOnce(UnitTestCase):
             util.misc, "_TARGET_VERSION", None
         ):
             for series in ("16.0", "17.0", "18.0", "19.0", "saas~19.4"):
-                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo
+                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
                     o = util.once("17.0", "18.0")
                     self.assertTrue(o, "series={!r} should be True when env vars absent".format(series))
 
@@ -2540,7 +2540,7 @@ class TestOnce(UnitTestCase):
             util.misc, "_TARGET_VERSION", "saas~19.4"
         ):
             for series in ("saas~19.4", "19.0", "18.0"):
-                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo
+                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
                     o = util.once(None, None)
                     self.assertTrue(o, "series={!r} should be True when source == target".format(series))
 
