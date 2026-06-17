@@ -32,6 +32,7 @@ line-length = 120
 target-version = "py37"
 
 [tool.ruff.lint]
+external = ["TYPOS"]
 ignore = [
     "B904",  # raise-without-from-inside-except; not python2 compatible
     "B905",  # zip-without-explicit-strict; not python2 compatible
@@ -133,6 +134,9 @@ extend-ignore-re = [
     "\\brelease\\.serie\\b",
     # ignore `datas` as the whole string
     '"datas"',
+
+    # Ignore lines that contains `# noqa: TYPOS`
+    "(?Rm)^.*# noqa: (?:\\w+, )*TYPOS(?:, \\w+)*$",
 ]
 
 [tool.typos.default.extend-identifiers]
