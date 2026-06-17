@@ -2453,6 +2453,14 @@ def not_doing_anything_converter(el):
 
 
 class TestOnce(UnitTestCase):
+    def setUp(self):
+        super().setUp()
+        # `once` records fired call-sites in this shared store; each test (and each parametrized
+        # case, which reuses the same source line as a key) must start from a clean slate.
+        once_ran = util.ENVIRON["__once_ran"]
+        once_ran.clear()
+        self.addCleanup(once_ran.clear)
+
     # Each case: (source, lower, upper, steps_and_expected)
     # source: the DB version before the upgrade starts target is inferred as the last step in steps_and_expected
     # steps_and_expected: list of (series, expected), the steps visited in order.
@@ -2569,6 +2577,9 @@ class TestOnce(UnitTestCase):
         # The unset-env and equal-source/target cases share the same fallback code path; check both.
         calls = set()
         for source, target in ((None, None), ("saas~19.4", "saas~19.4")):
+            # Each iteration is an independent scenario; reset the shared once-dedup store so the
+            # call-site below is not considered already-fired from the previous iteration.
+            util.ENVIRON["__once_ran"].clear()
             with mock.patch.object(util.misc, "_SOURCE_VERSION", source), mock.patch.object(
                 util.misc, "_TARGET_VERSION", target
             ), mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
@@ -2594,6 +2605,68 @@ class TestOnce(UnitTestCase):
                 util.misc, "_TARGET_VERSION", target
             ), self.assertRaises(AssertionError, msg="src={!r} target={!r}".format(source, target)):
                 util.once(None, None)
+
+    def test_once_consumed_after_first_evaluation(self):
+        # A script may be symlinked more than once in the same major version. A truthy `once`
+        # instance must fire only on the *first* evaluation; any further evaluation of the same
+        # instance is falsy, so the guarded code never runs twice on the same step.
+        # Use a step path that makes `once` truthy at the current series.
+        with mock.patch.object(util.misc, "_SOURCE_VERSION", "16.0"), mock.patch.object(
+            util.misc, "_TARGET_VERSION", "18.0"
+        ), mock.patch.object(util.misc.release, "serie", "17.0"):  # "serie" is an old typo  # noqa: TYPOS
+            # As a boolean: first shot truthy, subsequent shots falsy.
+            o = util.once("17.0", "18.0")
+            self.assertTrue(bool(o), "first evaluation should fire")
+            self.assertFalse(bool(o), "second evaluation must be consumed")
+            self.assertFalse(bool(o), "still falsy on further evaluations")
+
+            # As a decorator: the wrapped function runs only on the first call.
+            calls = []
+
+            @util.once("17.0", "18.0")
+            def action():
+                calls.append(1)
+
+            action()
+            action()
+            action()
+            self.assertEqual(calls, [1], "decorator body must run only once across repeated calls")
+
+            # A *falsy* instance stays falsy and never runs (and consumption keeps it falsy).
+            never = util.once("19.0", "saas~19.3")
+            self.assertFalse(bool(never))
+            self.assertFalse(bool(never))
+
+    def test_once_deduped_across_instances_in_same_step(self):
+        # The real symlink case: the same script runs several times in one step, each run building
+        # a *fresh* `once` object. They share a call-site (same file + line), so only the first must
+        # fire. `make` returns a new instance from a single source line, mimicking repeated runs.
+        def make():
+            return util.once("17.0", "18.0")
+
+        with mock.patch.object(util.misc, "_SOURCE_VERSION", "16.0"), mock.patch.object(
+            util.misc, "_TARGET_VERSION", "saas~18.4"
+        ):
+            # `("17.0", "18.0")` is truthy at the first step landing in range, here series 17.0.
+            with mock.patch.object(util.misc.release, "serie", "17.0"):  # "serie" is an old typo  # noqa: TYPOS
+                fired = [bool(make()) for _ in range(3)]
+                self.assertEqual(fired, [True, False, False], "fresh instances at one call-site fire once")
+
+            # The call-site key includes the running series, so a *different* step is independent:
+            # a fresh instance evaluated at series 18.0 is gated only by its own (falsy here) check.
+            with mock.patch.object(util.misc.release, "serie", "18.0"):  # "serie" is an old typo  # noqa: TYPOS
+                self.assertFalse(bool(make()), "out-of-step instance does not fire")
+
+    def test_once_handles_caller_without_real_file(self):
+        # `once` may be built from code with no real file on disk (e.g. an exec'd snippet, as done
+        # by `util.import_script`). Resolving the call-site must not crash and behaviour is unchanged.
+        code = compile("o = util.once('17.0', '18.0'); res = [bool(o), bool(o)]", "<string>", "exec")
+        with mock.patch.object(util.misc, "_SOURCE_VERSION", "16.0"), mock.patch.object(
+            util.misc, "_TARGET_VERSION", "18.0"
+        ), mock.patch.object(util.misc.release, "serie", "17.0"):  # "serie" is an old typo  # noqa: TYPOS
+            ns = {"util": util}
+            exec(code, ns)
+            self.assertEqual(ns["res"], [True, False], "per-instance consumption still holds")
 
 
 @unittest.skipUnless(util.version_gte("15.0"), "Only works on Odoo >= 15 (python >= 3.7)")
