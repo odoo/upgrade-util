@@ -146,7 +146,8 @@ class once(object):
     every other step it evaluates to falsy.
 
     When the environment variables are absent (e.g. in a single-step or standalone run), the
-    object is always truthy so the code is never accidentally skipped.
+    object is truthy when the current version is in the interval ``[lower, upper]``. A ``None``
+    value means unbound. At least one bound must be set.
 
     It can be used as a plain boolean or as a decorator:
 
@@ -188,7 +189,13 @@ class once(object):
 
         # When running locally the env vars may be unset. In CI we do master->master upgrade for the freeze
         if _SOURCE_VERSION is None or _TARGET_VERSION is None or _SOURCE_VERSION == _TARGET_VERSION:
-            self.check = True
+            assert lower is not None or upper is not None, "consider a 0.0.0 script instead"
+            if upper is None:  # >= lower
+                self.check = version_gte(lower)
+            elif lower is None:  # <= upper
+                self.check = parse_version(upper)[:2] == parse_version(release.serie)[:2] or not version_gte(upper)
+            else:
+                self.check = version_between(lower, upper)
             return
 
         s, t = parse_version(_SOURCE_VERSION), parse_version(_TARGET_VERSION)

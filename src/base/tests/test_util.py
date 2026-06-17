@@ -2474,6 +2474,8 @@ class TestOnce(UnitTestCase):
             # Explicit interval covering the first step
             ("16.0", "17.0", "18.0", [("17.0", True), ("18.0", False)]),
             ("16.0", "17.0", None, [("17.0", True), ("18.0", False)]),
+            # Open lower bound defaults to the source version: first step still fires
+            ("16.0", None, "18.0", [("17.0", True), ("18.0", False)]),
             # Explicit interval starting mid-path
             ("16.0", "18.0", "18.0", [("17.0", False), ("18.0", True)]),
             ("16.0", "17.0", "18.0", [("17.0", True), ("18.0", False), ("19.0", False)]),
@@ -2524,25 +2526,74 @@ class TestOnce(UnitTestCase):
                     action()
                     self.assertEqual(calls, {1} if expected else set(), "decorator: " + msg)
 
-    def test_once_no_env_vars(self):
-        # When source/target are unknown, once is always truthy regardless of series
-        with mock.patch.object(util.misc, "_SOURCE_VERSION", None), mock.patch.object(
-            util.misc, "_TARGET_VERSION", None
-        ):
-            for series in ("16.0", "17.0", "18.0", "19.0", "saas~19.4"):
-                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
-                    o = util.once("17.0", "18.0")
-                    self.assertTrue(o, "series={!r} should be True when env vars absent".format(series))
+    # When source/target are unknown (env vars unset) or equal (master->master freeze), `once`
+    # cannot rely on the step path. It falls back to evaluating the interval against the currently
+    # running series, with an open bound (``None``) meaning unbounded on that side. At least one
+    # bound must be set.
+    # Each case: (lower, upper, series, expected)
+    @parametrize(
+        [
+            # Bounded interval [lower, upper]: truthy iff series in range (inclusive)
+            ("17.0", "18.0", "16.0", False),
+            ("17.0", "18.0", "17.0", True),
+            ("17.0", "18.0", "saas~17.4", True),
+            ("17.0", "18.0", "18.0", True),
+            ("17.0", "18.0", "saas~18.1", False),
+            ("17.0", "18.0", "19.0", False),
+            ("saas~17.2", "saas~18.4", "17.0", False),
+            ("saas~17.2", "saas~18.4", "saas~17.2", True),
+            ("saas~17.2", "saas~18.4", "18.0", True),
+            ("saas~17.2", "saas~18.4", "saas~18.4", True),
+            ("saas~17.2", "saas~18.4", "saas~18.5", False),
+            # Open upper bound (>= lower): truthy iff series >= lower
+            ("18.0", None, "17.0", False),
+            ("18.0", None, "saas~17.4", False),
+            ("18.0", None, "18.0", True),
+            ("18.0", None, "saas~18.4", True),
+            ("18.0", None, "19.0", True),
+            ("saas~18.2", None, "18.0", False),
+            ("saas~18.2", None, "saas~18.2", True),
+            ("saas~18.2", None, "saas~18.4", True),
+            # Open lower bound (<= upper): truthy iff series <= upper (upper match is at major.minor)
+            (None, "18.0", "17.0", True),
+            (None, "18.0", "saas~17.5", True),
+            (None, "18.0", "18.0", True),
+            (None, "18.0", "saas~18.4", False),
+            (None, "18.0", "19.0", False),
+            (None, "saas~18.4", "saas~18.4", True),
+            (None, "saas~18.4", "saas~18.3", True),
+            (None, "saas~18.4", "saas~18.5", False),
+        ]
+    )
+    def test_once_no_step_path(self, lower, upper, series, expected):
+        # The unset-env and equal-source/target cases share the same fallback code path; check both.
+        calls = set()
+        for source, target in ((None, None), ("saas~19.4", "saas~19.4")):
+            with mock.patch.object(util.misc, "_SOURCE_VERSION", source), mock.patch.object(
+                util.misc, "_TARGET_VERSION", target
+            ), mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
+                msg = "src={!r} series={!r} once({!r}, {!r})".format(source, series, lower, upper)
 
-    def test_once_same_source_target(self):
-        # master->master freeze: source == target, once is always truthy
-        with mock.patch.object(util.misc, "_SOURCE_VERSION", "saas~19.4"), mock.patch.object(
-            util.misc, "_TARGET_VERSION", "saas~19.4"
-        ):
-            for series in ("saas~19.4", "19.0", "18.0"):
-                with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
-                    o = util.once(None, None)
-                    self.assertTrue(o, "series={!r} should be True when source == target".format(series))
+                o = util.once(lower, upper)
+                self.assertEqual(bool(o), expected, msg)
+
+                calls.clear()
+
+                @util.once(lower, upper)
+                def action():
+                    calls.add(1)
+
+                action()
+                self.assertEqual(calls, {1} if expected else set(), "decorator: " + msg)
+
+    def test_once_requires_a_bound_without_step_path(self):
+        # Without a step path there is no source/target to default an open bound to, so passing
+        # neither bound is an error. Rejected in both the unset-env and equal-source/target contexts.
+        for source, target in ((None, None), ("saas~19.4", "saas~19.4")):
+            with mock.patch.object(util.misc, "_SOURCE_VERSION", source), mock.patch.object(
+                util.misc, "_TARGET_VERSION", target
+            ), self.assertRaises(AssertionError, msg="src={!r} target={!r}".format(source, target)):
+                util.once(None, None)
 
 
 @unittest.skipUnless(util.version_gte("15.0"), "Only works on Odoo >= 15 (python >= 3.7)")
