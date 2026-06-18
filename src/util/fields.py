@@ -1935,6 +1935,7 @@ def dump_field_to_chatter(
     res_model=None,
     label="%s",
     fk_display=None,
+    fallback_column=None,
     where=None,
     html_escape=True,
     message_type="notification",
@@ -1946,14 +1947,15 @@ def dump_field_to_chatter(
     This is useful when a field is being removed during a migration but clients may need to
     recover its values. The value is posted as a ``mail_message`` on the record's chatter.
 
-    If the ``mail`` module is not installed, the function silently does nothing.
+    If the ``mail`` module is not installed (no ``mail_message`` table), the value is dumped
+    into ``fallback_column`` when one is provided, otherwise the function silently does nothing.
 
     .. example::
        .. code-block:: python
 
           # Simple varchar column
           util.dump_field_to_chatter(
-              cr, "crm_lead", "mobile", label="Previous Mobile", where="phone != mobile"
+              cr, "crm_lead", "mobile", label="Previous Mobile", where="{0}.phone != {0}.mobile"
           )
 
           # Drop team_id, save the team name
@@ -1985,8 +1987,17 @@ def dump_field_to_chatter(
                                    ``"name"``). The FK target table is auto-detected. When
                                    omitted, only the id is shown. The id is always
                                    appended in parentheses.
-    :param str where: extra SQL ``WHERE`` condition. By default, only rows where the
-                      column is not ``NULL`` (and not empty for text types) are included.
+    :param str or None fallback_column: column on the same table to dump the value into when
+                                        the ``mail`` module is not installed (no
+                                        ``mail_message`` table). The column must exist (e.g.
+                                        ``res_partner.comment``), raises otherwise. Translated
+                                        (``jsonb``) columns are written through their ``en_US``
+                                        key.
+    :param str where: extra SQL ``WHERE`` condition on the source records. It is a
+                      ``str.format`` template whose ``{0}`` is the source table alias; use it
+                      to qualify every column reference, e.g.
+                      ``where="{0}.phone != {0}.mobile"``. By default, only rows where the
+                      dumped column is not ``NULL`` (and not empty for text types) are included.
     :param bool html_escape: whether to HTML-escape the value (default ``True``).
     :param str message_type: ``mail_message.message_type`` (default ``"notification"``).
     :param str subtype_xmlid: optional XML ID for the message subtype (e.g.
@@ -1994,13 +2005,22 @@ def dump_field_to_chatter(
     """
     table = table_of_model(cr, model)
     column = field
-    if not table_exists(cr, "mail_message"):
-        _logger.warning(
-            "dump_field_to_chatter: mail_message doesn't exist, cannot dump column %s.%s to chatter",
-            table,
-            column,
-        )
-        return
+    has_mail = table_exists(cr, "mail_message")
+    if not has_mail:
+        if fallback_column:
+            _logger.info(
+                "mail_message doesn't exist, dump column %s.%s to fallback column %s",
+                table,
+                column,
+                fallback_column,
+            )
+        else:
+            _logger.warning(
+                "mail_message doesn't exist, cannot dump column %s.%s to chatter",
+                table,
+                column,
+            )
+            return
 
     fk_join = SQLStr("")
     if res_id != "id":
@@ -2017,6 +2037,10 @@ def dump_field_to_chatter(
             res_id=res_id,
             fk_col=fk_target[1],
         )
+
+    upd_table = fk_table if fk_join else table
+    if fallback_column and not column_exists(cr, upd_table, fallback_column):
+        raise UpgradeError("Fallback column {}.{} does not exist".format(upd_table, fallback_column))
 
     if res_model is None:
         res_model = model_of_table(cr, table)
@@ -2049,44 +2073,95 @@ def dump_field_to_chatter(
         if html_escape:
             col_expr = pg_html_escape(col_expr)
 
-    where = SQLStr(where) if where else format_query(cr, "NULLIF({}::text, '') IS NOT NULL", column)
+    where = format_query(cr, where or "NULLIF({0}.{col}::text, '') IS NOT NULL", "t", col=column)
     root_id = ref(cr, "base.partner_root")
     subtype_id = ref(cr, subtype_xmlid) if subtype_xmlid else None
 
     if label and "%s" not in label:
         label += ": %s"
 
-    query = format_query(
-        cr,
-        """
-        WITH batch AS (
-            SELECT id
-              FROM {table}
-             WHERE ({where})
-               AND {res_id} IS NOT NULL
-               AND {{parallel_filter}}
+    if has_mail:
+        explode_table, explode_alias = table, "t"
+        query = format_query(
+            cr,
+            """
+            WITH batch AS (
+                SELECT t.id AS id
+                  FROM {table} t
+                 WHERE ({where})
+                   AND t.{res_id} IS NOT NULL
+                   AND {{parallel_filter}}
+            )
+            INSERT INTO mail_message (
+                            model, author_id, message_type, subtype_id,
+                            date, create_date,
+                            res_id, body
+                        )
+                 SELECT %(res_model)s, %(root_id)s, %(message_type)s, %(subtype_id)s,
+                        NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC',
+                        t.{res_id}, format(%(label)s, {esc_column})
+                   FROM batch
+                   JOIN {table} t
+                     ON batch.id = t.id
+                   {fk_join}
+                   {value_join}
+            """,
+            res_id=res_id,
+            esc_column=col_expr,
+            table=table,
+            fk_join=fk_join,
+            value_join=value_join,
+            where=where,
         )
-        INSERT INTO mail_message (
-                        model, author_id, message_type, subtype_id,
-                        date, create_date,
-                        res_id, body
-                    )
-             SELECT %(res_model)s, %(root_id)s, %(message_type)s, %(subtype_id)s,
-                    NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC',
-                    t.{res_id}, format(%(label)s, {esc_column})
-               FROM batch
-               JOIN {table} t
-                 ON batch.id = t.id
-               {fk_join}
-               {value_join}
-        """,
-        table=table,
-        res_id=res_id,
-        where=where,
-        fk_join=fk_join,
-        value_join=value_join,
-        esc_column=col_expr,
-    )
+    else:
+        # _upd folds all source values targeting the same record into one string (per target id);
+        # the existing target value is combined once, in the UPDATE's SET clause below.
+        if column_type(cr, upd_table, fallback_column) == "jsonb":
+            set_tmpl = """
+                COALESCE(tgt.{col}, '{{}}'::jsonb)
+            ||  jsonb_build_object(
+                    'en_US',
+                    CONCAT_WS(%(filler)s, tgt.{col}->>'en_US', _upd.value)
+                )
+            """
+        else:
+            set_tmpl = "CONCAT_WS(%(filler)s, tgt.{col}, _upd.value)"
+        set_expr = format_query(cr, set_tmpl, col=fallback_column)
+        explode_table, explode_alias = upd_table, "tgt"
+        query = format_query(
+            cr,
+            """
+            WITH batch AS (
+                SELECT t.id AS id,
+                       tgt.id AS tgt_id
+                  FROM {table} t
+                  JOIN {upd_table} tgt
+                    ON t.{res_id} = tgt.id
+                 WHERE ({where})
+                   AND {{parallel_filter}}
+            ), _upd AS (
+                SELECT batch.tgt_id AS id,
+                       STRING_AGG(format(%(label)s, {col_expr}), %(filler)s ORDER BY t.id) AS value
+                  FROM batch
+                  JOIN {table} t
+                    ON batch.id = t.id
+                  {value_join}
+              GROUP BY batch.tgt_id
+            )
+            UPDATE {upd_table} tgt
+               SET {col} = {set_expr}
+              FROM _upd
+             WHERE _upd.id = tgt.id
+            """,
+            table=table,
+            upd_table=upd_table,
+            res_id=res_id,
+            where=where,
+            col_expr=col_expr,
+            set_expr=set_expr,
+            value_join=value_join,
+            col=fallback_column,
+        )
     query = cr.mogrify(
         query,
         {
@@ -2095,7 +2170,8 @@ def dump_field_to_chatter(
             "message_type": message_type,
             "subtype_id": subtype_id,
             "label": label,
+            "filler": "<br/><br/>" if html_escape else "\n\n",
         },
     ).decode()
 
-    explode_execute(cr, query, table=table)
+    explode_execute(cr, query, table=explode_table, alias=explode_alias)
