@@ -1,0 +1,112 @@
+"""Deprecate the attendance-overtime news bridge in favour of Odoo's native
+overtime engine.
+
+Historically the Dominican localization computed attendance overtime by hand and
+pushed it to payroll through a "news" document:
+
+    l10n_do_hr_news_attendance          (compute overtime -> create news)
+    l10n_do_hr_payroll_news_attendance  (news amount -> salary attachment)
+
+From Odoo 18/19 the overtime calculation (daytime / nightly / holiday + rates) and
+its path to payroll are handled natively by:
+
+    hr_attendance               (Overtime Rulesets)
+    hr_work_entry_attendance    (overtime -> work entries)
+    hr_payroll_attendance       (work entries -> payslip)
+
+This script:
+  1. Makes sure every employee version points to an Overtime Ruleset so the native
+     engine keeps generating their overtime once the custom modules are gone.
+  2. Uninstalls the two now-redundant custom modules.
+"""
+
+import logging
+
+from odoo.upgrade import util
+
+_logger = logging.getLogger(__name__)
+
+MODULES_TO_UNINSTALL = [
+    # payroll bridge first (depends on the news_attendance module)
+    "l10n_do_hr_payroll_news_attendance",
+    "l10n_do_hr_news_attendance",
+]
+
+RULESET_MODEL = "hr.attendance.overtime.ruleset"
+RULESET_NAME = "República Dominicana"
+
+
+def _get_or_create_ruleset(env):
+    """Return the ruleset to assign to employees, creating a placeholder if none
+    exists. Legal rates must be reviewed by HR afterwards."""
+    Ruleset = env[RULESET_MODEL]
+    ruleset = Ruleset.search(
+        ["|", ("name", "ilike", "Dominicana"), ("name", "ilike", "RD")], limit=1
+    ) or Ruleset.search([], limit=1, order="id")
+    if ruleset:
+        return ruleset
+
+    _logger.warning(
+        "No Overtime Ruleset found. Creating a placeholder '%s'. HR must review its rules and legal rates.",
+        RULESET_NAME,
+    )
+    ruleset = Ruleset.create({"name": RULESET_NAME})
+    Rule = env["hr.attendance.overtime.rule"]
+    vals = {
+        "name": "Horas extra (revisar tarifa)",
+        "ruleset_id": ruleset.id,
+        "base_off": "timing",
+        "timing_type": "work_days",
+        "timing_start": 7.0,
+        "timing_stop": 21.0,
+        "paid": True,
+        "amount_rate": 1.35,
+    }
+    # work_entry_type_id is required once hr_work_entry_attendance is installed
+    if "work_entry_type_id" in Rule._fields:
+        wet = env.ref("hr_work_entry.work_entry_type_overtime", raise_if_not_found=False)
+        if wet:
+            vals["work_entry_type_id"] = wet.id
+    Rule.create(vals)
+    return ruleset
+
+
+def _migrate_employees_to_native_overtime(cr):
+    """Assign an Overtime Ruleset to every version that lacks one, so the native
+    engine generates overtime from attendances after the custom modules go away."""
+    env = util.env(cr)
+    if RULESET_MODEL not in env:
+        _logger.warning(
+            "%s not available (hr_attendance overtime engine missing); skipping employee migration.",
+            RULESET_MODEL,
+        )
+        return
+    if "ruleset_id" not in env["hr.version"]._fields:
+        _logger.warning("hr.version has no ruleset_id; skipping employee migration.")
+        return
+
+    ruleset = _get_or_create_ruleset(env)
+    versions = env["hr.version"].search([("ruleset_id", "=", False)])
+    if not versions:
+        _logger.info("All versions already have an Overtime Ruleset; nothing to migrate.")
+        return
+    versions.write({"ruleset_id": ruleset.id})
+    _logger.info(
+        "Assigned Overtime Ruleset '%s' to %d employee version(s).",
+        ruleset.name,
+        len(versions),
+    )
+
+
+def _uninstall_modules(cr):
+    for module_name in MODULES_TO_UNINSTALL:
+        if util.module_installed(cr, module_name):
+            _logger.info("Uninstalling redundant module: %s", module_name)
+            util.uninstall_module(cr, module_name)
+        else:
+            _logger.debug("Module %s not installed; skipping.", module_name)
+
+
+def migrate(cr, version):
+    _migrate_employees_to_native_overtime(cr)
+    _uninstall_modules(cr)
