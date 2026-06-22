@@ -1501,7 +1501,7 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
     if old_table == new_table or not version_gte("10.0"):
         return
     ignored_m2ms = set(ignored_m2ms)
-    for orig_m2m_table in get_m2m_tables(cr, new_table):
+    for orig_m2m_table, _, _, _ in get_m2m_on(cr, new_table):
         if orig_m2m_table in ignored_m2ms:
             continue
         m = re.match(r"^(x_|)(?:(\w+)_{0}|{0}_(\w+))_rel$".format(re.escape(old_table)), orig_m2m_table)
@@ -1744,31 +1744,71 @@ def get_m2m_tables(cr, table):
 
     :meta private: exclude from online docs
     """
+    warnings.warn(
+        "`get_m2m_tables` has been deprecated in favor of `get_m2m_on`.",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    return [r[0] for r in get_m2m_on(cr, table)]
+
+
+def get_m2m_on(cr, table):
+    """
+    Return a list of m2m tables associated with `table`.
+
+    We identify as m2m table all tables that have only two columns, both of which are FKs.
+    This function will return m2m tables for which one FK points to `table`.
+
+    :return: list of (m2m_table, fk_col_to_table, other_fk_col, other_table) tuples
+    """
     _validate_table(table)
     query = """
         WITH two_cols AS (
-                SELECT t.oid
-                  FROM pg_class t
-                  JOIN pg_attribute a ON a.attrelid=t.oid
-                 WHERE t.relkind='r' AND a.attnum>0
-                 GROUP BY t.oid
-                HAVING count(*)=2
-               )
-        SELECT DISTINCT t.relname
+            SELECT t.oid
+              FROM pg_class t
+              JOIN pg_attribute a
+                ON a.attrelid = t.oid
+             WHERE t.relkind = 'r'
+               AND a.attnum > 0
+          GROUP BY t.oid
+            HAVING count(*) = 2
+        )
+        SELECT t.relname, a1.attname, a2.attname, other_table.relname
           FROM pg_class t
-          JOIN two_cols tc ON t.oid=tc.oid
-          JOIN pg_attribute a1 ON a1.attrelid=t.oid AND a1.attnum>0
-          JOIN pg_constraint c1 ON c1.conrelid=t.oid AND c1.contype='f' AND a1.attnum=any(c1.conkey)
-               AND array_length(c1.conkey, 1)=1
-          JOIN pg_attribute a2 ON a2.attrelid=t.oid AND a2.attnum>0 AND a1.attnum!=a2.attnum
-          JOIN pg_constraint c2 ON c2.conrelid=t.oid AND c2.contype='f' AND a2.attnum=any(c2.conkey)
-               AND array_length(c1.conkey, 1)=1
-          JOIN pg_class the_table ON c1.confrelid=the_table.oid
-         WHERE the_table.relkind='r' AND the_table.relname=%s
+          JOIN two_cols tc
+            ON t.oid = tc.oid
+
+          JOIN pg_attribute a1
+            ON a1.attrelid = t.oid
+           AND a1.attnum > 0
+          JOIN pg_constraint c1
+            ON c1.conrelid = t.oid
+           AND c1.contype = 'f'
+           AND a1.attnum = any(c1.conkey)
+           AND array_length(c1.conkey, 1) = 1
+
+          JOIN pg_attribute a2
+            ON a2.attrelid = t.oid
+           AND a2.attnum > 0
+           AND a1.attnum != a2.attnum
+          JOIN pg_constraint c2
+            ON c2.conrelid = t.oid
+           AND c2.contype = 'f'
+           AND a2.attnum = any(c2.conkey)
+           AND array_length(c1.conkey, 1) = 1
+
+          JOIN pg_class the_table
+            ON c1.confrelid = the_table.oid
+          JOIN pg_class other_table
+            ON c2.confrelid = other_table.oid
+         WHERE the_table.relkind = 'r'
+           AND the_table.relname = %s
+           AND other_table.relname != the_table.relname
+           AND other_table.relkind = 'r'
     """
 
     cr.execute(query, [table])
-    return [row[0] for row in cr.fetchall()]
+    return cr.fetchall()
 
 
 class named_cursor(object):

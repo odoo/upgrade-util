@@ -50,7 +50,7 @@ from .pg import (
     format_query,
     get_columns,
     get_fk,
-    get_m2m_tables,
+    get_m2m_on,
     get_value_or_en_translation,
     parallel_execute,
     table_exists,
@@ -1419,7 +1419,7 @@ def delete_unused(cr, *xmlids, **kwargs):
         else:
             kids_query = format_query(cr, "SELECT id, ARRAY[id] AS children FROM {0} WHERE id = ANY(%(ids)s)", table)
 
-        m2m_tables = include_m2m if include_m2m != "*" else get_m2m_tables(cr, table)
+        m2m_tables = include_m2m if include_m2m != "*" else [r[0] for r in get_m2m_on(cr, table)]
 
         sub = " UNION ALL ".join(
             [
