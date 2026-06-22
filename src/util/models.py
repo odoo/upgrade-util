@@ -25,7 +25,7 @@ from .pg import (
     explode_query_range,
     format_query,
     get_fk,
-    get_m2m_tables,
+    get_m2m_on,
     get_value_or_en_translation,
     parallel_execute,
     query_ids,
@@ -194,7 +194,7 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
 
         # remove m2m tables
         if ignore_m2m != "*":
-            tables = get_m2m_tables(cr, table_of_model(cr, model))
+            tables = [r[0] for r in get_m2m_on(cr, table_of_model(cr, model))]
             ignore = set(ignore_m2m)
             if tables and column_exists(cr, "ir_model_fields", "relation_table"):
                 cr.execute(
