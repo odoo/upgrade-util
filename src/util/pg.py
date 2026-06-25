@@ -1061,6 +1061,14 @@ def create_index(cr, name, table_name, *columns):
     if not columns:
         raise SleepyDeveloperError("Missing `columns` for index")
     if all(column_exists(cr, table_name, c) for c in columns) and get_index_on(cr, table_name, *columns) is None:
+        query = format_query(
+            cr,
+            "CREATE INDEX {} ON {}({})",
+            name,
+            table_name,
+            ColumnList.from_unquoted(cr, columns),
+        )
+        cr.execute(query)
         cr.execute(
             "CREATE INDEX {index_name} ON {table_name}({columns})".format(
                 index_name=name, table_name=table_name, columns=",".join(columns)
@@ -1080,7 +1088,7 @@ def temp_index(cr, table, *columns):
     try:
         yield
     finally:
-        cr.execute('DROP INDEX IF EXISTS "{}"'.format(name))
+        cr.execute(format_query(cr, "DROP INDEX IF EXISTS {}", name))
 
 
 def get_depending_views(cr, table, column):
