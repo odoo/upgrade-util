@@ -1311,13 +1311,11 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
             "Table {new_table} already exists. Can't rename table {old_table} to {new_table}.".format(**locals())
         )
 
-    cr.execute(sql.SQL("ALTER TABLE {} RENAME TO {}").format(sql.Identifier(old_table), sql.Identifier(new_table)))
+    cr.execute(format_query(cr, "ALTER TABLE {} RENAME TO {}", old_table, new_table))
 
     # rename pkey sequence
     cr.execute(
-        sql.SQL("ALTER SEQUENCE IF EXISTS {} RENAME TO {}").format(
-            sql.Identifier(old_table + "_id_seq"), sql.Identifier(new_table + "_id_seq")
-        )
+        format_query(cr, "ALTER SEQUENCE IF EXISTS {} RENAME TO {}", old_table + "_id_seq", new_table + "_id_seq")
     )
 
     # track renamed table
@@ -1348,7 +1346,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
     if cr.rowcount:
         (old_pkey,) = cr.fetchone()
         new_pkey = new_table + "_pkey"
-        cr.execute(sql.SQL("ALTER INDEX {} RENAME TO {}").format(sql.Identifier(old_pkey), sql.Identifier(new_pkey)))
+        cr.execute(format_query(cr, "ALTER INDEX {} RENAME TO {}", old_pkey, new_pkey))
     else:
         new_pkey = ""  # no PK renamed
 
@@ -1364,12 +1362,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
         [new_table, new_pkey, "%" + old_table.replace("_", r"\_") + r"\_%"],
     )
     for (idx,) in cr.fetchall():
-        cr.execute(
-            sql.SQL("ALTER INDEX {} RENAME TO {}").format(
-                sql.Identifier(idx),
-                sql.Identifier(idx.replace(old_table, new_table)),
-            )
-        )
+        cr.execute(format_query(cr, "ALTER INDEX {} RENAME TO {}", idx, idx.replace(old_table, new_table)))
 
     if remove_constraints:
         # DELETE all constraints, except Primary/Foreign keys/not null checks, they will be re-created by the ORM
@@ -1412,11 +1405,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
     for (old_const,) in cr.fetchall():
         new_const = new_table + old_const[old_table_length:]
         _logger.info("Renaming constraint %r to %r", old_const, new_const)
-        cr.execute(
-            sql.SQL("ALTER TABLE {} RENAME CONSTRAINT {} TO {}").format(
-                sql.Identifier(new_table), sql.Identifier(old_const), sql.Identifier(new_const)
-            )
-        )
+        cr.execute(format_query(cr, "ALTER TABLE {} RENAME CONSTRAINT {} TO {}", new_table, old_const, new_const))
 
 
 def find_new_table_column_name(cr, table, name):
@@ -1435,7 +1424,9 @@ def drop_depending_views(cr, table, column):
     :meta private: exclude from online docs
     """
     for v, k in get_depending_views(cr, table, column):
-        cr.execute("DROP {0} VIEW IF EXISTS {1} CASCADE".format("MATERIALIZED" if k == "m" else "", v))
+        t = "MATERIALIZED" if k == "m" else ""
+        # view name is already quoted
+        cr.execute(format_query(cr, "DROP {0} VIEW IF EXISTS {1} CASCADE", SQLStr(t), SQLStr(v)))
 
 
 def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
