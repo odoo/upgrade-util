@@ -41,6 +41,7 @@ def uninstall_modules(cr):
         "account_payment_widget_amount",
         "sale_product_template_tags",
         "product_cost_security",
+        "l10n_do_credit_note_ecf",
     ]
 
     _logger.info("Starting uninstall process for %d modules.", len(modules_to_uninstall))
