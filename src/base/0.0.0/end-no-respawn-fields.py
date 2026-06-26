@@ -50,11 +50,11 @@ def migrate(cr, version):
         qualifier = "field" if store else "non-stored field"
         if transient:
             qualifier = "transient " + qualifier
-        lvl = util.NEARLYWARN if transient or not store else logging.CRITICAL
+        lvl = util.NEARLYWARN if transient else logging.ERROR if not store else logging.CRITICAL
         action = ""
 
         if "{}/{}".format(model, field) in ignored_fields_respawn:
             lvl = util.NEARLYWARN
             action = "; explicitly ignored"
 
-        _logger.log(lvl, "%s %s/%s has respawn%s.", qualifier, model, field, action)
+        _logger.log(lvl, "%s %s/%s has respawned%s.", qualifier, model, field, action)
