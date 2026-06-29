@@ -498,8 +498,20 @@ def pg_text2html(s, wrap="p"):
     )
 
 
+_JSONB_COLUMNS = {}
+if version_gte("17.0"):  # switched to jsonb in 16.0
+    _JSONB_COLUMNS[("ir_ui_view", "arch_db")] = True
+    _JSONB_COLUMNS[("ir_act_server", "name")] = True
+    _JSONB_COLUMNS[("ir_model", "name")] = True
+
+
 def get_value_or_en_translation(cr, table, column):
-    fmt = "{}->>'en_US'" if column_type(cr, table, column) == "jsonb" else "{}"
+    is_jsonb = (
+        _JSONB_COLUMNS[(table, column)]
+        if (table, column) in _JSONB_COLUMNS
+        else column_type(cr, table, column) == "jsonb"
+    )
+    fmt = "{}->>'en_US'" if is_jsonb else "{}"
     return format_query(cr, fmt, column)
 
 
