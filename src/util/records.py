@@ -258,8 +258,8 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active="a
             view_id, noupdate = data
 
     if view_id and not (skip_if_not_noupdate and not noupdate):
-        arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
-        jsonb_column = column_type(cr, "ir_ui_view", arch_col) == "jsonb"
+        arch_col = "arch_db" if version_gte("10.0") or column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+        jsonb_column = version_gte("17.0") or column_type(cr, "ir_ui_view", arch_col) == "jsonb"
         cr.execute(
             """
                 SELECT {arch}
