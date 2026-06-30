@@ -1,10 +1,10 @@
-"""Deprecate the attendance-overtime news bridge in favour of Odoo's native
-overtime engine.
+"""Move attendance-overtime computation to Odoo's native overtime engine while
+keeping the Dominican payroll bridge.
 
 Historically the Dominican localization computed attendance overtime by hand and
 pushed it to payroll through a "news" document:
 
-    l10n_do_hr_news_attendance          (compute overtime -> create news)
+    l10n_do_hr_news_attendance          (compute overtime by hand -> create news)
     l10n_do_hr_payroll_news_attendance  (news amount -> salary attachment)
 
 From Odoo 18/19 the overtime calculation (daytime / nightly / holiday + rates) and
@@ -12,12 +12,18 @@ its path to payroll are handled natively by:
 
     hr_attendance               (Overtime Rulesets)
     hr_work_entry_attendance    (overtime -> work entries)
-    hr_payroll_attendance       (work entries -> payslip)
+    hr_payroll_attendance       (work entries -> payslip worked days)
+
+The manual-calculation module ``l10n_do_hr_news_attendance`` is therefore
+redundant and gets uninstalled. ``l10n_do_hr_payroll_news_attendance`` is **kept**
+(and reworked) so it still carries the overtime into the Dominican payroll as the
+overtime input (``HEL``): it now reads the *native* overtime worked-day lines
+instead of the retired wizard.
 
 This script:
   1. Makes sure every employee version points to an Overtime Ruleset so the native
-     engine keeps generating their overtime once the custom modules are gone.
-  2. Uninstalls the two now-redundant custom modules.
+     engine keeps generating their overtime once the manual module is gone.
+  2. Uninstalls only the now-redundant manual-calculation module.
 """
 
 import logging
@@ -27,8 +33,6 @@ from odoo.upgrade import util
 _logger = logging.getLogger(__name__)
 
 MODULES_TO_UNINSTALL = [
-    # payroll bridge first (depends on the news_attendance module)
-    "l10n_do_hr_payroll_news_attendance",
     "l10n_do_hr_news_attendance",
 ]
 
@@ -98,6 +102,31 @@ def _migrate_employees_to_native_overtime(cr):
     )
 
 
+PAYROLL_BRIDGE = "l10n_do_hr_payroll_news_attendance"
+
+
+def _repoint_payroll_bridge_deps(cr):
+    """Repoint the kept payroll bridge to the native overtime engine.
+
+    The reworked ``l10n_do_hr_payroll_news_attendance`` no longer depends on the
+    manual-calculation module ``l10n_do_hr_news_attendance`` (about to be
+    uninstalled) but on ``hr_payroll_attendance``. Update the recorded
+    dependencies *before* the uninstall so the bridge is not cascade-uninstalled
+    and so the native module is pulled in."""
+    if not util.module_installed(cr, PAYROLL_BRIDGE):
+        return
+    util.module_deps_diff(
+        cr,
+        PAYROLL_BRIDGE,
+        plus=["hr_payroll_attendance"],
+        minus=["l10n_do_hr_news_attendance"],
+    )
+    _logger.info(
+        "Repointed %s dependencies: -l10n_do_hr_news_attendance +hr_payroll_attendance",
+        PAYROLL_BRIDGE,
+    )
+
+
 def _uninstall_modules(cr):
     for module_name in MODULES_TO_UNINSTALL:
         if util.module_installed(cr, module_name):
@@ -109,4 +138,5 @@ def _uninstall_modules(cr):
 
 def migrate(cr, version):
     _migrate_employees_to_native_overtime(cr)
+    _repoint_payroll_bridge_deps(cr)
     _uninstall_modules(cr)
