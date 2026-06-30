@@ -1,4 +1,5 @@
 import ast
+import json
 import operator
 import re
 import sys
@@ -3064,3 +3065,150 @@ class TestAssertUpdated(UnitTestCase):
         ):
             p2.city = "Niflheim"
             util.flush(p2)
+
+
+class TestDumpFieldToChatter(UnitTestCase):
+    def setUp(self):
+        super().setUp()
+        cr = self.env.cr
+        self.has_mail = util.table_exists(cr, "mail_message")
+        # dummy columns on res_partner; rolled back with the test transaction
+        util.create_column(cr, "res_partner", "_test_dump_src", "varchar")
+        util.create_column(cr, "res_partner", "_test_dump_txt", "text")
+        util.create_column(cr, "res_partner", "_test_dump_json", "jsonb")
+
+    def _set(self, partner, **cols):
+        cr = self.env.cr
+        for col, value in cols.items():
+            db_value = json.dumps(value) if isinstance(value, dict) else value
+            cr.execute("UPDATE res_partner SET {} = %s WHERE id = %s".format(col), [db_value, partner.id])
+
+    def _get(self, partner, col):
+        cr = self.env.cr
+        cr.execute("SELECT {} FROM res_partner WHERE id = %s".format(col), [partner.id])
+        return cr.fetchone()[0]
+
+    def _last_message(self, partner):
+        # the dump always posts last (INSERT ... NOW(), ordered by id), so the most recent
+        # message is the one dump_field_to_chatter wrote -- if it wrote anything.
+        cr = self.env.cr
+        cr.execute(
+            "SELECT body FROM mail_message WHERE model = 'res.partner' AND res_id = %s ORDER BY id DESC LIMIT 1",
+            [partner.id],
+        )
+        row = cr.fetchone()
+        return row[0] if row else None
+
+    # -- plain dump: chatter message when mail is installed, else fallback column ------
+
+    def test_plain(self):
+        p = self.env["res.partner"].create({"name": "Eren"})
+        self._set(p, _test_dump_src="SRC", _test_dump_txt="pre")
+        util.dump_field_to_chatter(
+            self.env.cr,
+            "res.partner",
+            "_test_dump_src",
+            label="Old",
+            fallback_column="_test_dump_txt",
+            where="{{0}}.id = {}".format(p.id),
+        )
+        if self.has_mail:
+            self.assertEqual(self._last_message(p), "Old: SRC")
+            self.assertEqual(self._get(p, "_test_dump_txt"), "pre", "fallback column untouched when mail exists")
+        else:
+            self.assertEqual(self._get(p, "_test_dump_txt"), "pre<br/><br/>Old: SRC")
+
+    def test_res_id_related_record(self):
+        parent = self.env["res.partner"].create({"name": "Parent"})
+        child = self.env["res.partner"].create({"name": "Child", "parent_id": parent.id})
+        self._set(child, _test_dump_src="CHILD-X")
+        self._set(parent, _test_dump_txt="P-PRE")
+        util.dump_field_to_chatter(
+            self.env.cr,
+            "res.partner",
+            "_test_dump_src",
+            res_id="parent_id",
+            label="From",
+            fallback_column="_test_dump_txt",
+            where="{{0}}.id = {}".format(child.id),
+        )
+        if self.has_mail:
+            # the dump posts on the parent (last message); nothing of ours lands on the child
+            self.assertEqual(self._last_message(parent), "From: CHILD-X")
+            self.assertNotEqual(self._last_message(child), "From: CHILD-X", "nothing posted on the source record")
+        else:
+            self.assertEqual(self._get(parent, "_test_dump_txt"), "P-PRE<br/><br/>From: CHILD-X")
+            self.assertIsNone(self._get(child, "_test_dump_txt"), "source record untouched")
+
+    # -- fallback-only behaviour (skipped when mail is installed) ----------------------
+
+    def test_fallback_jsonb(self):
+        if self.has_mail:
+            self.skipTest("fallback path requires mail to be absent")
+        p = self.env["res.partner"].create({"name": "Armin"})
+        self._set(p, _test_dump_src="SRC", _test_dump_json={"en_US": "pre"})
+        util.dump_field_to_chatter(
+            self.env.cr,
+            "res.partner",
+            "_test_dump_src",
+            label="Old",
+            fallback_column="_test_dump_json",
+            where="{{0}}.id = {}".format(p.id),
+        )
+        self.assertEqual(self._get(p, "_test_dump_json"), {"en_US": "pre<br/><br/>Old: SRC"})
+
+    def test_fallback_no_html_escape(self):
+        if self.has_mail:
+            self.skipTest("fallback path requires mail to be absent")
+        p = self.env["res.partner"].create({"name": "Jean"})
+        self._set(p, _test_dump_src="a<b>", _test_dump_txt=None)
+        util.dump_field_to_chatter(
+            self.env.cr,
+            "res.partner",
+            "_test_dump_src",
+            fallback_column="_test_dump_txt",
+            html_escape=False,
+            where="{{0}}.id = {}".format(p.id),
+        )
+        # raw value, no pre-existing content
+        self.assertEqual(self._get(p, "_test_dump_txt"), "a<b>")
+
+    def test_fallback_multi(self):
+        if self.has_mail:
+            self.skipTest("fallback path requires mail to be absent")
+        parent = self.env["res.partner"].create({"name": "Parent"})
+        c1 = self.env["res.partner"].create({"name": "C1", "parent_id": parent.id})
+        c2 = self.env["res.partner"].create({"name": "C2", "parent_id": parent.id})
+        self._set(c1, _test_dump_src="REF-C1")
+        self._set(c2, _test_dump_src="REF-C2")
+        self._set(parent, _test_dump_txt="P-PRE")
+        # bucket_size=1 to ensure children get into different buckets
+        real_explode = util.pg.explode_execute
+
+        def one_per_bucket(cr, query, table, **kw):
+            return real_explode(cr, query, table, bucket_size=1, **kw)
+
+        with mock.patch.object(util.fields, "explode_execute", one_per_bucket):
+            util.dump_field_to_chatter(
+                self.env.cr,
+                "res.partner",
+                "_test_dump_src",
+                res_id="parent_id",
+                label="From",
+                fallback_column="_test_dump_txt",
+                where="{{0}}.id IN ({}, {})".format(c1.id, c2.id),
+            )
+        # both children kept (ordered by id), parent's existing value preserved
+        self.assertEqual(self._get(parent, "_test_dump_txt"), "P-PRE<br/><br/>From: REF-C1<br/><br/>From: REF-C2")
+
+    def test_fallback_missing_column_raises(self):
+        p = self.env["res.partner"].create({"name": "Sasha"})
+        self._set(p, _test_dump_src="SRC")
+        with self.assertRaises(util.UpgradeError):
+            util.dump_field_to_chatter(
+                self.env.cr,
+                "res.partner",
+                "_test_dump_src",
+                fallback_column="_nope",
+                where="{{0}}.id = {}".format(p.id),
+            )
