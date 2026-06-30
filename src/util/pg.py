@@ -660,19 +660,15 @@ def create_column(cr, table, column, definition, **kwargs):
     fk_table = kwargs.pop("fk_table", no_def)
     on_delete_action = kwargs.pop("on_delete_action", no_def)
     if kwargs:
-        raise TypeError("create_column() got an unexpected keyword argument %r" % kwargs.popitem()[0])
+        raise TypeError("create_column() got an unexpected keyword argument {!r}".format(kwargs.popitem()[0]))
 
-    fk = ""
+    fk = SQLStr("")
     if fk_table is not no_def:
         if on_delete_action is no_def:
             on_delete_action = "NO ACTION"
         elif on_delete_action not in ON_DELETE_ACTIONS:
-            raise ValueError("unexpected value for the `on_delete_action` argument: %r" % (on_delete_action,))
-        fk = (
-            sql.SQL("REFERENCES {}(id) ON DELETE {}")
-            .format(sql.Identifier(fk_table), sql.SQL(on_delete_action))
-            .as_string(cr._obj)
-        )
+            raise ValueError("unexpected value for the `on_delete_action` argument: {!r}".format(on_delete_action))
+        fk = format_query(cr, "REFERENCES {}(id) ON DELETE {}", fk_table, SQLStr(on_delete_action))
     elif on_delete_action is not no_def:
         raise ValueError("`on_delete_action` argument can only be used if `fk_table` argument is set.")
 
@@ -693,17 +689,17 @@ def create_column(cr, table, column, definition, **kwargs):
         if fk_table is not no_def:
             create_fk(cr, table, column, fk_table, on_delete_action)
         if default is not no_def:
-            query = 'UPDATE "{0}" SET "{1}" = %s WHERE "{1}" IS NULL'.format(table, column)
+            query = format_query(cr, "UPDATE {0} SET {1} = %s WHERE {1} IS NULL", table, column)
             query = cr.mogrify(query, [default]).decode()
             parallel_execute(cr, explode_query_range(cr, query, table=table))
         return False
 
-    create_query = """ALTER TABLE "%s" ADD COLUMN "%s" %s %s""" % (table, column, definition, fk)
+    create_query = format_query(cr, "ALTER TABLE {} ADD COLUMN {} {} {}", table, column, SQLStr(definition), fk)
     if default is no_def:
         cr.execute(create_query)
     else:
-        cr.execute(create_query + " DEFAULT %s", [default])
-        cr.execute("""ALTER TABLE "%s" ALTER COLUMN "%s" DROP DEFAULT""" % (table, column))
+        cr.execute(format_query(cr, "{} DEFAULT %s", create_query), [default])
+        cr.execute(format_query(cr, "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT", table, column))
     return True
 
 
@@ -745,14 +741,15 @@ def create_fk(cr, table, column, fk_table, on_delete_action="NO ACTION"):
         if current_target[:2] == (fk_table, "id"):
             # assume the `on_delete_action` is correct
             return
-        cr.execute(
-            sql.SQL("ALTER TABLE {} DROP CONSTRAINT {}").format(
-                sql.Identifier(table), sql.Identifier(current_target[2])
-            )
-        )
+        cr.execute(format_query(cr, "ALTER TABLE {} DROP CONSTRAINT {}", table, current_target[2]))
 
-    query = sql.SQL("ALTER TABLE {} ADD FOREIGN KEY ({}) REFERENCES {}(id) ON DELETE {}").format(
-        sql.Identifier(table), sql.Identifier(column), sql.Identifier(fk_table), sql.SQL(on_delete_action)
+    query = format_query(
+        cr,
+        "ALTER TABLE {} ADD FOREIGN KEY ({}) REFERENCES {}(id) ON DELETE {}",
+        table,
+        column,
+        fk_table,
+        SQLStr(on_delete_action),
     )
     cr.execute(query)
 
@@ -761,7 +758,7 @@ def remove_column(cr, table, column, cascade=False):
     if column_exists(cr, table, column):
         drop_depending_views(cr, table, column)
         drop_cascade = " CASCADE" if cascade else ""
-        cr.execute('ALTER TABLE "{0}" DROP COLUMN "{1}"{2}'.format(table, column, drop_cascade))
+        cr.execute(format_query(cr, "ALTER TABLE {} DROP COLUMN {}{}", table, column, SQLStr(drop_cascade)))
 
 
 def alter_column_type(cr, table, column, type, using=None, where=None, logger=_logger):
@@ -1070,6 +1067,14 @@ def create_index(cr, name, table_name, *columns):
     if not columns:
         raise SleepyDeveloperError("Missing `columns` for index")
     if all(column_exists(cr, table_name, c) for c in columns) and get_index_on(cr, table_name, *columns) is None:
+        query = format_query(
+            cr,
+            "CREATE INDEX {} ON {}({})",
+            name,
+            table_name,
+            ColumnList.from_unquoted(cr, columns),
+        )
+        cr.execute(query)
         cr.execute(
             "CREATE INDEX {index_name} ON {table_name}({columns})".format(
                 index_name=name, table_name=table_name, columns=",".join(columns)
@@ -1089,7 +1094,7 @@ def temp_index(cr, table, *columns):
     try:
         yield
     finally:
-        cr.execute('DROP INDEX IF EXISTS "{}"'.format(name))
+        cr.execute(format_query(cr, "DROP INDEX IF EXISTS {}", name))
 
 
 def get_depending_views(cr, table, column):
@@ -1312,13 +1317,11 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
             "Table {new_table} already exists. Can't rename table {old_table} to {new_table}.".format(**locals())
         )
 
-    cr.execute(sql.SQL("ALTER TABLE {} RENAME TO {}").format(sql.Identifier(old_table), sql.Identifier(new_table)))
+    cr.execute(format_query(cr, "ALTER TABLE {} RENAME TO {}", old_table, new_table))
 
     # rename pkey sequence
     cr.execute(
-        sql.SQL("ALTER SEQUENCE IF EXISTS {} RENAME TO {}").format(
-            sql.Identifier(old_table + "_id_seq"), sql.Identifier(new_table + "_id_seq")
-        )
+        format_query(cr, "ALTER SEQUENCE IF EXISTS {} RENAME TO {}", old_table + "_id_seq", new_table + "_id_seq")
     )
 
     # track renamed table
@@ -1349,7 +1352,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
     if cr.rowcount:
         (old_pkey,) = cr.fetchone()
         new_pkey = new_table + "_pkey"
-        cr.execute(sql.SQL("ALTER INDEX {} RENAME TO {}").format(sql.Identifier(old_pkey), sql.Identifier(new_pkey)))
+        cr.execute(format_query(cr, "ALTER INDEX {} RENAME TO {}", old_pkey, new_pkey))
     else:
         new_pkey = ""  # no PK renamed
 
@@ -1365,12 +1368,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
         [new_table, new_pkey, "%" + old_table.replace("_", r"\_") + r"\_%"],
     )
     for (idx,) in cr.fetchall():
-        cr.execute(
-            sql.SQL("ALTER INDEX {} RENAME TO {}").format(
-                sql.Identifier(idx),
-                sql.Identifier(idx.replace(old_table, new_table)),
-            )
-        )
+        cr.execute(format_query(cr, "ALTER INDEX {} RENAME TO {}", idx, idx.replace(old_table, new_table)))
 
     if remove_constraints:
         # DELETE all constraints, except Primary/Foreign keys/not null checks, they will be re-created by the ORM
@@ -1413,11 +1411,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
     for (old_const,) in cr.fetchall():
         new_const = new_table + old_const[old_table_length:]
         _logger.info("Renaming constraint %r to %r", old_const, new_const)
-        cr.execute(
-            sql.SQL("ALTER TABLE {} RENAME CONSTRAINT {} TO {}").format(
-                sql.Identifier(new_table), sql.Identifier(old_const), sql.Identifier(new_const)
-            )
-        )
+        cr.execute(format_query(cr, "ALTER TABLE {} RENAME CONSTRAINT {} TO {}", new_table, old_const, new_const))
 
 
 def find_new_table_column_name(cr, table, name):
@@ -1436,7 +1430,9 @@ def drop_depending_views(cr, table, column):
     :meta private: exclude from online docs
     """
     for v, k in get_depending_views(cr, table, column):
-        cr.execute("DROP {0} VIEW IF EXISTS {1} CASCADE".format("MATERIALIZED" if k == "m" else "", v))
+        t = "MATERIALIZED" if k == "m" else ""
+        # view name is already quoted
+        cr.execute(format_query(cr, "DROP {0} VIEW IF EXISTS {1} CASCADE", SQLStr(t), SQLStr(v)))
 
 
 def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
