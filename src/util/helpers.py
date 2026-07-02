@@ -21,6 +21,15 @@ _VALID_MODELS = frozenset(
         "o2m_readonly_subfield_child",
         "o2m_changes_parent",
         "o2m_changes_children",
+        # test_inherit
+        "test_mother_underscore",
+        "test_inherit_daughter",
+        "test_inherit_property",
+        "test_inherit_parent",
+        "test_inherit_child",
+        "test_inherit_mixin",
+        # test_orm
+        "test_ir_qweb_fields",
     }
     | ({"l10n_pl_tax_office"} if version_between("16.0", "17.0") else set())
     | {m.strip() for m in os.getenv("UPG_VALID_MODELS", "").split(";")} - {""}
