@@ -709,6 +709,21 @@ def remove_group(cr, xml_id=None, group_id=None):
     # Get all fks from table res_groups
     fks = get_fk(cr, "res_groups", quote_ident=False)
 
+    if table_exists(cr, "rule_group_rel"):
+        # special case for the rules
+        # We have to delete the rules that are linked to only this group so they don't become global
+        cr.execute(
+            """
+                SELECT rule_group_id
+                  FROM rule_group_rel
+              GROUP BY rule_group_id
+                HAVING array_agg(group_id) = %s
+            """,
+            [[group_id]],
+        )
+        if cr.rowcount:
+            remove_records(cr, "ir.rule", [r for (r,) in cr.fetchall()])
+
     # Remove records referencing the group_id from the referencing tables (restrict fks)
     standard_tables = ["ir_model_access", "rule_group_rel", "ir_access"]
     custom_tables = []
