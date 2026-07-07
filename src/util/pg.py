@@ -680,6 +680,9 @@ if version_gte("saas~18.1"):  # Since 18.0
     _COLUMNS[("ir_filters", "embedded_parent_res_id")] = True
     _COLUMNS[("ir_act_report_xml", "domain")] = True
 
+if version_gte("saas~18.2"):
+    _COLUMNS[("base_automation", "action_server_id")] = False
+
 
 def column_exists(cr, table, column):
     """
