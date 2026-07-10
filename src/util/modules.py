@@ -52,7 +52,15 @@ from .misc import on_CI, parse_version, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import SQLStr, column_exists, format_query, table_exists, target_of
-from .records import ref, remove_group, remove_menus, remove_records, remove_view, replace_record_references_batch
+from .records import (
+    ref,
+    remove_group,
+    remove_menus,
+    remove_records,
+    remove_view,
+    rename_xmlid,
+    replace_record_references_batch,
+)
 
 INSTALLED_MODULE_STATES = ("installed", "to install", "to upgrade")
 _logger = logging.getLogger(__name__)
@@ -425,7 +433,7 @@ def rename_module(cr, old, new):
 
 
 @_warn_usage_outside_base
-def merge_module(cr, old, into, update_dependers=True):
+def merge_module(cr, old, into, update_dependers=True, xmlid_mapping=None):
     """
     Merge a module into another.
 
@@ -433,13 +441,19 @@ def merge_module(cr, old, into, update_dependers=True):
     destination module.
 
     .. warning::
-       This functions does not remove any record, but it removes xml_ids from the source
-       module with a conflicting name in the destination module.
+       This functions does not remove any record. It removes XMLIDs from the source
+       module with a conflicting name in the destination module, unless explicitly renamed
+       via ``xmlid_mapping`` parameter.
 
     :param str old: name of the module to be merged
     :param str into: name of the module to merge into
     :param bool update_dependers: whether the dependencies of modules that depend on `old`
                                   are updated
+    :param dict xmlid_mapping: optional ``{old_name: new_name}`` mapping of XMLIDs to
+                               rename as part of the merge. Use this when an XMLID from
+                               `old` would otherwise collide by *name* with one already
+                               present in `into`.
+                               See :func:`~odoo.upgrade.util.records.rename_xmlid`
     """
     cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
     mod_ids = dict(cr.fetchall())
@@ -470,6 +484,14 @@ def merge_module(cr, old, into, update_dependers=True):
 
     if into not in mod_ids:
         raise UnknownModuleError(into)
+
+    if xmlid_mapping and any("." in k or "." in v for k, v in xmlid_mapping.items()):
+        raise SleepyDeveloperError(
+            "The `xmlid_mapping` argument must not contain fully-qualified xmlids, only the local names"
+        )
+
+    for xmlid_old, xmlid_new in (xmlid_mapping or {}).items():
+        rename_xmlid(cr, "{}.{}".format(old, xmlid_old), "{}.{}".format(into, xmlid_new), on_collision="merge")
 
     def _up(table, old, new):
         cr.execute(
