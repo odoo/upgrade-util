@@ -124,7 +124,7 @@ def modules_installed(cr, *modules):
     """
     Return whether *all* given modules are installed.
 
-    :param list(str) modules: names of the modules to check
+    :param str modules: one or more module names to check (variadic)
     :rtype: bool
 
     .. note::
