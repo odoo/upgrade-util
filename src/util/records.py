@@ -38,6 +38,7 @@ from .inherit import direct_inherit_parents, for_each_inherit
 from .misc import AUTOMATIC, chunks, version_between, version_gte
 from .orm import env, flush
 from .pg import (
+    ColumnList,
     PGRegexp,
     SQLStr,
     _get_unique_indexes_with,
@@ -322,13 +323,24 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
     arch_col = "arch_db" if column_exists(cr, "ir_ui_view", "arch_db") else "arch"
     jsonb_column = column_type(cr, "ir_ui_view", arch_col) == "jsonb"
     arch_column_value = Json({"en_US": arch_db}) if jsonb_column else arch_db
+    extra = (
+        [arch_col]
+        + (["key"] if key_exist else [])
+        + (["visibility"] if column_exists(cr, "ir_ui_view", "visibility") and version_gte("saas~19.3") else [])
+    )
+    columns = ColumnList.from_unquoted(cr, extra)
+    params = ["%({})s".format(x) for x in extra]
     cr.execute(
-        """
-        INSERT INTO ir_ui_view(name, "type",  model, inherit_id, mode, active, priority, %s)
-        VALUES(%%(name)s, %%(view_type)s, %%(model)s, %%(inherit_id)s, %%(mode)s, 't', %%(priority)s, %%(arch_db)s %s)
-        RETURNING id
-    """
-        % (arch_col + (", key" if key_exist else ""), ", %(key)s" if key_exist else ""),
+        format_query(
+            cr,
+            """
+            INSERT INTO ir_ui_view(name, "type",  model, inherit_id, mode, active, priority{columns})
+            VALUES(%(name)s, %(view_type)s, %(model)s, %(inherit_id)s, %(mode)s, 't', %(priority)s{values})
+            RETURNING id
+            """,
+            columns=columns.using(leading_comma=True),
+            values=SQLStr(", " + ", ".join(params)),
+        ),
         {
             "name": name,
             "view_type": view_type,
@@ -337,7 +349,8 @@ def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=
             "mode": "extension" if inherit_id else "primary",
             "priority": priority,
             "key": key,
-            "arch_db": arch_column_value,
+            "visibility": "public",
+            arch_col: arch_column_value,
         },
     )
     return cr.fetchone()[0]
