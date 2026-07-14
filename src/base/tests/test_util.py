@@ -2113,6 +2113,20 @@ class TestRecords(UnitTestCase):
         self.assertTrue(cat_2.exists())
         self.assertFalse(cat_3.exists())
 
+    def test_add_view(self):
+        cr = self.env.cr
+        arch = '<form><field name="name"/></form>'
+        view_id = util.add_view(cr, "test_add_view", "res.partner", "form", arch)
+        self.assertTrue(view_id)
+        cr.execute(
+            "SELECT name, model, type FROM ir_ui_view WHERE id = %s",
+            [view_id],
+        )
+        name, model, view_type = cr.fetchone()
+        self.assertEqual(name, "test_add_view")
+        self.assertEqual(model, "res.partner")
+        self.assertEqual(view_type, "form")
+
 
 class TestEditView(UnitTestCase):
     @parametrize(
