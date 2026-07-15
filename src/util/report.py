@@ -152,6 +152,9 @@ def report_with_list(summary, data, columns, row_format, links=None, total=None,
     The entry consists of a category (title) and a summary (body).
     The entry displays a list of records previously returned by SQL query, or any list.
 
+    .. warning::
+            If the list to render would be empty, nothing is posted in the report.
+
     .. example::
 
         .. code-block:: python
@@ -170,8 +173,7 @@ def report_with_list(summary, data, columns, row_format, links=None, total=None,
 
     :param str summary: description of a report entry.
     :param list(tuple) data: data to report, each entry would be a row in the report.
-                             It could be empty, in which case only the summary is rendered.
-    :param tuple(str) columns: columns in `data`, can be referenced in `row_format`.
+    :param tuple(str) columns: columns in `data`, can be referenced in `row_format`
     :param str row_format: format for rows, can use any name from `columns` or `links`, e.g.:
                            "Partner {partner_link} that lives in {city} works at company {company_link}."
     :param dict(str, tuple(str, str, str)) links: optional model/record links spec,
@@ -198,15 +200,14 @@ def report_with_list(summary, data, columns, row_format, links=None, total=None,
             )
         return "<li>{}</li>".format(row_format.format(**row_dict))
 
-    if not data:
-        row_to_html(columns)  # Validate the format is correct, including links
-        return report_with_summary(summary=summary, details="", category=category)
-
     disclaimer = "The total number of affected records is {}. ".format(total) if total else ""
     total = len(data) if total is None else total
     limit = min(limit, total) if limit is not None else total
     if total > limit:
         disclaimer += "This list is showing the first {} records.".format(limit)
+    if not data[:limit]:
+        row_to_html(columns)  # Validate the format is correct, including links
+        return None  # there is nothing to show in the list
 
     rows = "<ul>\n" + "\n".join([row_to_html(row) for row in data[:limit]]) + "\n</ul>"
     return report_with_summary(summary, "<i>{}</i>{}".format(disclaimer, rows), category)

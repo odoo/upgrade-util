@@ -3082,19 +3082,8 @@ class TestAssertUpdated(UnitTestCase):
 
 
 class TestReportUtils(UnitTestCase):
-    def test_report_simple(self):
-        self.assertEqual(
-            util.report_with_list(
-                summary="Simple test with minimal arguments and no data.",
-                data=[],
-                columns=("id", "name"),
-                row_format="Partner {name} has id {id}.",
-            ),
-            "<summary>Simple test with minimal arguments and no data.</summary>",
-        )
-
     def test_report_links(self):
-        self.assertEqual(
+        self.assertFalse(
             util.report_with_list(
                 summary="Testing links.",
                 data=[],
@@ -3102,7 +3091,6 @@ class TestReportUtils(UnitTestCase):
                 row_format="Partner {partner_link}.",
                 links={"partner_link": ("res.partner", "id", "name")},
             ),
-            "<summary>Testing links.</summary>",
         )
 
     def test_report_data_minimal(self):
