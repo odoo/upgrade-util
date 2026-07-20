@@ -1866,6 +1866,21 @@ class TestRecords(UnitTestCase):
         cr.execute(query, [record_id])
         self.assertEqual(cr.fetchone()[0], original)
 
+    def test_update_record_from_xml_resets_arch_fs_noupdate(self):
+        cr = self.env.cr
+        xmlid = "base.contact_name"
+
+        view = self.env["ir.ui.view"].browse(util.ref(cr, xmlid))
+
+        original_arch_fs = view.arch_fs
+        view.arch_fs = False
+        util.flush(view)
+
+        util.update_record_from_xml(cr, xmlid)
+        util.invalidate(view)
+
+        self.assertEqual(original_arch_fs, view.arch_fs)
+
     def test_ensure_xmlid_match_record(self):
         cr = self.env.cr
         tx1 = self.env["res.currency"].create({"name": "TX1", "symbol": "TX1"})

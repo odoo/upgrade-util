@@ -67,6 +67,19 @@ try:
 except NameError:
     basestring = unicode = str
 
+if version_gte("15.0"):
+    from odoo.tools.misc import file_path
+elif version_gte("9.0"):
+    try:
+        from odoo.modules.module import get_resource_path
+    except ImportError:
+        from openerp.modules.module import get_resource_path
+
+    file_path = lambda path: get_resource_path(*path.split("/", 1))
+else:
+    # doesn't matter as `xml_filename` is not used in older version.
+    file_path = lambda path: path
+
 
 def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     """
@@ -1213,7 +1226,7 @@ def __update_record_from_xml(
             doc = lxml.etree.parse(fp)
             for node in doc.xpath(xpath):
                 found = True
-                xml_filename = "{}/{}".format(from_module, f)
+                xml_filename = file_path("{}/{}".format(from_module, f))
                 root = roots.get(xml_filename)
                 if root is None:
                     # use a data tag inside openerp tag to be compatible with all supported versions
