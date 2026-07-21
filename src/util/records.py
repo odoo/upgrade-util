@@ -1879,6 +1879,78 @@ def replace_record_references_batch(
                 [model_src, model_dst],
             )
 
+    # m2m fields
+    # in case of differ destination model only
+    if model_src != model_dst:
+        model_src_table = table_of_model(cr, model_src)
+        for foreign_table, foreign_column, conname, _ in get_fk(cr, model_src_table, quote_ident=False):
+            if foreign_table in ignores or foreign_table not in get_m2m_tables(cr, model_src_table):
+                continue
+            # to insert data properly, added later
+            cr.execute("ALTER TABLE {} DROP CONSTRAINT {}".format(foreign_table, conname))
+            (col2,) = get_columns(cr, foreign_table, ignore=(foreign_column,)).iter_unquoted()
+            # handle possible duplicates
+            cr.execute(
+                format_query(
+                    cr,
+                    """
+                    WITH rr2 AS (
+                        SELECT array_agg(t.{fk} ORDER BY t.{fk}) AS olds,
+                                r.new AS new,
+                                t.{col2} AS col2
+                          FROM {table} t
+                          JOIN _upgrade_rrr r
+                            ON r.old = t.{fk}
+                      GROUP BY r.new, t.{col2}
+                    )
+                    DELETE
+                      FROM {table} t
+                     USING rr2 r
+                     WHERE t.{col2} = r.col2
+                       AND t.{fk} = ANY(r.olds)
+                    """,
+                    table=foreign_table,
+                    fk=foreign_column,
+                    col2=col2,
+                )
+            )
+            cr.execute(
+                format_query(
+                    cr,
+                    """
+                    UPDATE {table} t
+                       SET {fk} = r.new
+                      FROM _upgrade_rrr r
+                     WHERE r.old = t.{fk}
+                    """,
+                    table=foreign_table,
+                    fk=foreign_column,
+                )
+            )
+            # cleaning orphan records
+            cr.execute(
+                """
+                DELETE FROM %s t
+                      USING _upgrade_rrr r
+                 RIGHT JOIN %s s
+                         ON r.old = s.id
+                      WHERE r.old IS NULL
+                        AND t.%s = s.id
+                """
+                % (foreign_table, model_src_table, foreign_column)
+            )
+            # updated with same details except new ref table
+            # rest will be updated by `merge_model`
+            cr.execute(
+                format_query(
+                    cr,
+                    "ALTER TABLE {table} ADD FOREIGN KEY ({column}) REFERENCES {dst_table} ON DELETE CASCADE",
+                    table=foreign_table,
+                    column=foreign_column,
+                    dst_table=table_of_model(cr, model_dst),
+                )
+            )
+
     cr.execute("DROP TABLE _upgrade_rrr")
     if parent_field and model_dst == model_src:
         if column_exists(cr, model_src_table, "parent_path"):
