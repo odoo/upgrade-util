@@ -379,7 +379,7 @@ def announce(
             poster = recipient.message_post
         except (ValueError, AttributeError):
             # Cannot find record, post the message on the wall of the admin
-            pass
+            recipient = False
 
     type_field = ["type", "message_type"][version_gte("9.0")]
     # From 12.0, system notificatications are sent by email,
