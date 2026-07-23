@@ -130,7 +130,7 @@ def report_message(message, category="Other", format="text"):
 add_to_migration_reports = report_message
 
 
-def report_with_summary(summary, details, category="Other"):
+def report_with_summary(summary, details="", category="Other"):
     """Append the upgrade report with a new entry.
 
     :param str summary: Description of a report entry.
