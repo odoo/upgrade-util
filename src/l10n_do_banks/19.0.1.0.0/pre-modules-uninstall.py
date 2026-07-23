@@ -34,7 +34,9 @@ def uninstall_modules(cr):
         "l10n_do_sign_to_xml",
         "hr_course",
         "advanced_web_domain_widget",
-        "hr_employee_relative",
+        # hr_employee_relative: NOT uninstalled here — it is merged into
+        # l10n_do_hr in pre-module-merge.py (uninstall would drop its table
+        # and every relative row). See that script's docstring.
         "looker_connector",
         "stock_account_fields_tracking",
         "account_invoice_rate",
