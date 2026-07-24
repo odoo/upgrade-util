@@ -80,6 +80,9 @@ def table_of_model(cr, model):
         project.task.stage.personal project_task_user_rel
 
         esg.metric.to.survey.question esg_metric_to_survey_question_rel
+
+        # website_sale >=19.5
+        product.stock.notification product_stock_notification_rel
     """.format(gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#")
         )
     )
@@ -118,6 +121,9 @@ def model_of_table(cr, table):
         project_task_user_rel project.task.stage.personal
 
         esg_metric_to_survey_question_rel esg.metric.to.survey.question
+
+        # website_sale >=19.5
+        product_stock_notification_rel product.stock.notification
     """.format(
                 action_report_model="ir.actions.report" if version_gte("10.saas~17") else "ir.actions.report.xml",
                 gte_saas13_lte_saas14_3="" if version_gte("9.saas~13") and not version_gte("saas~14.3") else "#",
