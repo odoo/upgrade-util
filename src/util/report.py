@@ -138,9 +138,9 @@ def report_with_summary(summary, details, category="Other"):
     :param str category: Title of a report entry.
     """
     msg = (
-        "<summary>{}<details>{}</details></summary>".format(summary, details)
+        "<details><summary>{}</summary>{}</details>".format(summary, details)
         if details
-        else "<summary>{}</summary>".format(summary)
+        else "<p>{}</p>".format(summary)
     )
     report_message(message=msg, category=category, format="html")
     return msg
@@ -200,17 +200,23 @@ def report_with_list(summary, data, columns, row_format, links=None, total=None,
             )
         return "<li>{}</li>".format(row_format.format(**row_dict))
 
-    disclaimer = "The total number of affected records is {}. ".format(total) if total else ""
     total = len(data) if total is None else total
     limit = min(limit, total) if limit is not None else total
-    if total > limit:
-        disclaimer += "This list is showing the first {} records.".format(limit)
-    if not data[:limit]:
+    shown = data[:limit]
+    # Only mention totals/truncation when the list was actually cut off.
+    # A list of 1, or of 98 with a limit of 100, needs no disclaimer at all.
+    if not shown:
         row_to_html(columns)  # Validate the format is correct, including links
         return None  # there is nothing to show in the list
+    disclaimer = ""
+    if total > len(shown):
+        disclaimer = "The total number of affected records is {}. This list is showing the first {} records.".format(
+            total, len(shown)
+        )
 
     rows = "<ul>\n" + "\n".join([row_to_html(row) for row in data[:limit]]) + "\n</ul>"
-    return report_with_summary(summary, "<i>{}</i>{}".format(disclaimer, rows), category)
+    body = "<i>{}</i>{}".format(disclaimer, rows) if disclaimer else rows
+    return report_with_summary(summary, body, category)
 
 
 def announce_release_note(cr):

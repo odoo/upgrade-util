@@ -3142,9 +3142,9 @@ class TestReportUtils(UnitTestCase):
             else "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=1"
         )
         expected = (
-            "<summary>Test with minimal data.<details><i></i><ul>\n"
+            "<details><summary>Test with minimal data.</summary><ul>\n"
             '<li>Partner <a target="_blank" href="{}">Partner One</a>.</li>\n'
-            "</ul></details></summary>"
+            "</ul></details>"
         ).format(href)
         self.assertEqual(
             util.report_with_list(
@@ -3165,10 +3165,11 @@ class TestReportUtils(UnitTestCase):
             href1 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=1"
             href2 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=2"
         expected = (
-            "<summary>Test with limited data.<details><i>The total number of affected records is 3. This list is showing the first 2 records.</i><ul>\n"
+            "<details><summary>Test with limited data.</summary>"
+            "<i>The total number of affected records is 3. This list is showing the first 2 records.</i><ul>\n"
             '<li>Partner <a target="_blank" href="{}">Partner One</a>.</li>\n'
             '<li>Partner <a target="_blank" href="{}">Partner Two</a>.</li>\n'
-            "</ul></details></summary>"
+            "</ul></details>"
         ).format(href1, href2)
         self.assertEqual(
             util.report_with_list(
@@ -3193,11 +3194,11 @@ class TestReportUtils(UnitTestCase):
             href2 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=2"
             href3 = "/web?debug=1#view_type=form&amp;model=res.partner&amp;action=&amp;id=3"
         expected = (
-            "<summary>Test with limitless data.<details><i></i><ul>\n"
+            "<details><summary>Test with limitless data.</summary><ul>\n"
             '<li>Partner <a target="_blank" href="{}">Partner One</a>.</li>\n'
             '<li>Partner <a target="_blank" href="{}">Partner Two</a>.</li>\n'
             '<li>Partner <a target="_blank" href="{}">Partner Three</a>.</li>\n'
-            "</ul></details></summary>"
+            "</ul></details>"
         ).format(href1, href2, href3)
         self.assertEqual(
             util.report_with_list(
