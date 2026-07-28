@@ -1838,7 +1838,7 @@ class TestRecords(UnitTestCase):
         util.flush(usd)
         util.invalidate(usd)
 
-        util.update_record_from_xml(cr, xmlid, fields=("symbol"))
+        util.update_record_from_xml(cr, xmlid, fields=["symbol"])
         util.invalidate(usd)
 
         self.assertEqual(usd.symbol, "$")
