@@ -1849,15 +1849,15 @@ class TestRecords(UnitTestCase):
         eur_xmlid = "base.EUR"
 
         eur = self.env.ref(eur_xmlid)
-        eur.write({"position": "before", "rounding": 0.00001})
+        eur.write({"position": "before", "symbol": "¤"})
         util.flush(eur)
         util.invalidate(eur)
 
-        util.update_record_from_xml(cr, eur_xmlid, fields=["position", "rounding"])
+        util.update_record_from_xml(cr, eur_xmlid, fields=["position", "symbol"])
         util.invalidate(eur)
 
         self.assertEqual(eur.position, "after")  # default = "after", not in <record>
-        self.assertEqual(eur.rounding, 0.01)  # default = 0.01, same value in <record>
+        self.assertEqual(eur.symbol, "€")  # no default, restore <record> value
 
         pubuser_xmlid = "base.public_user"
 
