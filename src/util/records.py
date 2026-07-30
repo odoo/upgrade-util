@@ -322,6 +322,7 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_not_noupdate=True, active="a
 
 
 def add_view(cr, name, model, view_type, arch_db, inherit_xml_id=None, priority=16, key=None):
+    _validate_model(model)
     inherit_id = None
     if inherit_xml_id:
         inherit_id = ref(cr, inherit_xml_id)
@@ -427,6 +428,7 @@ def remove_record(cr, name):
 
 
 def remove_records(cr, model, ids):
+    _validate_model(model)
     if not ids:
         return
 
@@ -516,6 +518,7 @@ def remove_records(cr, model, ids):
 
 
 def _rm_refs(cr, model, ids=None):
+    _validate_model(model)
     if ids is None:
         match = "like %s"
         needle = model + ",%"
@@ -570,6 +573,7 @@ def _rm_refs(cr, model, ids=None):
 
 
 def _remove_import_export_paths(cr, model, field=None):
+    _validate_model(model)
     export_q = """
             SELECT el.id,
                    e.resource,
@@ -1023,6 +1027,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
        This function is useful when migrating in-database records into a custom module, to
        create the xml_ids before the module is updated and avoid duplication.
     """
+    _validate_model(model)
     if "." not in xmlid:
         raise ValueError("Please use fully qualified name <module>.<name>")
 
@@ -1944,6 +1949,7 @@ def replace_in_all_jsonb_values(cr, table, column, old, new, extra_filter=None):
                              include `{parallel_filter}` to execute the query in parallel,
                              see :func:`~odoo.upgrade.util.pg.explode_execute`
     """
+    _validate_table(table)
     re_old = (
         old
         if isinstance(old, PGRegexp)
@@ -2009,6 +2015,7 @@ def ensure_mail_alias_mapping(cr, model, record_xmlid, alias_xmlid, alias_name):
 
 
 def remove_act_window_view_mode(cr, model, view_mode):
+    _validate_model(model)
     default = "list,form" if version_gte("saas~17.5") else "tree,form"
     cr.execute(
         """
@@ -2085,6 +2092,7 @@ def update_parent_path(cr, model, parent_field="parent_id"):
 
     :meta private: exclude from online docs
     """
+    _validate_model(model)
     if not version_gte("saas~11.3"):
         _logger.error("parent_left and parent_right must be computed via the ORM")
         return
