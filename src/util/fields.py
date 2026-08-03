@@ -48,6 +48,7 @@ from .inherit import for_each_inherit
 from .misc import AUTO, get_modules, log_progress, safe_eval, version_gte
 from .orm import env, invalidate
 from .pg import (
+    ColumnList,
     PGRegexp,
     SQLStr,
     alter_column_type,
@@ -931,8 +932,30 @@ def _convert_field_to_company_dependent(
         where_condition = cr.mogrify("{0} != %s", [default_value]).decode()
 
     if company_field:
-        where_condition += format_query(cr, " AND {} IS NOT NULL", company_field)
-        using = format_query(cr, "jsonb_build_object({}, {{0}})", company_field)
+        paths = []
+        cr.execute(
+            "SELECT related FROM ir_model_fields WHERE model = %s AND name = %s AND related is not NULL",
+            [model, company_field],
+        )
+        if cr.rowcount:
+            paths = resolve_model_fields_path(cr, model, cr.fetchone()[0].split("."))
+        extra_from = " FROM" if paths else ""
+        for path in paths:
+            table_inherit = table_of_model(cr, path.relation_model)
+            extra_from += " {}{}".format(table_inherit, "" if path == paths[-1] else ", ")
+            where_condition += format_query(
+                cr,
+                " AND {}.{} = {}.id",
+                sql.SQL(table_of_model(cr, path.field_model)),
+                sql.SQL(path.field_name),
+                sql.SQL(table_inherit),
+            )
+            if column_exists(cr, table_inherit, company_field):
+                company_field = (
+                    ColumnList.from_unquoted(cr, [company_field]).using(alias=table_inherit).as_string(cr._obj)
+                )
+        where_condition += format_query(cr, " AND {} IS NOT NULL", sql.SQL(company_field))
+        using = format_query(cr, "jsonb_build_object({}, {{0}})", sql.SQL(company_field)) + extra_from
     else:
         using = format_query(
             cr,
@@ -1043,12 +1066,31 @@ def _convert_field_to_property(
             """.format(**locals()),
         )
 
+    paths = []
+    cr.execute(
+        "SELECT related FROM ir_model_fields WHERE model = %s AND name = %s AND related is not NULL",
+        [model, company_field],
+    )
+    if cr.rowcount:
+        paths = resolve_model_fields_path(cr, model, cr.fetchone()[0].split("."))
+    extra_joins = ""
+    for path in paths:
+        table_inherit = table_of_model(cr, path.relation_model)
+        extra_joins += " JOIN {table_inherit} ON {alias}.{inherit_field} = {table_inherit}.id".format(
+            table_inherit=table_inherit,
+            alias="t" if model == path.field_model else table_of_model(cr, path.field_model),
+            inherit_field=path.field_name,
+        )
+        if company_field and column_exists(cr, table_inherit, company_field):
+            company_field = ColumnList.from_unquoted(cr, [company_field]).using(alias=table_inherit).as_string(cr._obj)
+
     cr.execute(
         """
         WITH cte AS (
-            SELECT CONCAT('{model},', id) as res_id, {value_select} as value,
+            SELECT CONCAT('{model},', t.id) as res_id, {value_select} as value,
                    ({company_field})::integer as company
               FROM {table} t
+                   {extra_joins}
              WHERE {where_clause}
         )
         INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
