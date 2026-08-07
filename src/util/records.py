@@ -470,8 +470,14 @@ def remove_records(cr, model, ids):
     )
     for ir in indirect_references(cr, bound_only=True):
         if not ir.company_dependent_comodel:
-            query = 'DELETE FROM "{}" WHERE {} AND "{}" IN %s'.format(ir.table, ir.model_filter(), ir.res_id)
-            cr.execute(query, [model, ids])
+            query = format_query(
+                cr,
+                "DELETE FROM {} WHERE {} AND {} IN %s",
+                ir.table,
+                ir.model_filter(),
+                ir.res_id,
+            )
+            explode_execute(cr, cr.mogrify(query, [model, ids]).decode(), table=ir.table)
         elif ir.company_dependent_comodel == model:
             json_path = cr.mogrify(
                 "$.* ? ({})".format(" || ".join(["@ == %s"] * len(ids))),
