@@ -101,10 +101,13 @@ def get_admin_channel(cr):
 
         admin_group = e.ref("base.group_system", raise_if_not_found=False)
         if admin_group:
+            group_field = next(
+                f for f in ["auto_subscribe_group_ids", "group_ids"] if f in e[channel_model_name]._fields
+            )
             search_rules = [
                 ("channel_type", "=", "channel"),
                 ("group_public_id", "=", admin_group.id),
-                ("group_ids", "in", admin_group.id),
+                (group_field, "in", admin_group.id),
             ]
             if "public" in e[channel_model_name]._fields:
                 search_rules.append(("public", "=", "groups"))
@@ -117,7 +120,7 @@ def get_admin_channel(cr):
                     "name": "Administrators",
                     "channel_type": "channel",
                     "group_public_id": admin_group.id,
-                    "group_ids": [(6, 0, [admin_group.id])],
+                    group_field: [(6, 0, [admin_group.id])],
                 }
                 if "public" in e[channel_model_name]._fields:
                     channel_values["public"] = "groups"
