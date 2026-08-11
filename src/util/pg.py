@@ -987,7 +987,7 @@ def target_of(cr, table, column):
     return cr.fetchone()
 
 
-class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstraint ispk")):
+class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstraint ispk attributes")):
     """:meta private: exclude from online docs."""
 
     def drop(self, cr):
@@ -997,7 +997,7 @@ class IndexInfo(collections.namedtuple("IndexInfo", "name on isunique isconstrai
             cr.execute('DROP INDEX "%s"' % self.name)
 
 
-def get_index_on(cr, table, *columns):
+def get_index_on(cr, table, *columns, **kwargs):
     """
     Return an optional IndexInfo records.
 
@@ -1007,6 +1007,10 @@ def get_index_on(cr, table, *columns):
 
     :meta private: exclude from online docs
     """
+    # PEP 3102 shim
+    exact_match = kwargs.pop("exact_match", True)
+    if kwargs:
+        raise TypeError("get_index_on() got an unexpected keyword argument %r" % kwargs.popitem()[0])
     _validate_table(table)
 
     if cr._cnx.server_version >= 90500:
@@ -1014,9 +1018,11 @@ def get_index_on(cr, table, *columns):
     else:
         # array_position does not exists prior postgresql 9.5
         position = "strpos(array_to_string(x.indkey::int4[] || 0, ','), x.unnest_indkey::varchar || ',')"
-    cr.execute(
+
+    query = format_query(
+        cr,
         """
-        SELECT name, on_, indisunique, indisconstraint, indisprimary
+        SELECT name, on_, indisunique, indisconstraint, indisprimary, attrs
           FROM (SELECT i.relname as name,
                        c.relname as on_,
                        x.indisunique,
@@ -1036,12 +1042,15 @@ def get_index_on(cr, table, *columns):
                    AND c.relname = %s
               GROUP BY 1, 2, 3, 4, 5
           ) idx
-         WHERE attrs = %s
+         WHERE attrs{} = %s
       ORDER BY indisprimary DESC
          FETCH FIRST ROW ONLY
-    """.format(position),
-        [table, list(columns)],
+        """,
+        SQLStr(position),
+        SQLStr("" if exact_match else "[1:{}]".format(len(columns))),
     )
+
+    cr.execute(query, [table, list(columns)])
     return IndexInfo(*cr.fetchone()) if cr.rowcount else None
 
 
