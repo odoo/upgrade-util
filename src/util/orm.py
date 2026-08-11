@@ -556,6 +556,32 @@ class iter_browse(object):
         )
 
 
+def _patch_unsearchable_manual_fields(env, updated_field_ids):
+    if not updated_field_ids:
+        return
+
+    env.cr.execute(
+        """
+        SELECT name, model
+          FROM ir_model_fields
+         WHERE store = false
+           AND id IN %s
+        """,
+        [tuple(updated_field_ids)],
+    )
+
+    def _search_field_dummy(self, operator, value):
+        return [(1, "=", 1)]
+
+    for field_name, model_name in env.cr.fetchall():
+        if model_name not in env:
+            continue
+        Model = env[model_name]
+        field = Model._fields.get(field_name)
+        if field is not None and not field.search:
+            field.search = _search_field_dummy
+
+
 @contextmanager
 def custom_module_field_as_manual(env, rollback=True, do_flush=False):
     """
@@ -811,6 +837,11 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
             env.registry._setup_models__ if hasattr(env.registry, "_setup_models__") else env.registry.setup_models
         )
         setup_models(env.cr)
+
+    # 4.1 Non-stored fields with no `search` method will otherwise raise an
+    # ValueError (not stored, cannot convert to SQL).
+    if version_gte("19.0"):
+        _patch_unsearchable_manual_fields(env, updated_field_ids)
 
     # 5. Do the operation.
     yield
