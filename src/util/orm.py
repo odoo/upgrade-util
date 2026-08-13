@@ -27,9 +27,9 @@ try:
     except ImportError:
         from odoo import SUPERUSER_ID
     from odoo import fields as ofields
-    from odoo import modules, release
+    from odoo import release
 except ImportError:
-    from openerp import SUPERUSER_ID, modules, release
+    from openerp import SUPERUSER_ID, release
 
     try:
         from openerp import fields as ofields
@@ -41,7 +41,7 @@ except ImportError:
 from .const import BIG_TABLE_THRESHOLD
 from .exceptions import MigrationError
 from .helpers import table_of_model
-from .misc import chunks, log_progress, version_between, version_gte
+from .misc import chunks, get_modules, log_progress, version_between, version_gte
 from .pg import SQLStr, column_exists, format_query, get_columns, named_cursor, query_ids
 
 # python3 shims
@@ -590,7 +590,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
          GROUP BY m.model
         HAVING bool_and(COALESCE(x.state, 'uninstalled') = 'uninstalled')
         """,
-        [tuple(modules.get_modules())],
+        [tuple(get_modules())],
     )
     models_uninstalled_standard_modules = [r[0] for r in env.cr.fetchall()]
     if models_uninstalled_standard_modules:
@@ -694,7 +694,7 @@ def custom_module_field_as_manual(env, rollback=True, do_flush=False):
         updated_field_ids += [r[0] for r in env.cr.fetchall()]
 
     # 2.3 Temporarily disable rules that come from custom modules
-    standard_modules = modules.get_modules()
+    standard_modules = get_modules()
 
     access_model = "ir.access" if version_gte("saas~19.4") else "ir.rule"
     query = format_query(

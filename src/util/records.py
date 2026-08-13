@@ -13,12 +13,10 @@ from psycopg2 import sql
 from psycopg2.extras import Json, execute_values
 
 try:
-    from odoo import modules
     from odoo.tools.convert import xml_import
     from odoo.tools.misc import file_open
     from odoo.tools.translate import xml_translate
 except ImportError:
-    from openerp import modules
     from openerp.tools.convert import xml_import
     from openerp.tools.misc import file_open
 
@@ -35,7 +33,7 @@ from .helpers import (
 from .inconsistencies import break_recursive_loops
 from .indirect_references import indirect_references
 from .inherit import direct_inherit_parents, for_each_inherit
-from .misc import AUTOMATIC, chunks, version_between, version_gte
+from .misc import AUTOMATIC, chunks, get_modules, version_between, version_gte
 from .orm import env, flush
 from .pg import (
     ColumnList,
@@ -2078,7 +2076,7 @@ def _remove_redundant_tcalls(cr, match):
         ),
         [r"""\yt-call=(["']){}\1""".format(re.escape(match))],
     )
-    standard_modules = set(modules.get_modules()) - {"studio_customization"}
+    standard_modules = set(get_modules()) - {"studio_customization"}
     for vid, module, name in cr.fetchall():
         with edit_view(cr, view_id=vid) as arch:
             for node in arch.findall(".//t[@t-call='{}']".format(match)):
