@@ -2072,7 +2072,8 @@ def _remove_redundant_tcalls(cr, match):
          LEFT JOIN ir_model_data imd
                 ON iv.id = imd.res_id
                AND imd.model = 'ir.ui.view'
-             WHERE {} ~ %s
+             WHERE iv.type = 'qweb'
+               AND {} ~ %s
         """,
             sql.SQL(arch_col),
         ),
