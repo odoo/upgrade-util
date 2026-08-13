@@ -117,6 +117,9 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
             if cr.rowcount:
                 xml_id = "%s.%s" % cr.fetchone()
 
+    if not view_id:
+        return
+
     # From given or determined xml_id, the views duplicated in a multi-website
     # context are to be found and removed.
     if xml_id != "?" and column_exists(cr, "ir_ui_view", "key"):
@@ -129,13 +132,14 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
         [key] = cr.fetchone() or [None]
 
     # Occurrences of xml_id and key in the t-call of views are to be found and removed.
-    if xml_id != "?":
-        _remove_redundant_tcalls(cr, xml_id)
-    if key and key != xml_id:
-        _remove_redundant_tcalls(cr, key)
+    cr.execute("SELECT FROM ir_ui_view WHERE id = %s AND type = 'qweb'", [view_id])
+    if cr.rowcount:
+        if xml_id != "?":
+            # FIXME only call it if it's a qweb view
+            _remove_redundant_tcalls(cr, xml_id)
+        if key and key != xml_id:
+            _remove_redundant_tcalls(cr, key)
 
-    if not view_id:
-        return
     theme_view_ids = []
     if table_exists(cr, "theme_ir_ui_view"):
         cr.execute(
