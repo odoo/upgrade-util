@@ -57,7 +57,7 @@ from .records import (
     remove_group,
     remove_menus,
     remove_records,
-    remove_view,
+    remove_views,
     rename_xmlid,
     replace_record_references_batch,
 )
@@ -240,8 +240,7 @@ def uninstall_module(cr, module):
 
     for model, group in itertools.groupby(to_group, lambda it: it[0]):
         if model == "ir.ui.view":
-            for _, res_id in group:
-                remove_view(cr, view_id=res_id, silent=True)
+            remove_views(cr, view_ids=[res_id for _, res_id in group], silent=True)
         elif model == "res.groups":
             for _, res_id in group:
                 remove_group(cr, group_id=res_id)
@@ -561,8 +560,7 @@ def merge_module(cr, old, into, update_dependers=True, xmlid_mapping=None):
             )
             for model, res_ids in cr.fetchall():
                 if model == "ir.ui.view":
-                    for v in res_ids:
-                        remove_view(cr, view_id=v, silent=True)
+                    remove_views(cr, view_ids=res_ids, silent=True)
                 elif model == "ir.ui.menu":
                     remove_menus(cr, tuple(res_ids))
                 else:
