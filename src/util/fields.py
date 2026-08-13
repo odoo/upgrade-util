@@ -19,11 +19,6 @@ from psycopg2 import sql
 from psycopg2.extras import Json
 
 try:
-    from odoo import modules
-except ImportError:
-    from openerp import modules
-
-try:
     from odoo import release
 except ImportError:
     from openerp import release
@@ -50,7 +45,7 @@ from .domains import _adapt_one_domain, _replace_path, _valid_path_to, adapt_dom
 from .exceptions import SleepyDeveloperError, UpgradeError
 from .helpers import _dashboard_actions, _validate_model, model_of_table, resolve_model_fields_path, table_of_model
 from .inherit import for_each_inherit
-from .misc import AUTO, log_progress, safe_eval, version_gte
+from .misc import AUTO, get_modules, log_progress, safe_eval, version_gte
 from .orm import env, invalidate
 from .pg import (
     PGRegexp,
@@ -1581,7 +1576,7 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
     col_prefix = ""
     if not column_exists(cr, "ir_act_server", "condition"):
         col_prefix = "--"  # sql comment the line
-    standard_modules = set(modules.get_modules()) | {"__upgrade__"}
+    standard_modules = set(get_modules()) | {"__upgrade__"}
     q = """
         SELECT a.id, a.{name}
           FROM ir_act_server a

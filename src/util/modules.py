@@ -48,7 +48,7 @@ from .const import ENVIRON, NEARLYWARN
 from .exceptions import MigrationError, SleepyDeveloperError, UnknownModuleError, UpgradeWarning
 from .fields import remove_field
 from .helpers import _validate_model, table_of_model
-from .misc import on_CI, parse_version, str2bool, version_gte
+from .misc import get_modules, on_CI, parse_version, str2bool, version_gte
 from .models import delete_model
 from .orm import env, flush
 from .pg import SQLStr, column_exists, format_query, table_exists, target_of
@@ -1126,7 +1126,7 @@ def _trigger_auto_discovery(cr):
     existing = dict(cr.fetchall())
 
     graph = {}
-    for module in odoo.modules.get_modules():
+    for module in get_modules():
         manifest = get_manifest(module)
         graph[module] = (
             set(manifest["depends"]),

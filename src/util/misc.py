@@ -19,10 +19,12 @@ from itertools import chain, islice
 try:
     from odoo import release
     from odoo.modules.module import get_module_path
+    from odoo.modules.module import get_modules as _get_modules
     from odoo.tools.parse_version import parse_version
 except ImportError:
     from openerp import release
     from openerp.modules.module import get_module_path
+    from openerp.modules.module import get_modules as _get_modules
     from openerp.tools.parse_version import parse_version
 
 if release.major_version == "7.0":
@@ -249,6 +251,11 @@ class once(object):
             return func(*args, **kwargs) if self else None
 
         return wrapper
+
+
+@_cached
+def get_modules():
+    return tuple(_get_modules())
 
 
 @_cached
