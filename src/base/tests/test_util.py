@@ -2626,6 +2626,16 @@ class TestOnce(UnitTestCase):
             # Interval entirely outside the upgrade path: never fire
             ("16.0", "saas~17.2", "saas~17.4", [("17.0", False), ("18.0", False)]),
             ("16.0", "18.0", "19.0", [("17.0", False)]),
+            # An open bound (None) may fall outside the [source, target] window: the other bound then
+            # defaults to a version on the wrong side of it.
+            # Lower bound after the target, the whole path is before the interval.
+            ("16.0", "saas~19.4", None, [("17.0", False), ("18.0", False), ("19.0", False)]),
+            # Same, for an intermediate step of that upgrade, run with its own source/target.
+            ("16.0", "saas~19.4", None, [("17.0", False)]),
+            ("17.0", "saas~19.4", None, [("18.0", False)]),
+            # Upper bound before the source, the whole path is after the interval.
+            ("18.0", None, "17.0", [("19.0", False)]),
+            ("saas~18.2", None, "saas~17.4", [("19.0", False), ("saas~19.3", False)]),
         ]
     )
     def test_once(self, source, lower, upper, steps_and_expected):

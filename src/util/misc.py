@@ -210,9 +210,10 @@ class once(object):
         s, t = parse_version(_SOURCE_VERSION), parse_version(_TARGET_VERSION)
         assert s <= t, "check source and target env vars"
 
+        if lower is not None and upper is not None and parse_version(lower) > parse_version(upper):
+            raise SleepyDeveloperError("invalid interval: lower={!r} > upper={!r}".format(lower, upper))
         a = s if lower is None else parse_version(lower)
         b = t if upper is None else parse_version(upper)
-        assert a <= b, "invalid interval"
 
         s_maj = int(_SOURCE_VERSION.replace("saas~", "").replace("saas-", "").split(".", 1)[0])
         t_parts = _TARGET_VERSION.replace("saas~", "").replace("saas-", "").split(".", 1)
