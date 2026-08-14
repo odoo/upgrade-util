@@ -1797,37 +1797,42 @@ def get_m2m_on(cr, table):
                 ON a.attrelid = t.oid
              WHERE t.relkind = 'r'
                AND a.attnum > 0
+               AND NOT a.attisdropped
           GROUP BY t.oid
             HAVING count(*) = 2
+        ), fks AS (
+            SELECT c.conrelid,
+                   c.conkey[1] AS attnum, -- c.conkey references pg_attribute.attnum
+                   c.confrelid
+              FROM pg_constraint c
+              JOIN two_cols tc
+                ON tc.oid = c.conrelid
+             WHERE c.contype = 'f'
+               AND array_length(c.conkey, 1) = 1
+          GROUP BY c.conrelid, c.conkey[1], c.confrelid
         )
         SELECT t.relname, a1.attname, a2.attname, other_table.relname
           FROM pg_class t
           JOIN two_cols tc
             ON t.oid = tc.oid
 
+          JOIN fks f1
+            ON f1.conrelid = t.oid
           JOIN pg_attribute a1
             ON a1.attrelid = t.oid
-           AND a1.attnum > 0
-          JOIN pg_constraint c1
-            ON c1.conrelid = t.oid
-           AND c1.contype = 'f'
-           AND a1.attnum = any(c1.conkey)
-           AND array_length(c1.conkey, 1) = 1
+           AND a1.attnum = f1.attnum
 
+          JOIN fks f2
+            ON f2.conrelid = t.oid
+           AND f2.attnum != f1.attnum
           JOIN pg_attribute a2
             ON a2.attrelid = t.oid
-           AND a2.attnum > 0
-           AND a1.attnum != a2.attnum
-          JOIN pg_constraint c2
-            ON c2.conrelid = t.oid
-           AND c2.contype = 'f'
-           AND a2.attnum = any(c2.conkey)
-           AND array_length(c1.conkey, 1) = 1
+           AND a2.attnum = f2.attnum
 
           JOIN pg_class the_table
-            ON c1.confrelid = the_table.oid
+            ON f1.confrelid = the_table.oid
           JOIN pg_class other_table
-            ON c2.confrelid = other_table.oid
+            ON f2.confrelid = other_table.oid
          WHERE the_table.relkind = 'r'
            AND the_table.relname = %s
            AND other_table.relname != the_table.relname

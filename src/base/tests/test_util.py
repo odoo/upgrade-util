@@ -1258,6 +1258,50 @@ class TestPG(UnitTestCase):
         self.assertEqual("res_groups_res_users_rel", auto_generated_m2m_table_name)
         self.assertTrue(util.table_exists(cr, auto_generated_m2m_table_name))
 
+    def test_get_m2m_on(self):
+        cr = self.env.cr
+
+        cr.execute(
+            """
+            CREATE TABLE _upg_test_m2m_main (id serial PRIMARY KEY);
+            CREATE TABLE _upg_test_m2m_other (id serial PRIMARY KEY);
+
+            -- a typical, valid m2m table
+            CREATE TABLE _upg_test_m2m_rel (
+                main_id int REFERENCES _upg_test_m2m_main,
+                other_id int REFERENCES _upg_test_m2m_other
+            );
+
+            -- m2m table whose columns are covered by more than one FK constraint
+            CREATE TABLE _upg_test_m2m_dup_rel (
+                main_id int REFERENCES _upg_test_m2m_main,
+                other_id int REFERENCES _upg_test_m2m_other
+            );
+            ALTER TABLE _upg_test_m2m_dup_rel
+                  ADD CONSTRAINT _upg_test_m2m_dup_rel_main_id_fkey2
+                      FOREIGN KEY (main_id) REFERENCES _upg_test_m2m_main,
+                  ADD CONSTRAINT _upg_test_m2m_dup_rel_other_id_fkey2
+                      FOREIGN KEY (other_id) REFERENCES _upg_test_m2m_other;
+
+            -- m2m table that once had a third column
+            CREATE TABLE _upg_test_m2m_dropped_rel (
+                main_id int REFERENCES _upg_test_m2m_main,
+                other_id int REFERENCES _upg_test_m2m_other,
+                gone int
+            );
+            ALTER TABLE _upg_test_m2m_dropped_rel DROP COLUMN gone;
+            """
+        )
+
+        self.assertEqual(
+            sorted(util.get_m2m_on(cr, "_upg_test_m2m_main")),
+            [
+                ("_upg_test_m2m_dropped_rel", "main_id", "other_id", "_upg_test_m2m_other"),
+                ("_upg_test_m2m_dup_rel", "main_id", "other_id", "_upg_test_m2m_other"),
+                ("_upg_test_m2m_rel", "main_id", "other_id", "_upg_test_m2m_other"),
+            ],
+        )
+
     def test_rename_m2m(self):
         cr = self.env.cr
 
