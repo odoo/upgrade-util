@@ -576,6 +576,9 @@ if version_gte("10.0"):  # Since at least 9.0
 
     _COLUMNS[("ir_value", "res_id")] = True
 
+if version_gte("11.0"):
+    _COLUMNS[("ir_ui_view", "key")] = True
+
 if version_gte("14.0"):  # Since at least 13.0
     _COLUMNS[("ir_module_module_dependency", "auto_install_required")] = True
     _COLUMNS[("ir_act_window", "src_model")] = False
