@@ -601,7 +601,22 @@ def column_exists(cr, table, column):
     :param str column: column to check
     :rtype: bool
     """
-    return _COLUMNS[(table, column)] if (table, column) in _COLUMNS else (_column_info(cr, table, column) is not None)
+    shortcut = _COLUMNS.get((table, column))
+    if shortcut is not None:
+        return shortcut
+    cr.execute(
+        """
+            SELECT
+              FROM pg_attribute a
+              JOIN pg_class c
+                ON a.attrelid = c.oid
+             WHERE NOT a.attisdropped
+               AND c.relname = %s
+               AND a.attname = %s
+        """,
+        [table, column],
+    )
+    return bool(cr.rowcount)
 
 
 def column_type(cr, table, column, sized=False):
