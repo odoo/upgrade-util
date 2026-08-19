@@ -86,6 +86,9 @@ def _cached(func):
     return wrapper
 
 
+_lru_cache = getattr(functools, "lru_cache", lambda: lambda lambada: lambada)
+
+
 # copied from odoo as older OpenERP versions doesn't have it
 def str2bool(s, default=None):
     s = unicode(s).lower()
@@ -98,6 +101,7 @@ def str2bool(s, default=None):
     return s in y
 
 
+@_lru_cache()
 def version_gte(version):
     """
     Return whether currently running Odoo version is greater or equal to `version`.
@@ -114,6 +118,7 @@ def version_gte(version):
     return parse_version(release.serie) >= parse_version(version)
 
 
+@_lru_cache()
 def version_between(a, b):
     """
     Return whether currently running Odoo version is in the range `[a,b]`.
