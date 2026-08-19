@@ -612,6 +612,8 @@ def column_type(cr, table, column, sized=False):
     :param str column: column to check
     :rtype: SQL type of the column
     """
+    if _JSONB_COLUMNS.get((table, column)):
+        return "jsonb"
     nfo = _column_info(cr, table, column)
     if not nfo:
         return None
