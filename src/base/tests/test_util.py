@@ -2571,6 +2571,12 @@ def not_doing_anything_converter(el):
 
 
 class TestOnce(UnitTestCase):
+    @classmethod
+    def setUpClass(cls):
+        util.version_gte.cache_clear()
+        util.version_between.cache_clear()
+        return super().setUpClass()
+
     def setUp(self):
         super().setUp()
         # `once` records fired call-sites in this shared store; each test (and each parametrized
@@ -2578,6 +2584,8 @@ class TestOnce(UnitTestCase):
         once_ran = util.ENVIRON["__once_ran"]
         once_ran.clear()
         self.addCleanup(once_ran.clear)
+        self.addCleanup(util.version_gte.cache_clear)
+        self.addCleanup(util.version_between.cache_clear)
 
     # Each case: (source, lower, upper, steps_and_expected)
     # source: the DB version before the upgrade starts target is inferred as the last step in steps_and_expected
@@ -2645,6 +2653,8 @@ class TestOnce(UnitTestCase):
         ):
             calls = set()
             for series, expected in steps_and_expected:
+                util.version_gte.cache_clear()
+                util.version_between.cache_clear()
                 with mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
                     msg = "series={!r} source={!r} target={!r} once({!r}, {!r})".format(
                         series, source, target, lower, upper
@@ -2708,6 +2718,8 @@ class TestOnce(UnitTestCase):
             # Each iteration is an independent scenario; reset the shared once-dedup store so the
             # call-site below is not considered already-fired from the previous iteration.
             util.ENVIRON["__once_ran"].clear()
+            util.version_gte.cache_clear()
+            util.version_between.cache_clear()
             with mock.patch.object(util.misc, "_SOURCE_VERSION", source), mock.patch.object(
                 util.misc, "_TARGET_VERSION", target
             ), mock.patch.object(util.misc.release, "serie", series):  # "serie" is an old typo  # noqa: TYPOS
