@@ -246,6 +246,10 @@ def remove_field(
             cr.execute("SELECT related FROM ir_model_fields WHERE model=%s AND name=%s", [model, fieldname])
             if cr.rowcount:
                 related = cr.fetchone()[0]
+            if related:  # `related` could be using stale references to removed/invalid fields
+                path = related.split(".")
+                if len(resolve_model_fields_path(cr, model, path)) != len(path):
+                    related = None
 
         if related:
             update_field_usage(cr, model, fieldname, related, skip_inherit=skip_inherit)

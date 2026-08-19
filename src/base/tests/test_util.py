@@ -530,6 +530,16 @@ class TestRemoveFieldDomains(UnitTestCase):
         domain = [("updated", "=", 0)]
         self._test_remove_field(domain, domain, update_references=False)
 
+    @parametrize([(False, [("added", "=", 0)]), (True, [TRUE_LEAF])])
+    def test_remove_field_related_path(self, remove_target_first, expected):
+        cr = self.env.cr
+        cr.execute(
+            "UPDATE ir_model_fields SET related = 'added' WHERE model = 'base.module.update' AND name = 'updated'"
+        )
+        if remove_target_first:
+            util.remove_field(cr, "base.module.update", "added")
+        self._test_remove_field([("updated", "=", 0)], expected)
+
 
 class TestIrExports(UnitTestCase):
     def setUp(self):
