@@ -97,111 +97,141 @@ def remove_view(cr, xml_id=None, view_id=None, silent=False, key=None):
     .. warning::
        Either `xml_id` or `view_id` must be set. Specifying both will raise an error.
     """
-    assert bool(xml_id) ^ bool(view_id)
-    if xml_id:
-        view_id = ref(cr, xml_id)
-        if view_id:
-            module, _, name = xml_id.partition(".")
-            cr.execute("SELECT model FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
+    remove_views(cr, xml_ids=[xml_id], view_ids=[view_id], silent=silent, keys={xml_id or view_id: key})
 
-            [model] = cr.fetchone()
-            if model != "ir.ui.view":
-                raise ValueError("%r should point to a 'ir.ui.view', not a %r" % (xml_id, model))
-    else:
-        # search matching xmlid for logging or renaming of custom views
-        xml_id = "?"
-        if not key:
-            cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s", [view_id])
-            if cr.rowcount:
-                xml_id = "%s.%s" % cr.fetchone()
 
-    # From given or determined xml_id, the views duplicated in a multi-website
-    # context are to be found and removed.
-    if xml_id != "?" and column_exists(cr, "ir_ui_view", "key"):
-        cr.execute("SELECT id FROM ir_ui_view WHERE key = %s AND id != %s", [xml_id, view_id])
-        for [v_id] in cr.fetchall():
-            remove_view(cr, view_id=v_id, silent=silent, key=xml_id)
+def remove_views(cr, xml_ids=None, view_ids=None, silent=False, keys=None):
+    """
+    Remove several views and all their descendants in batch.
 
-    if not key and column_exists(cr, "ir_ui_view", "key"):
-        cr.execute("SELECT key FROM ir_ui_view WHERE id = %s and key != %s", [view_id, xml_id])
-        [key] = cr.fetchone() or [None]
+    This is the batched counterpart of :func:`remove_view`. The supplied views, their
+    built-in inherited views, and their multi-website COW copies are collected before
+    doing the expensive reference cleanup once.
 
-    # Occurrences of xml_id and key in the t-call of views are to be found and removed.
-    if xml_id != "?":
-        _remove_redundant_tcalls(cr, xml_id)
-    if key and key != xml_id:
-        _remove_redundant_tcalls(cr, key)
+    :param list[str] xml_ids: optional XML IDs of views to remove
+    :param list[int] view_ids: optional database IDs of views to remove
+    :param bool silent: whether to show in the logs disabled custom views
+    :param dict keys: optional mapping of XML IDs or view IDs
 
-    if not view_id:
-        return
-    theme_view_ids = []
-    if table_exists(cr, "theme_ir_ui_view"):
+    .. warning::
+       Either `xml_ids` or `view_ids` must be set. Specifying both will raise an error.
+    """
+    assert (xml_ids is None) ^ (view_ids is None)
+    keys = keys or {}
+    to_remove, tcalls = set(), set()
+
+    def _remove_view(xml_id=None, view_id=None, key=None):
+        assert bool(xml_id) ^ bool(view_id)
+        if xml_id:
+            view_id = ref(cr, xml_id)
+            if view_id:
+                module, _, name = xml_id.partition(".")
+                cr.execute("SELECT model FROM ir_model_data WHERE module=%s AND name=%s", [module, name])
+
+                [model] = cr.fetchone()
+                if model != "ir.ui.view":
+                    raise ValueError("%r should point to a 'ir.ui.view', not a %r" % (xml_id, model))
+        else:
+            # search matching xmlid for logging or renaming of custom views
+            xml_id = "?"
+            if not key:
+                cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s", [view_id])
+                if cr.rowcount:
+                    xml_id = "%s.%s" % cr.fetchone()
+
+        # From given or determined xml_id, the views duplicated in a multi-website
+        # context are to be found and removed.
+        if xml_id != "?" and column_exists(cr, "ir_ui_view", "key"):
+            cr.execute("SELECT id FROM ir_ui_view WHERE key = %s AND id != %s", [xml_id, view_id])
+            for [v_id] in cr.fetchall():
+                _remove_view(view_id=v_id, key=xml_id)
+
+        if not key and column_exists(cr, "ir_ui_view", "key"):
+            cr.execute("SELECT key FROM ir_ui_view WHERE id = %s and key != %s", [view_id, xml_id])
+            [key] = cr.fetchone() or [None]
+
+        # Occurrences of xml_id and key in the t-call of views are to be found and removed.
+        if xml_id != "?":
+            tcalls.add(xml_id)
+        if key and key != xml_id:
+            tcalls.add(key)
+
+        if not view_id or view_id in to_remove:
+            return
+        to_remove.add(view_id)
+        theme_view_ids = []
+        if table_exists(cr, "theme_ir_ui_view"):
+            cr.execute(
+                """
+                SELECT array_agg(view.id)
+                  FROM theme_ir_ui_view theme
+                  JOIN ir_ui_view view
+                    ON theme.id = view.theme_template_id
+                 WHERE theme.inherit_id = 'ir.ui.view,'|| %s
+                """,
+                [view_id],
+            )
+            theme_view_ids = cr.fetchone()[0] or []
         cr.execute(
             """
-            SELECT array_agg(view.id)
-              FROM theme_ir_ui_view theme
-              JOIN ir_ui_view view
-                ON theme.id = view.theme_template_id
-             WHERE theme.inherit_id = 'ir.ui.view,'|| %s
-            """,
+            SELECT v.id, x.module || '.' || x.name, v.name
+            FROM ir_ui_view v LEFT JOIN
+               ir_model_data x ON (v.id = x.res_id AND x.model = 'ir.ui.view' AND x.module !~ '^_')
+            WHERE v.inherit_id = %s;
+        """,
             [view_id],
         )
-        theme_view_ids = cr.fetchone()[0] or []
-    cr.execute(
-        """
-        SELECT v.id, x.module || '.' || x.name, v.name
-        FROM ir_ui_view v LEFT JOIN
-           ir_model_data x ON (v.id = x.res_id AND x.model = 'ir.ui.view' AND x.module !~ '^_')
-        WHERE v.inherit_id = %s;
-    """,
-        [view_id],
-    )
-    for child_id, child_xml_id, child_name in cr.fetchall():
-        if child_xml_id:
-            if not silent:
-                _logger.info(
-                    "remove deprecated built-in view %s (ID %s) as parent view %s (ID %s) is going to be removed",
-                    child_xml_id,
-                    child_id,
-                    xml_id,
-                    view_id,
-                )
-            remove_view(cr, child_xml_id, silent=True)
-        else:
-            if not silent:
-                _logger.warning(
-                    "deactivate deprecated custom view with ID %s as parent view %s (ID %s) is going to be removed",
-                    child_id,
-                    xml_id,
-                    view_id,
-                )
-            disable_view_query = """
-                UPDATE ir_ui_view
-                SET name = (name || ' - old view, inherited from ' || %%s),
-                    inherit_id = NULL
-                    %s
-                    WHERE id = %%s
-            """
-            # In 8.0, disabling requires setting mode to 'primary'
-            extra_set_sql = ""
-            if column_exists(cr, "ir_ui_view", "mode"):
-                extra_set_sql = ",  mode = 'primary' "
+        for child_id, child_xml_id, child_name in cr.fetchall():
+            if child_xml_id:
+                if not silent:
+                    _logger.info(
+                        "remove deprecated built-in view %s (ID %s) as parent view %s (ID %s) is going to be removed",
+                        child_xml_id,
+                        child_id,
+                        xml_id,
+                        view_id,
+                    )
+                _remove_view(xml_id=child_xml_id)
+            else:
+                if not silent:
+                    _logger.warning(
+                        "deactivate deprecated custom view with ID %s as parent view %s (ID %s) is going to be removed",
+                        child_id,
+                        xml_id,
+                        view_id,
+                    )
+                disable_view_query = """
+                    UPDATE ir_ui_view
+                    SET name = (name || ' - old view, inherited from ' || %%s),
+                        inherit_id = NULL
+                        %s
+                        WHERE id = %%s
+                """
+                # In 8.0, disabling requires setting mode to 'primary'
+                extra_set_sql = ""
+                if column_exists(cr, "ir_ui_view", "mode"):
+                    extra_set_sql = ",  mode = 'primary' "
 
-            # Column was not present in v7 and it's older version
-            if column_exists(cr, "ir_ui_view", "active"):
-                extra_set_sql += ", active = false "
+                # Column was not present in v7 and it's older version
+                if column_exists(cr, "ir_ui_view", "active"):
+                    extra_set_sql += ", active = false "
 
-            disable_view_query = disable_view_query % extra_set_sql
-            cr.execute(disable_view_query, (key or xml_id, child_id))
-            if child_id not in theme_view_ids:
-                add_to_migration_reports(
-                    {"id": child_id, "name": child_name},
-                    "Disabled views",
-                )
-    if not silent:
-        _logger.info("remove deprecated %s view %s (ID %s)", (key and "COWed") or "built-in", key or xml_id, view_id)
+                disable_view_query = disable_view_query % extra_set_sql
+                cr.execute(disable_view_query, (key or xml_id, child_id))
+                if child_id not in theme_view_ids:
+                    add_to_migration_reports(
+                        {"id": child_id, "name": child_name},
+                        "Disabled views",
+                    )
+        if not silent:
+            _logger.info("remove deprecated %s view %s (ID %s)", (key and "COWed") or "built-in", key or xml_id, view_id)
 
-    remove_records(cr, "ir.ui.view", [view_id])
+    for xml_id in xml_ids or ():
+        _remove_view(xml_id=xml_id, key=keys.get(xml_id))
+    for view_id in view_ids or ():
+        _remove_view(view_id=view_id, key=keys.get(view_id))
+    _remove_redundant_tcalls(cr, tcalls)
+    remove_records(cr, "ir.ui.view", to_remove)
 
 
 @contextmanager
@@ -2046,14 +2076,17 @@ def remove_act_window_view_mode(cr, model, view_mode):
     )
 
 
-def _remove_redundant_tcalls(cr, match):
+def _remove_redundant_tcalls(cr, matches):
     """
     Remove t-calls of the removed view.
 
-    This function removes the t-calls to `match`.
+    This function removes the t-calls to `matches`.
 
-    :param str match: t-calls value to remove, typically it would be a view's xml_id or key
+    :param str or Collection[str] matches: t-calls values to remove, typically view XML IDs or keys
     """
+    matches = {matches} if isinstance(matches, basestring) else set(matches)
+    if not matches:
+        return
     arch_col = (
         get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
         if column_exists(cr, "ir_ui_view", "arch_db")
@@ -2074,19 +2107,22 @@ def _remove_redundant_tcalls(cr, match):
         """,
             sql.SQL(arch_col),
         ),
-        [r"""\yt-call=(["']){}\1""".format(re.escape(match))],
+        [r"""\yt-call=(["'])(?:{})\1""".format("|".join(map(re.escape, sorted(matches))))],
     )
     standard_modules = set(get_modules()) - {"studio_customization"}
     for vid, module, name in cr.fetchall():
+        removed = set()
         with edit_view(cr, view_id=vid) as arch:
-            for node in arch.findall(".//t[@t-call='{}']".format(match)):
-                node.getparent().remove(node)
+            for node in arch.findall(".//t[@t-call]"):
+                if node.get("t-call") in matches:
+                    removed.add(node.get("t-call"))
+                    node.getparent().remove(node)
         if not module or module not in standard_modules:
             _logger.info(
                 "The view %swith ID: %s has been updated, removed t-calls to deprecated %r",
                 ("`{}.{}` ".format(module, name) if module else ""),
                 vid,
-                match,
+                sorted(removed),
             )
 
 

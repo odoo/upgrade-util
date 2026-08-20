@@ -2976,6 +2976,22 @@ class TestConvertFieldToHtml(UnitTestCase):
 
 
 class TestRemoveView(UnitTestCase):
+    def _create_views(self, prefix, count):
+        views = self.env["ir.ui.view"]
+        for index in range(count):
+            name = "{}_{}".format(prefix, index)
+            view = views.create(
+                {
+                    "name": name,
+                    "type": "qweb",
+                    "key": "base.{}".format(name),
+                    "arch": '<t t-name="base.{}"><div>{}</div></t>'.format(name, name),
+                }
+            )
+            self.env["ir.model.data"].create({"name": name, "module": "base", "model": "ir.ui.view", "res_id": view.id})
+            views |= view
+        return views
+
     def test_remove_view(self):
         test_view_1 = self.env["ir.ui.view"].create(
             {
@@ -3035,6 +3051,31 @@ class TestRemoveView(UnitTestCase):
         util.invalidate(test_view_3)
         self.assertFalse(test_view_2.exists())
         self.assertNotIn('t-call="base.test_view_2"', test_view_3.arch_db)
+
+    def test_remove_views_query_count(self):
+        individual = self._create_views("test_remove_views_individual", 8)
+        batched = self._create_views("test_remove_views_batched", 8)
+        caller = self.env["ir.ui.view"].create(
+            {
+                "name": "test_remove_views_caller",
+                "type": "qweb",
+                "arch": '<t><t t-call="base.test_remove_views_batched_0"/><t t-call="base.test_remove_views_batched_1"/></t>',
+            }
+        )
+
+        before = self.env.cr.sql_log_count
+        for view in individual:
+            util.remove_view(self.env.cr, view_id=view.id, silent=True)
+        individual_query_count = self.env.cr.sql_log_count - before
+
+        before = self.env.cr.sql_log_count
+        util.remove_views(self.env.cr, view_ids=batched.ids, silent=True)
+        batch_query_count = self.env.cr.sql_log_count - before
+
+        util.invalidate(individual | batched | caller)
+        self.assertFalse((individual | batched).exists())
+        self.assertNotIn("t-call", caller.arch_db)
+        self.assertLess(batch_query_count, individual_query_count)
 
 
 class TestRenameXMLID(UnitTestCase):
