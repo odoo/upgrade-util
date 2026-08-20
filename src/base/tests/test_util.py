@@ -902,9 +902,7 @@ class TestPG(UnitTestCase):
             # and with links
             (
                 "Go to https://upgrade.odoo.com/?debug=1&version=14.0 and follow the instructions.",
-                '<p>Go to <a href="https://upgrade.odoo.com/?debug=1&amp;version=14.0"'
-                ' target="_blank" rel="noreferrer noopener">https://upgrade.odoo.com/?debug=1&amp;version=14.0</a> and'
-                " follow the instructions.</p>",
+                '<p>Go to <a href="https://upgrade.odoo.com/?debug=1&amp;version=14.0" target="_blank" rel="noreferrer noopener">https://upgrade.odoo.com/?debug=1&amp;version=14.0</a> and follow the instructions.</p>',
             ),
         ]
     )
