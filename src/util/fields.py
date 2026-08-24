@@ -252,11 +252,11 @@ def remove_field(
                     related = None
 
         if related:
-            update_field_usage(cr, model, fieldname, related, skip_inherit=skip_inherit)
+            update_field_usage(cr, model, fieldname, related, skip_inherit="*")
         else:
             # clean domains
             adapt_domains(
-                cr, model, fieldname, "ignored", adapter=_rm_field_adapter, skip_inherit=skip_inherit, force_adapt=True
+                cr, model, fieldname, "ignored", adapter=_rm_field_adapter, skip_inherit="*", force_adapt=True
             )
 
     if table_exists(cr, "ir_server_object_lines"):
