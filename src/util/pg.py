@@ -1850,53 +1850,37 @@ def get_m2m_on(cr, table):
     """
     _validate_table(table)
     query = """
-        WITH two_cols AS (
-            SELECT t.oid
-              FROM pg_class t
-              JOIN pg_attribute a
-                ON a.attrelid = t.oid
-             WHERE t.relkind = 'r'
-               AND a.attnum > 0
-               AND NOT a.attisdropped
-          GROUP BY t.oid
-            HAVING count(*) = 2
-        ), fks AS (
-            SELECT c.conrelid,
-                   c.conkey[1] AS attnum, -- c.conkey references pg_attribute.attnum
-                   c.confrelid
-              FROM pg_constraint c
-              JOIN two_cols tc
-                ON tc.oid = c.conrelid
-             WHERE c.contype = 'f'
-               AND array_length(c.conkey, 1) = 1
-          GROUP BY c.conrelid, c.conkey[1], c.confrelid
-        )
-        SELECT t.relname, MIN(a1.attname), MAX(a2.attname), other_table.relname
-          FROM pg_class t
-          JOIN two_cols tc
-            ON t.oid = tc.oid
-
-          JOIN fks f1
-            ON f1.conrelid = t.oid
-          JOIN pg_attribute a1
-            ON a1.attrelid = t.oid
-           AND a1.attnum = f1.attnum
-
-          JOIN fks f2
-            ON f2.conrelid = t.oid
-           AND f2.attnum != f1.attnum
-          JOIN pg_attribute a2
-            ON a2.attrelid = t.oid
-           AND a2.attnum = f2.attnum
-
-          JOIN pg_class the_table
-            ON f1.confrelid = the_table.oid
+        SELECT rel.relname, MIN(a1.attname), MAX(a2.attname), other_table.relname
+          FROM pg_class rel
+          JOIN pg_constraint f1
+            ON f1.conrelid = rel.oid
+           AND f1.contype = 'f'
+           AND f1.confrelid = to_regclass(%s)
+           AND ARRAY_LENGTH(f1.conkey, 1) = 1
+          JOIN pg_constraint f2
+            ON f2.conrelid = rel.oid
+            -- avoid matching duplicates of f1 (or f1 itself)
+           AND f2.conkey != f1.conkey
+           AND f2.contype = 'f'
+           AND ARRAY_LENGTH(f2.conkey, 1) = 1
           JOIN pg_class other_table
-            ON f2.confrelid = other_table.oid
-         WHERE the_table.relkind = 'r'
-           AND the_table.relname = %s
+            ON other_table.oid = f2.confrelid
            AND other_table.relkind = 'r'
-      GROUP BY t.relname, other_table.relname
+          JOIN pg_attribute a1
+            ON a1.attrelid = rel.oid
+           AND a1.attnum = f1.conkey[1]
+          JOIN pg_attribute a2
+            ON a2.attrelid = rel.oid
+           AND a2.attnum = f2.conkey[1]
+         WHERE rel.relkind = 'r'
+           AND (
+                   SELECT COUNT(*)
+                     FROM pg_attribute a
+                    WHERE a.attrelid = rel.oid
+                      AND NOT a.attisdropped
+                      AND a.attnum > 0
+               ) = 2
+      GROUP BY rel.relname, other_table.relname
     """
 
     cr.execute(query, [table])
