@@ -1573,10 +1573,19 @@ def update_m2m_tables(cr, old_table, new_table, ignored_m2ms=()):
     if old_table == new_table or not version_gte("10.0"):
         return
     ignored_m2ms = set(ignored_m2ms)
-    for orig_m2m_table, _, _, _ in get_m2m_on(cr, new_table):
+    for orig_m2m_table, _, _, other_table in get_m2m_on(cr, new_table):
         if orig_m2m_table in ignored_m2ms:
             continue
         m = re.match(r"^(x_|)(?:(\w+)_{0}|{0}_(\w+))_rel$".format(re.escape(old_table)), orig_m2m_table)
+        if new_table == other_table:
+            # self-referencing m2m: table and column names can't be derived.
+            if m:
+                _logger.warning(
+                    "Possibly missing rename of self-referencing m2m table %s referencing table %r",
+                    orig_m2m_table,
+                    old_table,
+                )
+            continue
         if m:
             m2m_table = "{}{}_{}_rel".format(m.group(1), *sorted([m.group(2) or m.group(3), new_table]))
             # Due to the 63 chars limit in generated constraint names, for long table names the FK
@@ -1831,6 +1840,12 @@ def get_m2m_on(cr, table):
     We identify as m2m table all tables that have only two columns, both of which are FKs.
     This function will return m2m tables for which one FK points to `table`.
 
+    .. note::
+
+        M2m tables are returned only once. Regardless of whether multiple foreign keys
+        are defined on the same columns or whether both columns of the m2m refer to
+        `table`. In the second case, the columns are returned in alphabetical order.
+
     :return: list of (m2m_table, fk_col_to_table, other_fk_col, other_table) tuples
     """
     _validate_table(table)
@@ -1856,7 +1871,7 @@ def get_m2m_on(cr, table):
                AND array_length(c.conkey, 1) = 1
           GROUP BY c.conrelid, c.conkey[1], c.confrelid
         )
-        SELECT t.relname, a1.attname, a2.attname, other_table.relname
+        SELECT t.relname, MIN(a1.attname), MAX(a2.attname), other_table.relname
           FROM pg_class t
           JOIN two_cols tc
             ON t.oid = tc.oid
@@ -1880,8 +1895,8 @@ def get_m2m_on(cr, table):
             ON f2.confrelid = other_table.oid
          WHERE the_table.relkind = 'r'
            AND the_table.relname = %s
-           AND other_table.relname != the_table.relname
            AND other_table.relkind = 'r'
+      GROUP BY t.relname, other_table.relname
     """
 
     cr.execute(query, [table])
