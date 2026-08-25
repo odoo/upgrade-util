@@ -1280,6 +1280,12 @@ class TestPG(UnitTestCase):
                 other_id int REFERENCES _upg_test_m2m_other
             );
 
+            -- a self-referencing m2m table
+            CREATE TABLE _upg_test_m2m_self_rel (
+                other_main_id int REFERENCES _upg_test_m2m_main,
+                main_id int REFERENCES _upg_test_m2m_main
+            );
+
             -- m2m table whose columns are covered by more than one FK constraint
             CREATE TABLE _upg_test_m2m_dup_rel (
                 main_id int REFERENCES _upg_test_m2m_main,
@@ -1307,13 +1313,15 @@ class TestPG(UnitTestCase):
                 ("_upg_test_m2m_dropped_rel", "main_id", "other_id", "_upg_test_m2m_other"),
                 ("_upg_test_m2m_dup_rel", "main_id", "other_id", "_upg_test_m2m_other"),
                 ("_upg_test_m2m_rel", "main_id", "other_id", "_upg_test_m2m_other"),
+                # self-referencing m2m tables are returned once, with their columns sorted alphabetically
+                ("_upg_test_m2m_self_rel", "main_id", "other_main_id", "_upg_test_m2m_main"),
             ],
         )
 
     def test_rename_m2m(self):
         cr = self.env.cr
 
-        self.env["ir.model"].create({"model": "x_new.model", "name": "Custom test model"})
+        new_model_id = self.env["ir.model"].create({"model": "x_new.model", "name": "Custom test model"}).id
         manual_model_id = self.env["ir.model"].create({"model": "x_manual.model", "name": "Manual model"}).id
 
         field_regular = self.env["ir.model.fields"].create(
@@ -1337,6 +1345,22 @@ class TestPG(UnitTestCase):
         old_regular_table = field_regular.relation_table
         old_custom_table = field_custom.relation_table
 
+        # self-referencing m2m field
+        old_self_table = "x_x_new_model_x_new_model_rel"
+        old_self_column1 = "x_new_model_id"
+        old_self_column2 = "x_new_model_id_other"
+        field_self = self.env["ir.model.fields"].create(
+            {
+                "name": "x_m2m_field_self",
+                "ttype": "many2many",
+                "model_id": new_model_id,
+                "relation": "x_new.model",
+                "relation_table": old_self_table,
+                "column1": old_self_column1,
+                "column2": old_self_column2,
+            }
+        )
+
         util.pg_rename_table(cr, "x_new_model", "new_special_model")
         util.update_m2m_tables(cr, "x_new_model", "new_special_model")
         util.invalidate(field_regular)
@@ -1349,6 +1373,13 @@ class TestPG(UnitTestCase):
         self.assertTrue(util.table_exists(cr, new_regular_table))
         self.assertTrue(util.table_exists(cr, old_custom_table))
         self.assertFalse(util.table_exists(cr, old_regular_table))
+
+        # self-referencing m2m fields have neither relation table nor columns renamed
+        self.assertEqual(field_self.relation_table, old_self_table)
+        self.assertEqual(field_self.column1, old_self_column1)
+        self.assertEqual(field_self.column2, old_self_column2)
+        self.assertTrue(util.table_exists(cr, old_self_table))
+        self.assertFalse(util.table_exists(cr, "x_new_special_model_x_new_model_rel"))
 
 
 class TestORM(UnitTestCase):
