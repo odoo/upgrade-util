@@ -3077,6 +3077,108 @@ class TestRemoveView(UnitTestCase):
         self.assertFalse(test_view_2.exists())
         self.assertNotIn('t-call="base.test_view_2"', test_view_3.arch_db)
 
+    def _create_view(self, name, arch, xml_id=True, inherit_id=None):
+        view = self.env["ir.ui.view"].create(
+            {
+                "name": name,
+                "type": "qweb",
+                "key": "base.{}".format(name),
+                "inherit_id": inherit_id,
+                "mode": "extension" if inherit_id else "primary",
+                "arch": arch,
+            }
+        )
+        if xml_id:
+            self.env["ir.model.data"].create({"name": name, "module": "base", "model": "ir.ui.view", "res_id": view.id})
+        return view
+
+    def test_remove_views(self):
+        # two independent hierarchies, each with a module child and a custom child, plus a
+        # caller view holding t-calls to every removed view
+        parent_1 = self._create_view("test_views_p1", '<t t-name="base.test_views_p1"><div>P1</div></t>')
+        child_1 = self._create_view(
+            "test_views_c1", '<div position="inside"><span>C1</span></div>', inherit_id=parent_1.id
+        )
+        custom_1 = self._create_view(
+            "test_views_x1", '<div position="inside"><span>X1</span></div>', xml_id=False, inherit_id=parent_1.id
+        )
+        parent_2 = self._create_view("test_views_p2", '<t t-name="base.test_views_p2"><div>P2</div></t>')
+        # grand-child, to check the recursion still walks the whole hierarchy
+        child_2 = self._create_view(
+            "test_views_c2", '<div position="inside"><span>C2</span></div>', inherit_id=parent_2.id
+        )
+        grand_child_2 = self._create_view("test_views_g2", '<span position="inside">G2</span>', inherit_id=child_2.id)
+
+        caller = self._create_view(
+            "test_views_caller",
+            """
+            <t t-name="base.test_views_caller">
+                <t t-call="base.test_views_p1"/>
+                <t t-call="base.test_views_c1"/>
+                <t t-call="base.test_views_p2"/>
+                <t t-call="base.test_views_g2"/>
+                <t t-call="base.test_views_keep"/>
+            </t>
+            """,
+        )
+
+        removed = parent_1 + child_1 + parent_2 + child_2 + grand_child_2
+        util.remove_views(self.env.cr, "base.test_views_p1", view_ids=[parent_2.id])
+
+        util.invalidate(removed + custom_1 + caller)
+        self.assertFalse(removed.exists())
+
+        # the custom view is kept, disabled and detached from its removed parent
+        self.assertTrue(custom_1.exists())
+        self.assertFalse(custom_1.active)
+        self.assertFalse(custom_1.inherit_id)
+        self.assertEqual(custom_1.mode, "primary")
+        self.assertIn("old view, inherited from base.test_views_p1", custom_1.name)
+
+        # every t-call to a removed view is gone, the other ones are untouched
+        for name in ["test_views_p1", "test_views_c1", "test_views_p2", "test_views_g2"]:
+            self.assertNotIn('t-call="base.{}"'.format(name), caller.arch_db)
+        self.assertIn('t-call="base.test_views_keep"', caller.arch_db)
+
+    def test_remove_views_shared_child(self):
+        # a view inheriting from a view that is removed in the same batch as its own parent
+        # must be removed once, without tripping on the `inherit_id` FK
+        parent = self._create_view("test_shared_p", '<t t-name="base.test_shared_p"><div>P</div></t>')
+        child = self._create_view("test_shared_c", '<div position="inside"><span>C</span></div>', inherit_id=parent.id)
+
+        util.remove_views(self.env.cr, "base.test_shared_p", "base.test_shared_c")
+        util.invalidate(parent + child)
+        self.assertFalse((parent + child).exists())
+
+    def test_remove_views_missing_xmlid(self):
+        # an unknown xml_id is ignored, as in `remove_view`
+        view = self._create_view("test_missing_p", '<t t-name="base.test_missing_p"><div>P</div></t>')
+        util.remove_views(self.env.cr, "base.test_does_not_exist", "base.test_missing_p")
+        util.invalidate(view)
+        self.assertFalse(view.exists())
+
+    def test_remove_views_wrong_model(self):
+        with self.assertRaises(ValueError):
+            util.remove_views(self.env.cr, "base.model_res_partner")
+
+    def test_remove_views_cowed(self):
+        # a COWed view shares the key of the view it copies, but has no xml_id of its own;
+        # it must be removed along with its origin, in the same batch
+        origin = self._create_view("test_cow_p", '<t t-name="base.test_cow_p"><div>P</div></t>')
+        cowed = self._create_view("test_cow_p", '<t t-name="base.test_cow_p"><div>COW</div></t>', xml_id=False)
+        # the COWed view carries the key of the original, not its own name
+        cowed.key = "base.test_cow_p"
+        # a view inheriting from the COWed one must be removed too
+        cowed_child = self._create_view(
+            "test_cow_c", '<div position="inside"><span>C</span></div>', inherit_id=cowed.id
+        )
+        other = self._create_view("test_cow_o", '<t t-name="base.test_cow_o"><div>O</div></t>')
+
+        util.remove_views(self.env.cr, "base.test_cow_p")
+        util.invalidate(origin + cowed + cowed_child + other)
+        self.assertFalse((origin + cowed + cowed_child).exists())
+        self.assertTrue(other.exists())
+
 
 class TestRenameXMLID(UnitTestCase):
     def test_rename_xmlid(self):
