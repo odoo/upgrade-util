@@ -546,6 +546,9 @@ def _column_info(cr, table, column):
 
 
 _COLUMNS = {}
+if version_gte("9.0"):  # since at least 8.0
+    _COLUMNS[("ir_ui_view", "mode")] = True
+
 if version_gte("10.0"):  # Since at least 9.0
     _COLUMNS[("ir_model_fields", "depends")] = True
     _COLUMNS[("ir_model_fields", "domain")] = True
