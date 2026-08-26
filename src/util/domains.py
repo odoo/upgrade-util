@@ -35,7 +35,14 @@ from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path
 from .inherit import for_each_inherit
 from .misc import SelfPrintEvalContext, ast_unparse, literal_replace, safe_eval, version_gte
-from .pg import SQLStr, column_exists, format_query, get_value_or_en_translation, table_exists
+from .pg import (
+    SQLStr,
+    _existing_columns,
+    column_exists,
+    format_query,
+    get_value_or_en_translation,
+    table_exists,
+)
 from .records import edit_view
 
 # python3 shims
@@ -220,8 +227,9 @@ def _get_domain_fields(cr):
         DomainField("loyalty_reward", "discount_product_domain", "'product.product'"),
     ]
 
+    existing = _existing_columns(cr, ((df.table, df.domain_column) for df in result))
     for df in result:
-        if column_exists(cr, df.table, df.domain_column):
+        if (df.table, df.domain_column) in existing:
             yield df
 
 
