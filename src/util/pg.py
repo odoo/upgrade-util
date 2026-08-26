@@ -622,6 +622,33 @@ def column_exists(cr, table, column):
     return bool(cr.rowcount)
 
 
+def _existing_columns(cr, pairs):
+    pairs = set(pairs)
+    if not pairs:
+        return set()
+
+    result = {pair for pair in pairs if _COLUMNS.get(pair)}
+    # the pairs shortcut as non-existing are known, no need to look for them
+    to_query = [pair for pair in pairs if _COLUMNS.get(pair) is None]
+    if to_query:
+        for table, _column in to_query:
+            _validate_table(table)
+        cr.execute(
+            """
+            SELECT c.relname,
+                   a.attname
+              FROM pg_attribute a
+              JOIN pg_class c
+                ON a.attrelid = c.oid
+             WHERE NOT a.attisdropped
+               AND (c.relname, a.attname) IN %s
+            """,
+            [tuple(to_query)],
+        )
+        result.update(cr.fetchall())
+    return result
+
+
 def column_type(cr, table, column, sized=False):
     """
     Return the type of a column, if it exists.
