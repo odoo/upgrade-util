@@ -1,3 +1,4 @@
+import collections
 import concurrent
 import contextlib
 import enum
@@ -20,7 +21,7 @@ from .const import NEARLYWARN
 from .helpers import table_of_model
 from .misc import log_progress, make_pickleable_callback, version_gte
 from .modules import INSTALLED_MODULE_STATES
-from .pg import SQLStr, column_exists, column_type, format_query, get_max_workers, table_exists
+from .pg import SQLStr, _existing_columns, column_type, format_query, get_max_workers
 
 _logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")
@@ -148,24 +149,44 @@ def _html_fields(cr, modules):
                AND f.model NOT IN ('mail.message', 'mail.mail')
           GROUP BY f.model, f.name
         )
-        SELECT model, array_agg(name ORDER BY name)
+        SELECT model, array_agg(name)
           FROM _fields
       GROUP BY model
-      ORDER BY model
         """,
         SQLStr(module_cte),
         SQLStr(extra_join),
     )
 
     cr.execute(query, {"root_modules": modules, "states": INSTALLED_MODULE_STATES})
-    for model, columns in cr.fetchall():
-        table = table_of_model(cr, model)
-        if not table_exists(cr, table):
-            # an SQL VIEW
-            continue
-        existing_columns = [column for column in columns if column_exists(cr, table, column)]
-        if existing_columns:
-            yield table, existing_columns
+    data = {table_of_model(cr, model): columns for model, columns in cr.fetchall()}
+    if not data:
+        return
+
+    # the models backed by an SQL VIEW are skipped, only keep the base tables
+    cr.execute(
+        """
+        SELECT c.relname
+          FROM pg_class c
+          JOIN pg_namespace n
+            ON n.oid = c.relnamespace
+         WHERE c.relname IN %s
+           AND c.relkind IN ('r', 'p')
+           AND n.nspname = current_schema
+        """,
+        [tuple(data)],
+    )
+    valid_tables = {table for (table,) in cr.fetchall()}
+
+    existing = _existing_columns(
+        cr, ((table, column) for table, columns in data.items() if table in valid_tables for column in columns)
+    )
+    table_columns = collections.defaultdict(list)
+    for table, column in existing:
+        table_columns[table].append(column)
+
+    # sorted output for determinism
+    for table in sorted(table_columns):
+        yield table, sorted(table_columns[table])
 
 
 def html_fields(cr, scope=FieldScope.ALL):
