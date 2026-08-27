@@ -643,6 +643,28 @@ def remove_records(cr, model, ids):
                 remove_records(cr, inh.model, [rid for (rid,) in cr.fetchall()])
 
     table = table_of_model(cr, model)
+    m2m_tables = [m[0] for m in get_m2m_on(cr, table)]
+    delete_queries = []
+    for fk_tbl, fk_col, _, fk_act in get_fk(cr, table, quote_ident=False):
+        if not (fk_act == "c" and fk_tbl not in m2m_tables):
+            continue
+        delete_queries.append(
+            cr.mogrify(
+                format_query(
+                    cr,
+                    """
+                        DELETE FROM ir_model_data
+                              WHERE model = %s
+                                AND res_id IN (SELECT id FROM {fk_tbl} WHERE {fk_col} IN %s)
+                    """,
+                    fk_tbl=fk_tbl,
+                    fk_col=fk_col,
+                ),
+                [model_of_table(cr, fk_tbl), ids],
+            ),
+        )
+    if delete_queries:
+        parallel_execute(cr, delete_queries)
     base_query = format_query(cr, "DELETE FROM {} WHERE id IN %s", table)
     parallel_execute(
         cr,
