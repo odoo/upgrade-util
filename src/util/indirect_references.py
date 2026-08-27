@@ -2,7 +2,7 @@
 import collections
 
 from .helpers import model_of_table, table_of_model
-from .pg import SQLStr, column_exists, table_exists
+from .pg import SQLStr, _existing_columns, table_exists
 
 
 class IndirectReference(
@@ -102,25 +102,33 @@ INDIRECT_REFERENCES = [
 
 
 def indirect_references(cr, bound_only=False):
+    columns_to_check = {("ir_model_fields", "company_dependent")} | {
+        (ir.table, column)
+        for ir in INDIRECT_REFERENCES
+        for column in (ir.res_id, ir.res_model, ir.res_model_id)
+        if column
+    }
+    existing = _existing_columns(cr, columns_to_check)
+
     for ir in INDIRECT_REFERENCES:
         if bound_only and not ir.res_id:
             continue
-        if ir.res_id and not column_exists(cr, ir.table, ir.res_id):
+        if ir.res_id and (ir.table, ir.res_id) not in existing:
             continue
 
         # some `res_model/res_model_id` combination may change between
         # versions (i.e. rating_rating.res_model_id was added in saas~15).
         # we need to verify existence of columns before using them.
-        if ir.res_model and not column_exists(cr, ir.table, ir.res_model):
+        if ir.res_model and (ir.table, ir.res_model) not in existing:
             ir = ir._replace(res_model=None)  # noqa: PLW2901
-        if ir.res_model_id and not column_exists(cr, ir.table, ir.res_model_id):
+        if ir.res_model_id and (ir.table, ir.res_model_id) not in existing:
             ir = ir._replace(res_model_id=None)  # noqa: PLW2901
         if not ir.res_model and not ir.res_model_id:
             continue
 
         yield ir
 
-    if column_exists(cr, "ir_model_fields", "company_dependent"):
+    if ("ir_model_fields", "company_dependent") in existing:
         cr.execute(
             """
             SELECT model, name, relation
