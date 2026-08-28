@@ -153,7 +153,7 @@ else:
     _parallel_execute_threaded = _parallel_execute_serial
 
 
-def parallel_execute(cr, queries, logger=_logger, qualifier="queries"):
+def parallel_execute(cr, queries, logger=_logger, qualifier="queries", allow_parallel=AUTO):
     """
     Execute queries in parallel.
 
@@ -181,13 +181,16 @@ def parallel_execute(cr, queries, logger=_logger, qualifier="queries"):
     .. note::
        If a concurrency issue occurs, the *failing* queries will be retried sequentially.
     """
-    parallel_execute_impl = (
-        _parallel_execute_serial
-        if getattr(threading.current_thread(), "testing", False)
-        or (odoo_module is not None and getattr(odoo_module, "current_test", False))
-        else _parallel_execute_threaded
-    )
-    return parallel_execute_impl(cr, queries, logger=_logger, qualifier=qualifier)
+    if allow_parallel is AUTO:
+        allow_parallel = not (
+            getattr(threading.current_thread(), "testing", False)
+            or (odoo_module is not None and getattr(odoo_module, "current_test", False))
+        )
+
+    if allow_parallel:
+        return _parallel_execute_threaded(cr, queries, logger=logger, qualifier=qualifier)
+
+    return _parallel_execute_serial(cr, queries, logger=_logger, qualifier=qualifier)
 
 
 def format_query(cr, query, *args, **kwargs):
