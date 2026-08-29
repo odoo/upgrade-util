@@ -1208,6 +1208,52 @@ class TestPG(UnitTestCase):
         target = util.target_of(cr, "res_partner", "_test_lang_id")
         self.assertEqual(target, ("res_lang", "id", "res_partner__test_lang_id_fkey"))
 
+    def test_get_fk(self):
+        cr = self.env.cr
+
+        # a table nothing points to, and a table that does not exist at all, are
+        # both simply empty -- callers rely on the falsy result, they do not
+        # expect an exception (e.g. `analytic/16.0.1.1/end-migrate.py`)
+        self.assertEqual(util.get_fk(cr, "_test_no_such_table"), [])
+
+        util.create_column(cr, "res_partner", "_test_lang_id", "int4", fk_table="res_lang", on_delete_action="SET NULL")
+
+        fks = util.get_fk(cr, "res_lang", quote_ident=False)
+        self.assertIn(
+            ("res_partner", "_test_lang_id", "res_partner__test_lang_id_fkey", "n"),
+            fks,
+        )
+        # every entry is a 4-tuple (table, column, constraint, on_delete_action)
+        self.assertTrue(all(len(fk) == 4 for fk in fks))
+
+        # `quote_ident` only affects how identifiers are rendered, not which rows
+        # are returned
+        quoted = util.get_fk(cr, "res_lang", quote_ident=True)
+        self.assertEqual(len(quoted), len(fks))
+        self.assertIn(("res_partner", "_test_lang_id", "res_partner__test_lang_id_fkey", "n"), quoted)
+
+    def test_get_fk_quoted_identifiers(self):
+        cr = self.env.cr
+        # identifiers needing quotes must round-trip through `quote_ident=True`
+        cr.execute('CREATE TABLE "_test gf target" (id serial PRIMARY KEY)')
+        cr.execute(
+            """
+            CREATE TABLE "_test gf src" (
+                id serial PRIMARY KEY,
+                "order" integer REFERENCES "_test gf target"(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        self.assertEqual(
+            util.get_fk(cr, "_test gf target", quote_ident=False),
+            [("_test gf src", "order", "_test gf src_order_fkey", "c")],
+        )
+        self.assertEqual(
+            util.get_fk(cr, "_test gf target", quote_ident=True),
+            [('"_test gf src"', '"order"', '"_test gf src_order_fkey"', "c")],
+        )
+
     def test_create_column_inferred_type_with_fk(self):
         cr = self.env.cr
         self.assertFalse(util.column_exists(cr, "res_partner", "_test_lang_id"))
