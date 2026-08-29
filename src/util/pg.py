@@ -982,26 +982,39 @@ def get_fk(cr, table, quote_ident=True):
     :meta private: exclude from online docs
     """
     _validate_table(table)
-    funk = "quote_ident" if quote_ident else "concat"
-    q = """SELECT {funk}(cl1.relname) as table,
-                  {funk}(att1.attname) as column,
-                  {funk}(con.conname) as conname,
+    funk = SQLStr("quote_ident" if quote_ident else "")
+
+    # Optimized query: resolve the referenced relation and its `id` attnum first via a
+    # materialized CTE, before all FK constraints are checked (could be many).
+    q = """WITH target AS MATERIALIZED (
+                SELECT c.oid AS reloid,
+                       (SELECT a.attnum
+                          FROM pg_attribute a
+                         WHERE a.attrelid = c.oid
+                           AND a.attname = 'id') AS idattnum
+                  FROM pg_class c
+                 WHERE c.relname = %s
+                   AND c.relkind = 'r'
+                   AND c.relnamespace = current_schema::regnamespace
+           )
+           SELECT {funk}(cl1.relname) AS table,
+                  {funk}(att1.attname) AS column,
+                  {funk}(con.conname) AS conname,
                   con.confdeltype
-             FROM pg_constraint as con, pg_class as cl1, pg_class as cl2,
-                  pg_attribute as att1, pg_attribute as att2
-            WHERE con.conrelid = cl1.oid
-              AND con.confrelid = cl2.oid
+             FROM target t
+             JOIN pg_constraint con
+               ON con.confrelid = t.reloid
+              AND con.confkey[1] = t.idattnum
+             JOIN pg_class cl1
+               ON cl1.oid = con.conrelid
+             JOIN pg_attribute att1
+               ON att1.attrelid = con.conrelid
+              AND att1.attnum = con.conkey[1]
+            WHERE con.contype = 'f'
               AND array_lower(con.conkey, 1) = 1
-              AND con.conkey[1] = att1.attnum
-              AND att1.attrelid = cl1.oid
-              AND cl2.relname = %s
-              AND att2.attname = 'id'
               AND array_lower(con.confkey, 1) = 1
-              AND con.confkey[1] = att2.attnum
-              AND att2.attrelid = cl2.oid
-              AND con.contype = 'f'
-    """.format(funk=funk)
-    cr.execute(q, (table,))
+    """
+    cr.execute(format_query(cr, q, funk=funk), [table])
     return cr.fetchall()
 
 
