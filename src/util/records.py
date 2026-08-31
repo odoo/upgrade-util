@@ -1184,7 +1184,7 @@ def force_noupdate(cr, xmlid, noupdate=True, warn=False):
     return cr.rowcount
 
 
-def ensure_xmlid_match_record(cr, xmlid, model, values):
+def ensure_xmlid_match_record(cr, xmlid, model, values, noupdate=AUTOMATIC):
     """
     Ensure an xml_id references a record with specific values.
 
@@ -1206,6 +1206,9 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
                               values = {"id": 123}
                               values = {"name": "INV/2024/0001", "company_id": 1}
 
+    :param bool noupdate: value to set on the `noupdate` flag of the xml_id. By default, the
+                          flag is set to `True` when the xml_id is created and left untouched
+                          when it already exists.
     :return: the ID of the matched record, `None` if no record found
     :rtype: int or None
 
@@ -1230,6 +1233,9 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
         [module, name],
     )
     data_id, res_id = cr.fetchone() or (None, None)
+
+    if data_id and noupdate is not AUTOMATIC:
+        force_noupdate(cr, xmlid, noupdate)
 
     table = table_of_model(cr, model)
 
@@ -1275,7 +1281,7 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
                 INSERT INTO ir_model_data(module, name, model, res_id, noupdate)
                      VALUES (%s, %s, %s, %s, %s)
         """,
-            [module, name, model, new_res_id, True],
+            [module, name, model, new_res_id, True if noupdate is AUTOMATIC else noupdate],
         )
 
     return new_res_id
