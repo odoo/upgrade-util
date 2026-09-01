@@ -152,12 +152,28 @@ def _get_domain_fields(cr):
             DomainField(
                 "base_automation",
                 "filter_domain",
-                "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)",
+                """
+                (
+                    SELECT m.model
+                      FROM ir_act_server AS act
+                      JOIN ir_model AS m
+                        ON m.id = act.model_id
+                     WHERE act.id = t.action_server_id
+                )
+                """,
             ),
             DomainField(
                 "base_automation",
                 "filter_pre_domain",
-                "(SELECT model_name FROM ir_act_server WHERE id = t.action_server_id)",
+                """
+                (
+                    SELECT m.model
+                      FROM ir_act_server AS act
+                      JOIN ir_model AS m
+                        ON m.id = act.model_id
+                     WHERE act.id = t.action_server_id
+                )
+                """,
             ),
         ]
     else:
