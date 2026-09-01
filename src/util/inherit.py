@@ -29,15 +29,23 @@ if version_gte("saas~17.1"):
           GROUP BY p.model
         """
         )
-        return frozendict(
-            {
-                parent: [
-                    Inherit(model=model, born=base_version, dead=None, via=via)
-                    for model, via in zip(children, vias, strict=True)
+        data = {
+            parent: [
+                Inherit(model=model, born=base_version, dead=None, via=via)
+                for model, via in zip(children, vias, strict=True)
+            ]
+            for parent, children, vias in cr.fetchall()
+        }
+
+        if not version_gte("saas~18.1"):
+            # `ir.cron`'s delegate=True `ir_actions_server_id` field wasn't
+            # reflected into `ir_model_inherit` until 17.4 https://github.com/odoo/odoo/commit/b70068de0552f87391d885d28d5446e9a81dc7a
+            existing = data.get("ir.actions.server", [])
+            if not any(inh.model == "ir.cron" for inh in existing):
+                data["ir.actions.server"] = existing + [
+                    Inherit(model="ir.cron", born=parse_version("10.saas~14"), dead=None, via="ir_actions_server_id")
                 ]
-                for parent, children, vias in cr.fetchall()
-            }
-        )
+        return frozendict(data)
 
 else:
     from ._inherit import inheritance_data
