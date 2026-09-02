@@ -34,6 +34,7 @@ from odoo.addons.base.maintenance.migrations.util.domains import (
     _model_of_path,
 )
 from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
+from odoo.addons.base.maintenance.migrations.util.misc import ast_unparse
 
 USE_ORM_DOMAIN = util.misc.version_gte("saas~18.2")
 NOTNOT = () if USE_ORM_DOMAIN else ("!", "!")
@@ -1407,7 +1408,7 @@ class TestPG(UnitTestCase):
             }
         )
 
-        util.pg_rename_table(cr, "x_new_model", "new_special_model")
+        util.rename_table(cr, "x_new_model", "new_special_model")
         util.update_m2m_tables(cr, "x_new_model", "new_special_model")
         util.invalidate(field_regular)
 
@@ -2456,7 +2457,7 @@ class TestMisc(UnitTestCase):
             ]
         ]
     )
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     def test_SelfPrint_prepare(self, value, expected):
         replaced_value, ctx = util.SelfPrintEvalContext.preprocess(value)
         evaluated = util.safe_eval(replaced_value, ctx)
@@ -2505,7 +2506,7 @@ class TestMisc(UnitTestCase):
             ),
         ]
     )
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     def test_literal_replace(self, orig, expected, old_unparse_fallback=None):
         repl = util.literal_replace(
             orig,
@@ -2521,7 +2522,7 @@ class TestMisc(UnitTestCase):
         else:
             self.assertEqual(repl, expected)
 
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     @mute_logger(util.misc._logger.name)
     def test_literal_replace_error(self):
         # this shouldn't raise a syntax error
@@ -2539,7 +2540,7 @@ class TestMisc(UnitTestCase):
             ("1 <  2 <3, x or z  and y   or x", "1<2<3,x or z and y or x"),
         ]
     )
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     def test_literal_replace_full(self, text, orig):
         # check each grammar piece
         repl = util.literal_replace(text, {orig: "gone"})
@@ -2550,7 +2551,7 @@ class TestMisc(UnitTestCase):
         repl = util.literal_replace(text, {orig: "gone"})
         self.assertEqual(text, repl)
 
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     def test_literal_replace_callable(self):
         def adapter(node):
             return ast.parse("this.get('{}')".format(node.attr), mode="eval").body
@@ -2568,7 +2569,7 @@ class TestMisc(UnitTestCase):
             ],
         )
 
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     @unittest.skipUnless(hasattr(ast, "Constant"), "`ast.Constant` available from Python3.6")
     def test_literal_replace_callable2(self):
         def adapter2(node):
@@ -2590,9 +2591,7 @@ class TestMisc(UnitTestCase):
         self.assertIn(repl, ["16 / 42 or y == 42", "((16 / 42) or (y == 42))"])
 
         def adapter4(node):
-            return ast.parse(
-                "{}.get({})".format(util.ast_unparse(node.value), util.ast_unparse(node.slice)), mode="eval"
-            ).body
+            return ast.parse("{}.get({})".format(ast_unparse(node.value), ast_unparse(node.slice)), mode="eval").body
 
         repl = util.literal_replace(
             "  x[ 'a' ]+y[b   ] -  z[None]",
@@ -2605,7 +2604,7 @@ class TestMisc(UnitTestCase):
         # Check with fallback for older unparse
         self.assertIn(repl, ["x.get('a') + y.get(b) - z.get(None)", "((x.get('a') + y.get(b)) - z.get(None))"])
 
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     @unittest.skipUnless(hasattr(ast, "Constant"), "`ast.Constant` available from Python3.6")
     def test_literal_replace_wildcards(self):
         repl = util.literal_replace(
@@ -2642,9 +2641,9 @@ class TestMisc(UnitTestCase):
             (ast.Tuple([util.literal_replace.WILDCARD], None), "(*,)"),
         ]
     )
-    @unittest.skipUnless(util.ast_unparse is not None, "`ast.unparse` available from Python3.9")
+    @unittest.skipUnless(ast_unparse is not None, "`ast.unparse` available from Python3.9")
     def test_literal_replace_wildcard_unparse(self, orig, expected, old_unparse_fallback=None):
-        res = util.ast_unparse(orig)
+        res = ast_unparse(orig)
         if old_unparse_fallback:
             self.assertIn(res, [expected, old_unparse_fallback])
         else:
