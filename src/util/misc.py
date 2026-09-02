@@ -15,6 +15,7 @@ import textwrap
 import uuid
 from contextlib import contextmanager
 from itertools import chain, islice
+from multiprocessing import cpu_count
 
 try:
     from odoo import release
@@ -101,6 +102,15 @@ def str2bool(s, default=None):
             raise ValueError("Use 0/1/yes/no/true/false/on/off")
         return bool(default)
     return s in y
+
+
+def get_max_workers():
+    force_max_worker = os.getenv("MAX_WORKER")
+    if force_max_worker:
+        if not force_max_worker.isdigit():
+            raise MigrationError("wrong parameter: MAX_WORKER should be an integer")
+        return int(force_max_worker)
+    return min(8, cpu_count())
 
 
 @_lru_cache()
