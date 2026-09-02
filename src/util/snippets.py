@@ -19,9 +19,9 @@ with contextlib.suppress(ImportError):
 
 from .const import NEARLYWARN
 from .helpers import table_of_model
-from .misc import log_progress, make_pickleable_callback, version_gte
+from .misc import get_max_workers, log_progress, make_pickleable_callback, version_gte
 from .modules import INSTALLED_MODULE_STATES
-from .pg import SQLStr, _existing_columns, column_type, format_query, get_max_workers
+from .pg import SQLStr, _existing_columns, column_type, format_query
 
 _logger = logging.getLogger(__name__)
 utf8_parser = html.HTMLParser(encoding="utf-8")

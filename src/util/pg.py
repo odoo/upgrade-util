@@ -12,7 +12,6 @@ import uuid
 import warnings
 from contextlib import contextmanager
 from functools import partial, reduce
-from multiprocessing import cpu_count
 
 try:
     from concurrent.futures import ThreadPoolExecutor  # noqa: I001
@@ -45,7 +44,7 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import AUTO, Sentinel, log_progress, on_CI, version_gte
+from .misc import AUTO, Sentinel, get_max_workers, log_progress, on_CI, version_gte
 
 _logger = logging.getLogger(__name__)
 
@@ -68,15 +67,6 @@ class SQLStr(str):
 
     See :func:`~odoo.upgrade.util.pg.format_query`
     """
-
-
-def get_max_workers():
-    force_max_worker = os.getenv("MAX_WORKER")
-    if force_max_worker:
-        if not force_max_worker.isdigit():
-            raise MigrationError("wrong parameter: MAX_WORKER should be an integer")
-        return int(force_max_worker)
-    return min(8, cpu_count())
 
 
 @contextmanager
