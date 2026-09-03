@@ -37,7 +37,7 @@ from .pg import (
 # avoid namespace clash
 from .pg import rename_table as pg_rename_table
 from .records import _remove_import_export_paths, _rm_refs, remove_records, remove_view, replace_record_references_batch
-from .report import add_to_migration_reports
+from .report import add_to_migration_reports, html_escape, report_with_list
 
 _logger = logging.getLogger(__name__)
 
@@ -211,13 +211,15 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                     affected_fields = cr.fetchall()
                     for field, field_model in affected_fields:
                         remove_field(cr, field_model, field, drop_column=False)
-                    msg = "The following fields have been removed because their related model {} ({}) was removed:\n{}".format(
-                        mod_label, model, "\n".join(" - field {} of model {}".format(*r) for r in affected_fields)
+                    msg = "The following fields have been removed because their related model <b>{}</b> ({}) was removed.".format(
+                        html_escape(mod_label), html_escape(model)
                     )
-                    add_to_migration_reports(
-                        message=msg,
+                    report_with_list(
+                        summary=msg,
+                        data=affected_fields,
+                        columns=("name", "model"),
+                        row_format="field <code>{name}</code> of model <code>{model}</code>",
                         category="Removed Fields",
-                        format="md",
                     )
 
             for table_name in tables:
