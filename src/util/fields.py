@@ -48,6 +48,7 @@ from .inherit import for_each_inherit
 from .misc import AUTO, get_modules, log_progress, safe_eval, version_gte
 from .orm import env, invalidate
 from .pg import (
+    ColumnList,
     PGRegexp,
     SQLStr,
     alter_column_type,
@@ -871,12 +872,21 @@ m2o2m2m = convert_m2o_field_to_m2m
 
 
 def _convert_field_to_company_dependent(
-    cr, model, field, type, target_model=None, default_value=None, default_value_ref=None, company_field="company_id"
+    cr,
+    model,
+    field,
+    type,
+    target_model=None,
+    default_value=None,
+    default_value_ref=None,
+    company_field="company_id",
+    inherits=None,
 ):
     _validate_model(model)
     if target_model:
         _validate_model(target_model)
 
+    inherits = inherits or {}
     type2field = {"char", "float", "boolean", "integer", "text", "many2one", "date", "datetime", "selection", "html"}
     assert type in type2field
 
@@ -904,9 +914,21 @@ def _convert_field_to_company_dependent(
     else:
         where_condition = cr.mogrify("{0} != %s", [default_value]).decode()
 
+    extra_from = " FROM" if inherits else ""
+    for inherit, inherit_field in inherits.items():
+        table_inherit = table_of_model(cr, inherit)
+        extra_from += (
+            " {table_inherit}".format(table_inherit=table_inherit) + "" if inherit == list(inherits)[-1] else ", "
+        )
+        where_condition += format_query(
+            cr, " AND {}.{} = {}.id", sql.SQL(table), sql.SQL(inherit_field), sql.SQL(table_inherit)
+        )
+        if company_field and column_exists(cr, table_inherit, company_field):
+            company_field = ColumnList.from_unquoted(cr, [company_field]).using(alias=table_inherit).as_string(cr._obj)
+
     if company_field:
-        where_condition += format_query(cr, " AND {} IS NOT NULL", company_field)
-        using = format_query(cr, "jsonb_build_object({}, {{0}})", company_field)
+        where_condition += format_query(cr, " AND {} IS NOT NULL", sql.SQL(company_field))
+        using = format_query(cr, "jsonb_build_object({}, {{0}})", sql.SQL(company_field)) + extra_from
     else:
         using = format_query(
             cr,
@@ -937,7 +959,15 @@ def _convert_field_to_company_dependent(
 
 
 def _convert_field_to_property(
-    cr, model, field, type, target_model=None, default_value=None, default_value_ref=None, company_field="company_id"
+    cr,
+    model,
+    field,
+    type,
+    target_model=None,
+    default_value=None,
+    default_value_ref=None,
+    company_field="company_id",
+    inherits=None,
 ):
     """
     Convert a field to a property field.
@@ -954,6 +984,7 @@ def _convert_field_to_property(
     _validate_model(model)
     if target_model:
         _validate_model(target_model)
+    inherits = inherits or {}
     type2field = {
         "char": "value_text",
         "float": "value_float",
@@ -1017,12 +1048,22 @@ def _convert_field_to_property(
             """.format(**locals()),
         )
 
+    extra_joins = ""
+    for inherit, inherit_field in inherits.items():
+        table_inherit = table_of_model(cr, inherit)
+        extra_joins += " JOIN {table_inherit} ON t.{inherit_field} = {table_inherit}.id".format(
+            table_inherit=table_inherit, inherit_field=inherit_field
+        )
+        if company_field and column_exists(cr, table_inherit, company_field):
+            company_field = ColumnList.from_unquoted(cr, [company_field]).using(alias=table_inherit).as_string(cr._obj)
+
     cr.execute(
         """
         WITH cte AS (
-            SELECT CONCAT('{model},', id) as res_id, {value_select} as value,
+            SELECT CONCAT('{model},', t.id) as res_id, {value_select} as value,
                    ({company_field})::integer as company
               FROM {table} t
+                   {extra_joins}
              WHERE {where_clause}
         )
         INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
