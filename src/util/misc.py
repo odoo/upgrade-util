@@ -15,6 +15,7 @@ import textwrap
 import uuid
 from contextlib import contextmanager
 from itertools import chain, islice
+from multiprocessing import cpu_count
 
 try:
     from odoo import release
@@ -57,6 +58,36 @@ except ImportError:
             return _ast_unparse(n).strip()
     except ImportError:
         ast_unparse = None
+
+__all__ = [
+    "AUTO",
+    "AUTOMATIC",
+    "SelfPrint",
+    "SelfPrintEvalContext",
+    "Sentinel",
+    "chunks",
+    "expand_braces",
+    "get_max_workers",
+    "get_modules",
+    "has_design_themes",
+    "has_enterprise",
+    "import_code_upgrade",
+    "import_script",
+    "literal_replace",
+    "log_chunks",
+    "log_progress",
+    "make_pickleable_callback",
+    "on_CI",
+    "once",
+    "parse_version",
+    "safe_eval",
+    "skippable_cm",
+    "split_osenv",
+    "splitlines",
+    "str2bool",
+    "version_between",
+    "version_gte",
+]
 
 _logger = logging.getLogger(__name__)
 
@@ -101,6 +132,15 @@ def str2bool(s, default=None):
             raise ValueError("Use 0/1/yes/no/true/false/on/off")
         return bool(default)
     return s in y
+
+
+def get_max_workers():
+    force_max_worker = os.getenv("MAX_WORKER")
+    if force_max_worker:
+        if not force_max_worker.isdigit():
+            raise MigrationError("wrong parameter: MAX_WORKER should be an integer")
+        return int(force_max_worker)
+    return min(8, cpu_count())
 
 
 @_lru_cache()

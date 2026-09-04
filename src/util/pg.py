@@ -12,7 +12,6 @@ import uuid
 import warnings
 from contextlib import contextmanager
 from functools import partial, reduce
-from multiprocessing import cpu_count
 
 try:
     from concurrent.futures import ThreadPoolExecutor  # noqa: I001
@@ -45,7 +44,61 @@ except ImportError:
 
 from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
-from .misc import AUTO, Sentinel, log_progress, on_CI, version_gte
+from .misc import AUTO, Sentinel, get_max_workers, log_progress, on_CI, version_gte
+
+__all__ = [
+    "ColumnList",
+    "IndexInfo",
+    "PGRegexp",
+    "SQLStr",
+    "alter_column_type",
+    "bulk_update_table",
+    "column_exists",
+    "column_nullable",
+    "column_type",
+    "column_updatable",
+    "copy_column",
+    "create_column",
+    "create_fk",
+    "create_id_sequence",
+    "create_index",
+    "create_m2m",
+    "drop_depending_views",
+    "explode_execute",
+    "explode_query",
+    "explode_query_range",
+    "find_new_table_column_name",
+    "fix_wrong_m2o",
+    "fixup_m2m",
+    "fixup_m2m_cleanup",
+    "fixup_m2m_indexes",
+    "format_query",
+    "get_columns",
+    "get_common_columns",
+    "get_depending_views",
+    "get_fk",
+    "get_index_on",
+    "get_m2m_on",
+    "get_m2m_tables",
+    "get_value_or_en_translation",
+    "named_cursor",
+    "parallel_execute",
+    "pg_array_uniq",
+    "pg_html_escape",
+    "pg_replace",
+    "pg_text2html",
+    "query_ids",
+    "remove_column",
+    "remove_constraint",
+    "rename_table",
+    "savepoint",
+    "sequence_exists",
+    "table_exists",
+    "target_of",
+    "temp_index",
+    "update_m2m_tables",
+    "view_exists",
+]
 
 _logger = logging.getLogger(__name__)
 
@@ -68,15 +121,6 @@ class SQLStr(str):
 
     See :func:`~odoo.upgrade.util.pg.format_query`
     """
-
-
-def get_max_workers():
-    force_max_worker = os.getenv("MAX_WORKER")
-    if force_max_worker:
-        if not force_max_worker.isdigit():
-            raise MigrationError("wrong parameter: MAX_WORKER should be an integer")
-        return int(force_max_worker)
-    return min(8, cpu_count())
 
 
 @contextmanager

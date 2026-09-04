@@ -4,6 +4,8 @@ from .fields import remove_field
 from .misc import version_between
 from .records import delete_unused, ref
 
+__all__ = ["remove_salary_rule"]
+
 _logger = logging.getLogger(__name__)
 
 

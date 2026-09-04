@@ -83,6 +83,21 @@ from .exceptions import MigrationError
 from .misc import has_enterprise, split_osenv, version_between, version_gte
 from .orm import env, get_admin_channel, guess_admin_id
 
+__all__ = [
+    "add_to_migration_reports",
+    "announce",
+    "announce_migration_report",
+    "announce_release_note",
+    "get_anchor_link_to_record",
+    "html_escape",
+    "md2html",
+    "migration_reports",
+    "report_message",
+    "report_with_list",
+    "report_with_summary",
+    "rst2html",
+]
+
 migration_reports = {}
 _logger = logging.getLogger(__name__)
 

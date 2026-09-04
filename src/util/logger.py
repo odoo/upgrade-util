@@ -8,6 +8,8 @@ from .misc import on_CI
 
 _REGISTERED = False
 
+__all__ = ["_logger", "getLogger"]
+
 _logger = logging.getLogger(__name__.rpartition(".")[0])
 
 

@@ -5,13 +5,15 @@ from .helpers import table_of_model
 from .pg import SQLStr, format_query, table_exists
 from .records import ref, remove_records, replace_record_references_batch
 
-_logger = logging.getLogger(__name__.rpartition(".")[0])
-
 # python3 shims
 try:
     basestring  # noqa: B018
 except NameError:
     basestring = str
+
+__all__ = ["drop_workflow", "split_group", "uniq_tags"]
+
+_logger = logging.getLogger(__name__.rpartition(".")[0])
 
 
 def uniq_tags(cr, model, uniq_column="name", order="id"):

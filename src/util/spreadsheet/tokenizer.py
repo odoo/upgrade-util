@@ -4,6 +4,8 @@ import re
 This entire file is a direct translation of the original JavaScript code found in https://github.com/odoo/o-spreadsheet/blob/master/src/formulas/tokenizer.ts.
 """
 
+__all__ = ["CellErrorType", "tokenize"]
+
 
 class CellErrorType:
     NotAvailable = "#N/A"

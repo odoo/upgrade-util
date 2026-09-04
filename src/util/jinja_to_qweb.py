@@ -20,6 +20,8 @@ from .orm import env as get_env
 from .pg import named_cursor, table_exists
 from .report import add_to_migration_reports, html_escape
 
+__all__ = ["convert_jinja_to_inline", "convert_jinja_to_qweb", "upgrade_jinja_fields", "verify_upgraded_jinja_fields"]
+
 _logger = logging.getLogger(__name__)
 
 REMOVE_SAFE_REGEX = re.compile(r"\s*\|\s*safe\s*", re.IGNORECASE)
