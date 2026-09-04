@@ -1,13 +1,24 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from psycopg2.extras import Json
+
 from .exceptions import UpgradeError
 from .helpers import _validate_table
 from .misc import _cached, version_gte
 from .models import rename_model
 from .modules import rename_module
 from .orm import env
-from .pg import column_exists, format_query, parallel_execute, remove_constraint, rename_table, table_exists
+from .pg import (
+    column_exists,
+    column_type,
+    format_query,
+    parallel_execute,
+    remove_constraint,
+    rename_table,
+    table_exists,
+)
+from .records import ref
 from .report import add_to_migration_reports
 
 try:
@@ -252,3 +263,62 @@ def translation2jsonb(cr, *fields):
         parallel_execute(cr, migrate_queries)
     parallel_execute(cr, all_cleanup_queries)
     return fields
+
+
+def overwrite_arch(cr, filepath=None, xmlid=None, arch=None, view_id=None, active="auto"):
+    """
+    Overwrite a view arch from either a file path or a raw XML string.
+
+    Unlike :func:`edit_view`, it does not parse XML; it writes the content as-is.
+
+    .. note::
+        ``MIG_SCRIPT_DIR`` is not provided by this library. Define it in your migration script:
+
+        .. code-block:: python
+
+            from pathlib import Path
+            MIG_SCRIPT_DIR = Path(__file__).parent
+
+    .. code-block:: python
+
+        util.overwrite_arch(cr, MIG_SCRIPT_DIR / "arch/my_view.xml", "module.my_view_id")
+        util.overwrite_arch(cr, xmlid="module.my_view_id", arch="<data>...</data>")
+
+    Use either xmlid or view_id to select the target view, not both.
+    Use exactly one content source: filepath or arch.
+
+    :param filepath: optional, path to the file containing the new arch
+    :param str xmlid: optional, xml_id of the view to overwrite
+    :param int view_id: optional, ID of the view to overwrite
+    :param str arch: optional, raw XML content to write instead of reading filepath
+    :param bool or None or "auto" active: active flag value to set. Unchanged when `None`.
+    """
+    assert bool(xmlid) ^ bool(view_id), "You must specify either xmlid or view_id"
+    assert bool(filepath) ^ bool(arch), "You must specify either filepath or arch"
+
+    if active not in (True, False, None, "auto"):
+        raise ValueError("Invalid `active` value: {!r}".format(active))
+    if active == "auto":
+        active = True if xmlid else None
+    if xmlid:
+        if "." not in xmlid:
+            raise ValueError("Please use fully qualified name <module>.<name>")
+        view_id = ref(cr, xmlid)
+        if not view_id:
+            return
+
+    if arch is not None:
+        new_arch = arch.strip()
+    else:
+        with open(filepath, "r", encoding="utf-8") as fh:
+            new_arch = fh.read()
+
+    arch_col = "arch_db" if version_gte("10.0") or column_exists(cr, "ir_ui_view", "arch_db") else "arch"
+    jsonb_column = version_gte("17.0") or column_type(cr, "ir_ui_view", arch_col) == "jsonb"
+    arch_value = Json({"en_US": new_arch}) if jsonb_column else new_arch
+
+    set_active = ", active={}".format(bool(active)) if active is not None else ""
+    cr.execute(
+        "UPDATE ir_ui_view SET {arch}=%s{set_active} WHERE id=%s".format(arch=arch_col, set_active=set_active),
+        [arch_value, view_id],
+    )
