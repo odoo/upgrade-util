@@ -462,6 +462,31 @@ class TestReplaceReferences(UnitTestCase):
         self.assertEqual(data, expected)
 
 
+class TestIndirectReferences(UnitTestCase):
+    def test_ir(self):
+        cr = self.env.cr
+        triplets = [(ir.table, ir.res_model or "", ir.res_id or "") for ir in util.indirect_references(cr)]
+
+        self.assertEqual(sorted(triplets), sorted(set(triplets)))  # ensure references are only yield once
+
+        expected = [
+            ("ir_attachment", "res_model", "res_id"),
+            ("ir_model_data", "model", "res_id"),
+        ]
+        if util.module_installed(cr, "mail"):
+            expected += [
+                ("mail_followers", "res_model", "res_id"),
+                ("mail_message", "model", "res_id"),
+            ]
+            if util.version_gte("saas~19.2"):
+                # Many2oneReference fields are only reflected in the database from saas~19.2
+                expected.append(("mail_scheduled_message", "model", "res_id"))
+
+        for table, res_model, res_id in expected:
+            with self.subTest(table=table, res_model=res_model, res_id=res_id):
+                self.assertIn((table, res_model, res_id), triplets)
+
+
 class TestRemoveFieldDomains(UnitTestCase):
     @parametrize(
         [
