@@ -848,7 +848,7 @@ class TestPG(UnitTestCase):
         [
             ("res_country", "name", False, "jsonb" if util.version_gte("16.0") else "varchar"),  # translated field
             ("res_country", "code", False, "varchar"),
-            ("res_country", "code", True, "varchar(2)"),
+            ("res_country", "code", True, "varchar" if util.version_gte("saas~19.5") else "varchar(2)"),
             ("res_currency", "active", False, "bool"),
             ("res_currency", "active", True, "bool"),
             ("res_country", "create_date", False, "timestamp"),
