@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import textwrap
+import threading
 import uuid
 from contextlib import contextmanager
 from itertools import chain, islice
@@ -20,11 +21,13 @@ try:
     from odoo import release
     from odoo.modules.module import get_module_path
     from odoo.modules.module import get_modules as _get_modules
+    from odoo.tools.lru import LRU as _LRU
     from odoo.tools.parse_version import parse_version
 except ImportError:
     from openerp import release
     from openerp.modules.module import get_module_path
     from openerp.modules.module import get_modules as _get_modules
+    from openerp.tools.lru import LRU as _LRU
     from openerp.tools.parse_version import parse_version
 
 if release.major_version == "7.0":
@@ -75,17 +78,48 @@ class Sentinel:
 AUTO = AUTOMATIC = Sentinel("AUTO")
 
 
-def _cached(func):
-    sentinel = Sentinel("sentinel")
+if sys.version_info[0] == 2:
 
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        result = getattr(func, "_result", sentinel)
-        if result == sentinel:
-            result = func._result = func(*args, **kwargs)
-        return result
+    def _cached(func):
+        sig = inspect.getargspec(func)
+        sig_args, sig_kwargs = sig[0], sig[1:]
+        if not (sig_args in ([], ["cr"]) and sig_kwargs == (None, None, None)):
+            raise TypeError("Invalid function signature; expected `()` or `(cr)`.")
 
-    return wrapper
+        lru = _LRU(16 if sig_args else 1)
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = args[0].dbname if args else ()
+            if key not in lru:
+                lru[key] = func(*args, **kwargs)
+            return lru[key]
+
+        return wrapper
+else:
+
+    def _cached(func):
+        sig = inspect.signature(func)
+        if str(sig) not in ("()", "(cr)"):
+            raise TypeError("Invalid function signature; expected `()` or `(cr)`.")
+
+        if not sig.parameters:
+            return functools.lru_cache(maxsize=1)(func)
+
+        local = threading.local()
+
+        @functools.lru_cache(maxsize=None)
+        def cached(dbname):
+            return func(local.cr)
+
+        @functools.wraps(func)
+        def wrapper(cr):
+            local.cr = cr
+            return cached(cr.dbname)
+
+        wrapper.cache_info = cached.cache_info
+        wrapper.cache_clear = cached.cache_clear
+        return wrapper
 
 
 _lru_cache = getattr(functools, "lru_cache", lambda: lambda lambada: lambada)
