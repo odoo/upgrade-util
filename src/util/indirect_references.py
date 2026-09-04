@@ -70,7 +70,7 @@ INDIRECT_REFERENCES = [
     _IR("iap_extracted_words", "res_model", "res_id"),
     _IR("mail_template", "model", None, set_unknown=True),  # model renamed in saas~6
     _IR("mail_activity", "res_model", "res_id", "res_model_id"),
-    _IR("mail_activity_type", "res_model", None),
+    _IR("mail_activity_type", "res_model", None, set_unknown=True),
     _IR("mail_alias", None, "alias_force_thread_id", "alias_model_id"),
     _IR("mail_alias", None, "alias_parent_thread_id", "alias_parent_model_id"),
     _IR("mail_followers", "res_model", "res_id"),
