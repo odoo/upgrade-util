@@ -86,6 +86,46 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
     chunk_size = 1000
     notify = False
     unk_id = _unknown_model_id(cr)
+    table = table_of_model(cr, model)
+    cr.execute(
+        """
+        SELECT con.conname,
+               att.attname,
+               cl2.relname,
+               fatt.attname
+          FROM pg_constraint con
+          JOIN pg_class cl2
+            ON cl2.oid = con.confrelid
+          JOIN pg_attribute att
+            ON att.attrelid = con.conrelid
+           AND att.attnum = con.conkey[1]
+          JOIN pg_attribute fatt
+            ON fatt.attrelid = con.confrelid
+           AND fatt.attnum = con.confkey[1]
+         WHERE con.conrelid = to_regclass(%s)
+           AND con.contype = 'f'
+           AND con.confdeltype IN ('r', 'a')
+           AND array_length(con.conkey, 1) = 1
+        """,
+        [table],
+    )
+    for conname, column, ref_table, ref_col in cr.fetchall():
+        cr.execute(
+            format_query(
+                cr,
+                """
+                ALTER TABLE {table}
+                ALTER COLUMN {column} DROP NOT NULL,
+                 DROP CONSTRAINT {conname},
+                  ADD CONSTRAINT {conname} FOREIGN KEY ({column}) REFERENCES {ref_table}({ref_col}) ON DELETE SET NULL
+                """,
+                table=table,
+                column=column,
+                conname=conname,
+                ref_table=ref_table,
+                ref_col=ref_col,
+            )
+        )
 
     # remove references
     for ir in indirect_references(cr):
