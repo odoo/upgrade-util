@@ -1011,11 +1011,39 @@ class TestPG(UnitTestCase):
         count += 1
         cr.execute("UPDATE res_partner_category SET id = 10000000 WHERE id = %s", [tid])
 
+        cr.execute(
+            """
+            WITH rp3 AS (
+                SELECT id, row_number() OVER () AS rn
+                  FROM res_partner
+                 LIMIT 3
+            ), rc3 AS (
+                SELECT id, row_number() OVER () AS rn
+                  FROM res_country
+                 LIMIT 3
+            )
+            UPDATE res_partner AS rp
+               SET country_id = rc3.id
+              FROM rp3
+              JOIN rc3
+                ON rp3.rn = rc3.rn
+             WHERE rp.id = rp3.id
+            """,
+        )
+
         qs = util.explode_query_range(cr, "SELECT 1", table="res_partner_category", bucket_size=count)
         self.assertEqual(len(qs), 1)  # one bucket should be enough for all records
 
         qs = util.explode_query_range(cr, "SELECT 1", table="res_partner_category", bucket_size=count - 1)
         self.assertEqual(len(qs), 1)  # 10% rule for second bucket, 1 <= 0.1(count - 1) since count >= 11
+
+        qs = util.explode_query_range(cr, "SELECT 1", table="res_partner", alias="rp", explode_on="country_id")
+        self.assertIn('rp."country_id" IS NOT NULL', qs[0])
+
+        qs = util.explode_query_range(
+            cr, "SELECT 1", table="res_partner", alias="rp", explode_on="country_id", bucket_size=2
+        )
+        self.assertIn('rp."country_id" BETWEEN', qs[0])
 
     def test_parallel_rowcount(self):
         cr = self._get_cr()
