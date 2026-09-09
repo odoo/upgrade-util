@@ -46,6 +46,16 @@ from .exceptions import MigrationError, SleepyDeveloperError
 from .helpers import _validate_table, model_of_table
 from .misc import AUTO, Sentinel, get_max_workers, log_progress, on_CI, version_gte
 
+try:
+    from odoo.tools.sql import make_identifier
+except ImportError:
+    if version_gte("17.0"):
+        raise
+
+    def make_identifier(identifier):
+        return identifier
+
+
 __all__ = [
     "ColumnList",
     "IndexInfo",
@@ -1567,7 +1577,7 @@ def rename_table(cr, old_table, new_table, remove_constraints=True):
     )
     old_table_length = len(old_table)
     for (old_const,) in cr.fetchall():
-        new_const = new_table + old_const[old_table_length:]
+        new_const = make_identifier(new_table + old_const[old_table_length:])
         _logger.info("Renaming constraint %r to %r", old_const, new_const)
         cr.execute(
             sql.SQL("ALTER TABLE {} RENAME CONSTRAINT {} TO {}").format(
