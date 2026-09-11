@@ -353,7 +353,7 @@ def explode_query(cr, query, alias=None, num_buckets=8, prefix=None):
     return [cr.mogrify(query, [num_buckets, index]).decode() for index in range(num_buckets)]
 
 
-def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, prefix=None):
+def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, prefix=None, explode_on="id"):
     """
     Explode a query to multiple queries that can be executed in parallel.
 
@@ -379,14 +379,16 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         sep_kw = " AND " if re.search(r"\sWHERE\s", query, re.M | re.I) else " WHERE "
         query += sep_kw + "{parallel_filter}"
 
-    cr.execute(format_query(cr, "SELECT min(id), max(id) FROM {}", table))
+    cr.execute(
+        format_query(cr, "SELECT min({explode_on}), max({explode_on}) FROM {table}", explode_on=explode_on, table=table)
+    )
     min_id, max_id = cr.fetchone()
     if min_id is None:
         # empty table
         if on_CI():
-            # Even if there are any records, return one query to be executed to validate its correctness and avoid
+            # Even if there are no records, return one query to be executed to validate its correctness and avoid
             # scripts that pass the CI but fail in production.
-            parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
+            parallel_filter = "{alias}.{explode_on} IS NOT NULL".format(alias=alias, explode_on=explode_on)
             return [_explode_format(query, parallel_filter=parallel_filter)]
         else:
             return []
@@ -401,15 +403,16 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
                 cr,
                 """
                 WITH t AS (
-                    SELECT id,
-                           mod(row_number() OVER(ORDER BY id) - 1, %s) AS g
+                    SELECT {explode_on},
+                           mod(row_number() OVER(ORDER BY {explode_on}) - 1, %s) AS g
                       FROM {table}
-                     ORDER BY id
-                ) SELECT array_agg(id ORDER BY id) FILTER (WHERE g=0),
-                         min(id),
-                         max(id)
+                     ORDER BY {explode_on}
+                ) SELECT array_agg({explode_on} ORDER BY {explode_on}) FILTER (WHERE g=0),
+                         min({explode_on}),
+                         max({explode_on})
                     FROM t
                 """,
+                explode_on=explode_on,
                 table=table,
             ),
             [bucket_size],
@@ -427,10 +430,12 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         # only two buckets and the second would have at most 10% of bucket_size records.
         # Still, since the query may only be valid if there is no split, we force the usage of `prefix` in the query to
         # validate its correctness and avoid scripts that pass the CI but fail in production.
-        parallel_filter = "{alias}.id IS NOT NULL".format(alias=alias)
+        parallel_filter = "{alias}.{explode_on} IS NOT NULL".format(alias=alias, explode_on=explode_on)
         return [_explode_format(query, parallel_filter=parallel_filter)]
 
-    parallel_filter = "{alias}.id BETWEEN %(lower-bound)s AND %(upper-bound)s".format(alias=alias)
+    parallel_filter = "{alias}.{explode_on} BETWEEN %(lower-bound)s AND %(upper-bound)s".format(
+        alias=alias, explode_on=explode_on
+    )
     query = _explode_format(query.replace("%", "%%"), parallel_filter=parallel_filter)
 
     return [
@@ -438,7 +443,9 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
     ]
 
 
-def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, logger=_logger, qualifier="queries"):
+def explode_execute(
+    cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZE, logger=_logger, qualifier="queries", explode_on="id"
+):
     """
     Execute a query in parallel.
 
@@ -467,6 +474,7 @@ def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZ
     :param str query: the query to execute.
     :param str table: name of the *main* table of the query, used to split the processing
     :param str alias: alias used for the main table in the query
+    :param str explode_on: column used to split the queries on
     :param int bucket_size: size of the buckets of ids to split the processing
     :param logger: logger used to report the progress
     :type logger: :class:`logging.Logger`
@@ -482,7 +490,7 @@ def explode_execute(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET_SIZ
     """
     return parallel_execute(
         cr,
-        explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size),
+        explode_query_range(cr, query, table, alias=alias, bucket_size=bucket_size, explode_on=explode_on),
         logger=logger,
         qualifier=qualifier,
     )
