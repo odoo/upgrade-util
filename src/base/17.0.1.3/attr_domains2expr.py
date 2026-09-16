@@ -203,7 +203,7 @@ def fix_elem(cr, model, elem, comb_arch):
     #    All keys in target not in current element are overridden as empty value.
     attrs = {}
     if telem is not None and "attrs" in telem.attrib:
-        ast_attrs = ast_parse(telem.get("attrs"))
+        ast_attrs = ast_parse(telem.get("attrs").replace("\n", ""))
         if isinstance(ast_attrs, ast.Dict):
             attrs = {k.value: v for k, v in zip(ast_attrs.keys, ast_attrs.values)}
         else:
@@ -215,7 +215,7 @@ def fix_elem(cr, model, elem, comb_arch):
             )
 
     if elem.get("attrs"):
-        attrs_val = elem.get("attrs")
+        attrs_val = elem.get("attrs").replace("\n", "")
         ast_attrs = ast_parse(attrs_val)
         if isinstance(ast_attrs, ast.Dict):
             elem_attrs = {k.value: v for k, v in zip(ast_attrs.keys, ast_attrs.values)}
@@ -387,7 +387,7 @@ def fix_attrs(cr, model, arch, comb_arch):
         for elem in parent.findall("./attribute"):
             name = elem.get("name")
             if name in ["attrs", "states", *MODS]:
-                attrs_data[name] = elem.get("value", elem.text or "").strip()
+                attrs_data[name] = elem.get("value", elem.text or "").strip().replace("\n", "")
                 parent.remove(elem)
             if name == "attrs" and not attrs_data["attrs"]:
                 attrs_data["attrs"] = "{}"
