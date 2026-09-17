@@ -369,7 +369,7 @@ def explode_query_range(cr, query, table, alias=None, bucket_size=DEFAULT_BUCKET
         )
         alias = prefix.rstrip(".")
 
-    if alias and re.search(r"\W", alias, re.ASCII):
+    if alias and re.search(r"[^0-9a-zA-Z_]", alias):
         raise ValueError("The `alias` argument can only contain ASCII word characters")
     # for backwards compatibility, `alias` can not be quoted by `format_query` to keep it case-insensitive
     alias = SQLStr(alias) if alias else table
