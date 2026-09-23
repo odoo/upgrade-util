@@ -353,7 +353,15 @@ def _remove_views(cr, xml_ids=None, view_ids=None, logger=_logger):
             for node in arch.findall(".//t[@t-call]"):
                 tcall = node.get("t-call")
                 if tcall in matches:
-                    node.getparent().remove(node)
+                    parent = node.getparent()
+                    if node.tail:
+                        # the tail is still part of the rendered content, keep it
+                        previous = node.getprevious()
+                        if previous is not None:
+                            previous.tail = (previous.tail or "") + node.tail
+                        else:
+                            parent.text = (parent.text or "") + node.tail
+                    parent.remove(node)
                     removed.append(tcall)
         if logger and removed and (not module or module not in standard_modules):
             logger.info(

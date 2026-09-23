@@ -3252,6 +3252,58 @@ class TestRemoveView(UnitTestCase):
         self.assertFalse((origin + cowed + cowed_child).exists())
         self.assertTrue(other.exists())
 
+    def test_remove_views_tcall_tail_first_child(self):
+        # the text following a removed t-call is part of the rendered content; when the
+        # t-call is the first child it must be kept as the text of its parent
+        self._create_view("test_tail_fc_t", '<t t-name="base.test_tail_fc_t"><div>T</div></t>')
+        caller = self._create_view(
+            "test_tail_fc_c",
+            '<t t-name="base.test_tail_fc_c"><div><t t-call="base.test_tail_fc_t"/>KEPT</div></t>',
+        )
+
+        util.remove_views(self.env.cr, "base.test_tail_fc_t")
+        util.invalidate(caller)
+        self.assertNotIn("t-call", caller.arch_db)
+        self.assertIn("KEPT", caller.arch_db)
+
+    def test_remove_views_tcall_tail_not_first_child(self):
+        # when the removed t-call has a previous sibling the tail belongs to that sibling;
+        # attaching it to the parent instead would move the text ahead of the sibling
+        self._create_view("test_tail_nfc_t", '<t t-name="base.test_tail_nfc_t"><div>T</div></t>')
+        caller = self._create_view(
+            "test_tail_nfc_c",
+            """
+            <t t-name="base.test_tail_nfc_c">
+                <div><span>BEFORE</span><t t-call="base.test_tail_nfc_t"/>AFTER</div>
+            </t>
+            """,
+        )
+
+        util.remove_views(self.env.cr, "base.test_tail_nfc_t")
+        util.invalidate(caller)
+        self.assertNotIn("t-call", caller.arch_db)
+        # the tail must stay after the sibling it followed, not jump to the front
+        self.assertIn("<span>BEFORE</span>AFTER", caller.arch_db.replace("\n", ""))
+
+    def test_remove_views_tcall_tail_in_t_else(self):
+        # a t-call whose tail holds the whole body of a `t-else`; dropping the tail leaves
+        # the branch empty and the view fails to render with an `IndentationError`
+        self._create_view("test_tail_else_t", '<t t-name="base.test_tail_else_t"><div>T</div></t>')
+        caller = self._create_view(
+            "test_tail_else_c",
+            """
+            <t t-name="base.test_tail_else_c">
+                <t t-if="False"><span>IF</span></t>
+                <t t-else=""><t t-call="base.test_tail_else_t"/>ELSE</t>
+            </t>
+            """,
+        )
+
+        util.remove_views(self.env.cr, "base.test_tail_else_t")
+        util.invalidate(caller)
+        # rendering must not fail after removing the t-call
+        self.assertEqual(self.env["ir.qweb"]._render(caller.id).strip(), "ELSE")
+
 
 class TestRenameXMLID(UnitTestCase):
     def test_rename_xmlid(self):
