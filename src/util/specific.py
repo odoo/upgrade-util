@@ -7,7 +7,8 @@ from .misc import _cached, version_gte
 from .models import rename_model
 from .modules import rename_module
 from .orm import env
-from .pg import column_exists, format_query, parallel_execute, remove_constraint, rename_table, table_exists
+from .pg import SQLStr, column_exists, format_query, parallel_execute, remove_constraint, rename_table, table_exists
+from .records import edit_view
 from .report import add_to_migration_reports
 
 try:
@@ -19,6 +20,7 @@ except ImportError:
 __all__ = [
     "dbuuid",
     "dispatch_by_dbuuid",
+    "process_cowed_views",
     "remove_custom_constraint",
     "rename_custom_column",
     "rename_custom_model",
@@ -161,6 +163,33 @@ def rename_custom_column(cr, table_name, col_name, new_col_name, custom_module=N
         message="The custom column '{col_name}' of the table '{table_name}'{module_details} was renamed to '{new_col_name}'."
         " {report_details}".format(**locals()),
     )
+
+
+def process_cowed_views(cr, key, callback, extra_where="True"):
+    # Note: When using ILIKE in `extra_where`, wrap the pattern with double percent signs (%%)
+    # Example: arch_db->>'en_US' ILIKE '%%pattern%%'
+
+    if isinstance(key, str):
+        key = [key]
+    cr.execute(
+        format_query(
+            cr,
+            """
+            SELECT id
+              FROM ir_ui_view
+             WHERE key IN %s
+               AND website_id IS NOT NULL
+               AND ({})
+            """,
+            SQLStr(extra_where),
+        ),
+        [tuple(key)],
+    )
+    views = cr.fetchall()
+    for (view_id,) in views:
+        with edit_view(cr, view_id=view_id) as arch:
+            callback(arch)
+    return set(sum(views, ()))
 
 
 def reset_cowed_views(cr, xmlid, key=None):
