@@ -115,6 +115,7 @@ ANNOUNCE_MEDIA -= {""}
 
 
 ODOO_SHOWCASE_VIDEOS = {
+    "20.0": "YlmN5QcAdLs",
     "saas~19.4": "nzf4XUtlZqw",
     "saas~19.3": "8WHjyHXWFQs",
     "saas~19.2": "B3TRao5YU8I",
