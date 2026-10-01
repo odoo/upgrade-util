@@ -593,6 +593,18 @@ class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
         super(UpgradeCase, self).test_prepare()
         self.cr.commit()
 
+    if util.version_gte("saas~19.4"):
+
+        def _setup_registry(self):
+            super()._setup_registry()
+
+            def get_sequences(cr):
+                return self.registry.registry_sequence, {
+                    name: val[0] for name, val in self.registry.registry_caches__.items()
+                }
+
+            self.enterContext(patch.object(self.registry, "get_sequences", get_sequences))
+
 
 __base = TransactionCase if util.version_gte("saas~19.1") else BaseCase
 
