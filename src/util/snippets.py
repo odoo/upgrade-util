@@ -241,6 +241,26 @@ def format_style(styles):
     return style
 
 
+def remove_classes(el, classes_to_remove):
+    """
+    Removes a set of classes from the `class` attribute of an element, removes the attribute if
+    there is no classes left.
+
+    :param element el: an lxml node
+    :classes list|set classes: the set of classes to remove
+    :return: bool whether the `class` attribute was modified
+    """
+    initial_classes = el.get("class", "").split()
+    remaining_classes = [cl for cl in initial_classes if cl not in classes_to_remove]
+    if len(remaining_classes) != len(initial_classes):
+        if remaining_classes:
+            el.set("class", " ".join(remaining_classes))
+        else:
+            del el.attrib["class"]
+        return True
+    return False
+
+
 def html_converter(transform_callback, selector=None):
     """
     Create an upgrade converter for a single HTML text content or for HTML elements that match a selector.
