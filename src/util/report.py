@@ -230,7 +230,7 @@ def report_with_list(summary, data, columns, row_format, links=None, total=None,
 
     def row_to_html(row):
         raw = dict(zip(columns, row))
-        row_dict = {col: html_escape(str(val)) for col, val in raw.items()}
+        row_dict = {col: html_escape(unicode(val)) for col, val in raw.items()}
         if links:
             row_dict.update(
                 {
