@@ -2,6 +2,7 @@ import logging
 
 from .fields import remove_field
 from .misc import version_between
+from .pg import SQLStr, _existing_columns, format_query
 from .records import delete_unused, ref
 
 __all__ = ["remove_salary_rule"]
@@ -16,17 +17,26 @@ def _neutralize_rule(cr, xmlid):
     if not delete_unused(cr, xmlid, deactivate=True):
         # if the rule hasn't been deleted
         _logger.info("Salary rule %r has been neutralized and deactivated", xmlid)
-        cr.execute(
+        existing = _existing_columns(cr, [("hr_salary_rule", "active"), ("hr_salary_rule", "struct_id")])
+        active = ", active = false" if ("hr_salaray_rule", "active") in existing else ""
+        query = format_query(
+            cr,
             """
             UPDATE hr_salary_rule
             SET condition_select = 'python',
                 condition_python = 'result = False',
                 amount_select = 'fix',
                 amount_fix = 0.0
+                {}
             WHERE id = %s
-        """,
-            [rid],
+            """,
+            SQLStr(active),
         )
+
+        cr.execute(query, [rid])
+        if ("hr_salary_rule", "struct_id") not in existing:
+            # unlink from struct m2m
+            cr.execute("DELETE FROM hr_payroll_structure_hr_salary_rule_rel WHERE hr_payroll_rule_id = %s", [rid])
 
 
 def _remove_salary_rule(cr, xmlid):
