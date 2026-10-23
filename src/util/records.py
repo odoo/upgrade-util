@@ -709,12 +709,15 @@ def remove_records(cr, model, ids):
         if not ir.company_dependent_comodel:
             query = format_query(
                 cr,
-                "DELETE FROM {} WHERE {} AND {} = %s",
+                "DELETE FROM {} WHERE {} AND {} IN %s",
                 ir.table,
                 ir.model_filter(),
                 ir.res_id,
             )
-            parallel_execute(cr, [cr.mogrify(query, [model, id_]).decode() for id_ in ids])
+            parallel_execute(
+                cr,
+                [cr.mogrify(query, [model, chunk_ids]).decode() for chunk_ids in chunks(ids, 1000, fmt=tuple)],
+            )
         elif ir.company_dependent_comodel == model:
             json_path = cr.mogrify(
                 "$.* ? ({})".format(" || ".join(["@ == %s"] * len(ids))),
