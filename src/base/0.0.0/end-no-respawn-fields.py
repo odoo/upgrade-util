@@ -10,7 +10,7 @@ _logger = logging.getLogger("odoo.addons.base.maintenance.migrations.base.000.no
 
 
 def migrate(cr, version):
-    # Ensure that we didn't `remove_field` that shouldnt'
+    # Ensure that we didn't `remove_field` that shouldn't
     cr.execute(
         """
         CREATE TEMPORARY TABLE no_respawn(

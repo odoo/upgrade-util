@@ -17,7 +17,7 @@ def getLogger(name=None):
     """
     Return a logger named after the caller.
 
-    If `name` is a dotter module, it is used as-is. Otherwise the logger name is taken
+    If `name` is a dotted module, it is used as-is. Otherwise the logger name is taken
     from the caller's `__name__` when set to a dotted module name (Odoo 16+), or built
     from the last three components of the caller's file path as
     `odoo.upgrade.<module>.<version>.<script>`. `<script>` would be `name` parameter if
