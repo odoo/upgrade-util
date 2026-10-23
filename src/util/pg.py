@@ -1161,7 +1161,7 @@ def get_index_on(cr, table, *columns, **kwargs):
     if cr._cnx.server_version >= 90500:
         position = "array_position(x.indkey, x.unnest_indkey)"
     else:
-        # array_position does not exists prior postgresql 9.5
+        # array_position does not exist prior to postgresql 9.5
         position = "strpos(array_to_string(x.indkey::int4[] || 0, ','), x.unnest_indkey::varchar || ',')"
 
     query = format_query(

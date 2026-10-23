@@ -55,7 +55,7 @@ INDIRECT_REFERENCES = [
     _IR("ir_model_fields", "relation", None),  # destination of a relation field
     _IR("ir_model_data", "model", "res_id"),
     _IR("ir_filters", "model_id", None, set_unknown=True),  # YUCK!, not an id
-    # duplicated for versions where the `res_id` column does not exists
+    # duplicated for versions where the `res_id` column does not exist
     _IR("ir_filters", "model_id", "embedded_parent_res_id"),
     _IR("ir_exports", "resource", None),
     _IR("ir_ui_view", "model", None, set_unknown=True),

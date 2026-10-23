@@ -50,7 +50,7 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
 
 
 def split_group(cr, from_groups, to_group):
-    """Users have all `from_groups` will be added into `to_group`."""
+    """Users who have all `from_groups` will be added into `to_group`."""
 
     def check_group(g):
         if isinstance(g, basestring):
