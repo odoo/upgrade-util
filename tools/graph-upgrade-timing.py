@@ -40,7 +40,7 @@ def process(options):
                 others += time
             continue
 
-        match = re.search(r"module ([a-zA-Z0-9_]+): Running migration \[\$", line)
+        match = re.search(r"module ([a-zA-Z0-9_]+): Running (?:upgrade|migration) \[\$", line)
         if match:
             mod = match.group(1)
             match = re.match(DT_PAT, line)
