@@ -854,8 +854,8 @@ class TestPG(UnitTestCase):
             ("res_currency", "active", True, "bool"),
             ("res_country", "create_date", False, "timestamp"),
             ("res_currency", "create_uid", False, "int4"),
-            ("res_country", "name_position", False, "varchar"),
-            ("res_country", "name_position", True, "varchar"),
+            ("res_partner", "type", False, "varchar"),
+            ("res_partner", "type", True, "varchar"),
             ("res_country", "address_format", False, "text"),
             ("res_partner", "does_not_exists", False, None),
         ]
