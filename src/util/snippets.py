@@ -376,15 +376,16 @@ def convert_html_columns(cr, table, columns, converter_callback, where_column="I
     select = ", ".join(f'"{column}"' for column in columns)
     where = " OR ".join(f'"{column}"{converters[column]} {where_column}' for column in columns)
 
+    # Fetch each chunk by its ids: re-applying `where` on an id range would rescan the whole range,
+    # which for sparse matches is most of the table.
     base_select_query = f"""
         SELECT id, {select}
           FROM {table}
-         WHERE ({where})
-           AND ({extra_where})
+         WHERE id = ANY(%s)
     """
     split_queries = [
-        (base_select_query + "\n       AND id BETWEEN {} AND  {}".format(*x))
-        for x in determine_chunk_limit_ids(cr, table, columns, "({}) AND ({})".format(where, extra_where))
+        cr.mogrify(base_select_query, [ids]).decode()
+        for ids in _determine_chunk_ids(cr, table, columns, "({}) AND ({})".format(where, extra_where))
     ]
     if not split_queries:
         return
@@ -422,7 +423,7 @@ if sys.version_info < (3, 7):
         raise RuntimeError("This function only works on python >= 3.7 (Odoo 15 minimum)")
 
 
-def determine_chunk_limit_ids(cr, table, column_arr, where):
+def _chunk_by_size(cr, table, column_arr, where, aggregate):
     bytes_per_chunk = 10 * 1024 * 1024
     columns = ", ".join(quote_ident(column, cr._cnx) for column in column_arr if column != "id")
     cr.execute(
@@ -432,10 +433,19 @@ def determine_chunk_limit_ids(cr, table, column_arr, where):
                     sum(pg_column_size(({columns}, id))) OVER (ORDER BY id) / {bytes_per_chunk} AS chunk
                FROM {table}
               WHERE {where}
-         ) SELECT min(id), max(id) FROM info GROUP BY chunk
+         ) SELECT {aggregate} FROM info GROUP BY chunk
          """
     )
     return cr.fetchall()
+
+
+def determine_chunk_limit_ids(cr, table, column_arr, where):
+    return _chunk_by_size(cr, table, column_arr, where, "min(id), max(id)")
+
+
+def _determine_chunk_ids(cr, table, column_arr, where):
+    # ids as an array literal (text): far lighter than a Python list of ints on big tables
+    return [ids for (ids,) in _chunk_by_size(cr, table, column_arr, where, "array_agg(id ORDER BY id)::text")]
 
 
 def convert_html_content(
