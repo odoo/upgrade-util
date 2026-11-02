@@ -1559,6 +1559,33 @@ class TestField(UnitTestCase):
 
         self.assertEqual(new_default, "en_US")
 
+    def test_remove_field_attachments(self):
+        cr = self.env.cr
+        cr.execute(
+            """
+            INSERT INTO ir_attachment (name, type, res_model, res_id, res_field)
+                 VALUES ('bin', 'binary', 'res.partner', 1, 'x_upg_bin'),
+                        ('kept', 'binary', 'res.partner', 1, 'x_upg_kept'),
+                        ('other', 'binary', 'res.partner', 1, NULL)
+              RETURNING id
+            """
+        )
+        ids = [id for (id,) in cr.fetchall()]
+
+        explode = mock.patch.object(util.fields, "explode_query_range", wraps=util.fields.explode_query_range)
+        with explode as explode_mock, mock.patch.object(cr, "commit", lambda: ...):
+            # no attachment for this field: the whole table must not be scanned
+            util.remove_field(cr, "res.partner", "x_upg_none")
+            self.assertFalse(explode_mock.called)
+
+            util.remove_field(cr, "res.partner", "x_upg_bin")
+            self.assertTrue(explode_mock.called)
+
+        util.remove_field(cr, "res.partner", "x_upg_kept", keep_as_attachments=True)
+
+        cr.execute("SELECT name, res_field FROM ir_attachment WHERE id IN %s", [tuple(ids)])
+        self.assertEqual(dict(cr.fetchall()), {"kept": None, "other": None})
+
     @unittest.skipIf(not util.version_gte("saas~17.5"), "Company dependent fields are stored as jsonb since saas~17.5")
     def test_convert_field_to_company_dependent(self):
         cr = self.env.cr
