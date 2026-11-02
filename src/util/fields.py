@@ -414,16 +414,24 @@ def remove_field(
     # NOTE table_exists is needed to avoid altering views
     stored = table_exists(cr, table) and column_exists(cr, table, fieldname)
 
+    has_attachments = False
+    if column_exists(cr, "ir_attachment", "res_field"):
+        cr.execute(
+            "SELECT FROM ir_attachment WHERE res_model = %s AND res_field = %s FETCH FIRST ROW ONLY",
+            [model, fieldname],
+        )
+        has_attachments = bool(cr.rowcount)
+
     if keep_as_attachments:
         if stored and column_type(cr, table, fieldname) == "bytea":
             _extract_data_as_attachment(cr, model, fieldname, set_res_field=False)
-        if column_exists(cr, "ir_attachment", "res_field"):
+        if has_attachments:
             query = cr.mogrify(
                 "UPDATE ir_attachment SET res_field = NULL WHERE res_model = %s AND res_field = %s", [model, fieldname]
             ).decode()
             explode_execute(cr, query, table="ir_attachment")
 
-    elif column_exists(cr, "ir_attachment", "res_field"):
+    elif has_attachments:
         parallel_execute(
             cr,
             explode_query_range(
