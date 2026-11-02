@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 from lxml import etree, html
 from psycopg2 import sql
 from psycopg2.extensions import quote_ident
-from psycopg2.extras import Json
+from psycopg2.extras import Json, execute_batch
 
 with contextlib.suppress(ImportError):
     from odoo import sql_db
@@ -328,8 +328,8 @@ class Convertor:
         # improved interface: caller passes a query for us to fetch input rows, convert and update them
         with sql_db.db_connect(self.dbname).cursor() as cr:
             cr.execute(row_or_query)
-            for changes in filter(None, map(self._convert_row, cr.fetchall())):
-                cr.execute(self.update_query, changes)
+            # one round trip per page of updates instead of one per row
+            execute_batch(cr._obj, self.update_query, filter(None, map(self._convert_row, cr.fetchall())))
         return None
 
     def _convert_row(self, row):
