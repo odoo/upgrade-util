@@ -27,7 +27,6 @@ from .helpers import (
     _ir_values_value,
     _validate_model,
     model_of_table,
-    resolve_model_fields_path,
     table_of_model,
 )
 from .inconsistencies import break_recursive_loops
@@ -821,9 +820,10 @@ def _rm_refs(cr, model, ids=None):
 def _remove_import_export_paths(cr, model, field=None):
     _validate_model(model)
     export_q = """
-            SELECT el.id,
-                   e.resource,
-                   STRING_TO_ARRAY(el.name, '/')
+            SELECT 'ir.exports.line' as impex_model,
+                   el.id as impex_id,
+                   e.resource as model,
+                   STRING_TO_ARRAY(el.name, '/') as path
               FROM ir_exports_line el
               JOIN ir_exports e
                 ON el.export_id = e.id
@@ -832,33 +832,71 @@ def _remove_import_export_paths(cr, model, field=None):
         export_q = cr.mogrify(export_q + " WHERE el.name ~ %s ", [r"\y{}\y".format(field)]).decode()
     else:
         export_q += " WHERE el.name IS NOT NULL"
+    impex = [export_q]
 
-    impex_data = [(export_q, "ir.exports.line")]
     if table_exists(cr, "base_import_mapping"):
         import_q = """
-            SELECT id,
-                   res_model,
-                   STRING_TO_ARRAY(field_name, '/')
+            SELECT 'base_import.mapping' as impex_model,
+                   id as impex_id,
+                   res_model as model,
+                   STRING_TO_ARRAY(field_name, '/') as path
               FROM base_import_mapping
             """
         if field:
             import_q = cr.mogrify(import_q + " WHERE field_name ~ %s ", [r"\y{}\y".format(field)]).decode()
         else:
             import_q += " WHERE field_name IS NOT NULL "
-        impex_data.append((import_q, "base_import.mapping"))
+        impex.append(import_q)
 
-    for query, impex_model in impex_data:
-        cr.execute(query)
-        to_rem = [
-            path_id
-            for path_id, related_model, path in cr.fetchall()
-            if any(
-                x.field_model == model and (field is None or x.field_name == field)
-                for x in resolve_model_fields_path(cr, related_model, path)
+    path_candidates = " UNION ALL ".join(impex)
+    field_filter = "field_name = %(field)s" if field is not None else "true"
+    query = format_query(
+        cr,
+        """
+            WITH RECURSIVE _paths_candidates AS (
+                {path_candidates}
+            ),
+            resolved_fields_path AS (
+               SELECT p.impex_model,
+                      p.impex_id,
+                      imf.model AS field_model,
+                      imf.name AS field_name,
+                      imf.relation AS relation_model,
+                      p.path AS path,
+                      1 AS part_index
+                 FROM _paths_candidates p
+                 JOIN ir_model_fields imf
+                   ON imf.model = p.model
+                  AND imf.name = p.path[1]
+
+                UNION ALL
+
+               SELECT rfp.impex_model,
+                      rfp.impex_id,
+                      rimf.model AS field_model,
+                      rimf.name AS field_name,
+                      rimf.relation AS relation_model,
+                      rfp.path AS path,
+                      rfp.part_index + 1 AS part_index
+                 FROM resolved_fields_path rfp
+                 JOIN ir_model_fields rimf
+                   ON rimf.model = rfp.relation_model
+                  AND rimf.name = rfp.path[rfp.part_index + 1]
+                WHERE cardinality(rfp.path) > rfp.part_index
             )
-        ]
-        if to_rem:
-            remove_records(cr, impex_model, to_rem)
+            SELECT impex_model,
+                   array_agg(DISTINCT impex_id)
+              FROM resolved_fields_path
+             WHERE field_model = %(model)s
+               AND {field_filter}
+          GROUP BY impex_model
+        """,
+        path_candidates=SQLStr(path_candidates),
+        field_filter=SQLStr(field_filter),
+    )
+    cr.execute(query, {"model": model, "field": field})
+    for impex_model, impex_ids in cr.fetchall():
+        remove_records(cr, impex_model, impex_ids)
 
 
 def is_changed(cr, xmlid, interval="1 minute"):
