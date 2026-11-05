@@ -1230,15 +1230,30 @@ def _get_unique_indexes_with(cr, table, *columns):
     return cr.fetchall()
 
 
-def create_index(cr, name, table_name, *columns):
+def create_index(cr, name, table_name, *columns, **kwargs):
     # create index if table and columns exists and index don't already exists
     _validate_table(table_name)
     if not columns:
         raise SleepyDeveloperError("Missing `columns` for index")
-    if all(column_exists(cr, table_name, c) for c in columns) and get_index_on(cr, table_name, *columns) is None:
+    index_type = kwargs.pop("index_type", "btree")
+    if kwargs:
+        raise TypeError("create_index() got an unexpected keyword argument %r" % kwargs.popitem()[0])
+    if index_type not in ("btree", "trigram"):
+        raise SleepyDeveloperError("Unknown index type %r" % index_type)
+
+    using = ops = ""
+    if index_type == "trigram":
+        cr.execute("SELECT oid FROM pg_extension WHERE extname = 'pg_trgm'")
+        if not cr.rowcount:
+            _logger.warning("Couldn't create index %r: `pg_trgm` extension not installed", name)
+            return False
+        using, ops = " USING gin", " gin_trgm_ops"
+    elif get_index_on(cr, table_name, *columns) is not None:
+        return False
+    if all(column_exists(cr, table_name, c) for c in columns):
         cr.execute(
-            "CREATE INDEX {index_name} ON {table_name}({columns})".format(
-                index_name=name, table_name=table_name, columns=",".join(columns)
+            "CREATE INDEX {index_name} ON {table_name}{using}({columns})".format(
+                index_name=name, table_name=table_name, using=using, columns=",".join(c + ops for c in columns)
             )
         )
         return True
@@ -1246,12 +1261,12 @@ def create_index(cr, name, table_name, *columns):
 
 
 @contextmanager
-def temp_index(cr, table, *columns):
+def temp_index(cr, table, *columns, **kwargs):
     # create a temporary index that will be removed at the end of the contextmanager
     assert columns
     _validate_table(table)
     name = "_".join(("_upg", table) + columns + (hex(int(time.time() * 1000))[2:],))
-    create_index(cr, name, table, *columns)
+    create_index(cr, name, table, *columns, **kwargs)
     try:
         yield
     finally:
