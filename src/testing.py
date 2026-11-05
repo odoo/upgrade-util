@@ -585,6 +585,7 @@ class UpgradeCase(UpgradeCommon, _create_meta(10, "upgrade_case")):
     """
 
     def __init_subclass__(cls, abstract=False):
+        super().__init_subclass__()
         cls._abstract = abstract
         if not abstract and (not hasattr(cls, "prepare") or not hasattr(cls, "check")):
             _logger.error("%s (UpgradeCase) must define prepare and check methods", cls.__name__)
@@ -637,6 +638,7 @@ class IntegrityCase(UpgradeCommon, _create_meta(20, "integrity_case", base=__bas
     message = "Invariant check fail"
 
     def __init_subclass__(cls, abstract=False):
+        super().__init_subclass__()
         cls._abstract = abstract
         if not abstract and not hasattr(cls, "invariant"):
             _logger.error("%s (IntegrityCase) must define an invariant method", cls.__name__)
