@@ -629,6 +629,7 @@ if version_gte("9.0"):  # since at least 8.0
     _COLUMNS[("ir_ui_view", "mode")] = True
 
 if version_gte("10.0"):  # Since at least 9.0
+    _COLUMNS[("ir_model", "transient")] = True
     _COLUMNS[("ir_model_fields", "depends")] = True
     _COLUMNS[("ir_model_fields", "domain")] = True
     _COLUMNS[("ir_model_fields", "relation_table")] = True
@@ -679,6 +680,11 @@ if version_gte("saas~18.1"):  # Since 18.0
     _COLUMNS[("ir_model_fields", "company_dependent")] = True
     _COLUMNS[("ir_filters", "embedded_parent_res_id")] = True
     _COLUMNS[("ir_act_report_xml", "domain")] = True
+
+if version_gte("saas~19.1"):
+    # ir_model.abstract has been added in saas~18.1
+    # We can only trust its presence after saas~19.1
+    _COLUMNS[("ir_model", "abstract")] = True
 
 
 def column_exists(cr, table, column):
