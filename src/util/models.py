@@ -17,6 +17,8 @@ from .indirect_references import indirect_references
 from .inherit import for_each_inherit, inherit_parents
 from .misc import _cached, chunks, log_progress, version_gte
 from .pg import (
+    SQLStr,
+    _existing_columns,
     _get_unique_indexes_with,
     column_exists,
     column_type,
@@ -127,38 +129,54 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
             )
         )
 
+    # transient field added in 9.0; abstract field added in saas~18.1
+    # it safe to use them even if their values hasn't been populated yet (the column will either
+    # be FALSE or NULL), as we will only skip some parts if they are set to true.
+    mod_cols = {c: c for _, c in _existing_columns(cr, [("ir_model", "transient"), ("ir_model", "abstract")])}
+
+    cr.execute(
+        format_query(
+            cr,
+            "SELECT id, {}, {} IS TRUE, {} IS TRUE FROM ir_model WHERE model=%s",
+            get_value_or_en_translation(cr, "ir_model", "name"),
+            SQLStr(mod_cols.get("transient", "FALSE")),
+            SQLStr(mod_cols.get("abstract", "FALSE")),
+        ),
+        [model],
+    )
+    [mod_id, mod_label, mod_transient, mod_abstract] = cr.fetchone() or [None, model, False, False]
+
     # remove references
     for ir in indirect_references(cr):
         if ir.company_dependent_comodel:
-            if ir.company_dependent_comodel == "ir.model":
+            if mod_id and ir.company_dependent_comodel == "ir.model":
                 # clean on delete set null
-                cr.execute("SELECT id FROM ir_model WHERE model = %s", [model])
-                [mod_id] = cr.fetchone() or [None]
-                if mod_id:
-                    cr.execute(
-                        format_query(
-                            cr,
-                            """
-                            UPDATE {table}
-                               SET {field} = (
-                                   SELECT jsonb_object_agg(
-                                          key,
-                                          CASE
-                                              WHEN value::int4 = %s THEN NULL
-                                              ELSE value::int4
-                                          END)
-                                     FROM jsonb_each_text({field})
-                                   )
-                             WHERE {field} IS NOT NULL
-                               AND {field} @? %s
-                            """,
-                            table=ir.table,
-                            field=ir.res_id,
-                        ),
-                        [mod_id, "$.* ? (@ == {})".format(mod_id)],
-                    )
+                cr.execute(
+                    format_query(
+                        cr,
+                        """
+                        UPDATE {table}
+                           SET {field} = (
+                               SELECT jsonb_object_agg(
+                                      key,
+                                      CASE
+                                          WHEN value::int4 = %s THEN NULL
+                                          ELSE value::int4
+                                      END)
+                                 FROM jsonb_each_text({field})
+                               )
+                         WHERE {field} IS NOT NULL
+                           AND {field} @? %s
+                        """,
+                        table=ir.table,
+                        field=ir.res_id,
+                    ),
+                    [mod_id, "$.* ? (@ == {})".format(mod_id)],
+                )
             continue
         if ir.table in ("ir_model", "ir_model_fields", "ir_model_data"):
+            continue
+        if ir.res_id and (mod_transient or mod_abstract):
             continue
         ref_model = model_of_table(cr, ir.table)
 
@@ -212,15 +230,10 @@ def remove_model(cr, model, drop_table=True, ignore_m2m=()):
                 cr.execute(query, args + (tuple(ids),))
                 notify = notify or bool(cr.rowcount)
 
-    _remove_import_export_paths(cr, model)
+    if not mod_abstract and not mod_transient:
+        _remove_import_export_paths(cr, model)
+        _rm_refs(cr, model)
 
-    _rm_refs(cr, model)
-
-    cr.execute(
-        "SELECT id, {} FROM ir_model WHERE model=%s".format(get_value_or_en_translation(cr, "ir_model", "name")),
-        [model],
-    )
-    [mod_id, mod_label] = cr.fetchone() or [None, model]
     if mod_id:
         # some required fk are in "ON DELETE SET NULL/RESTRICT".
         for tbl in ["base_action_rule", "base_automation", "google_drive_config"]:
