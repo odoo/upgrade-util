@@ -60,6 +60,7 @@ INDIRECT_REFERENCES = [
     _IR("ir_exports", "resource", None),
     _IR("ir_ui_view", "model", None, set_unknown=True),
     _IR("ir_values", "model", "res_id"),
+    _IR("ir_values", "model", None),
     _IR("wkf_transition", "trigger_model", None),
     _IR("wkf_triggers", "model", None),
     _IR("ir_model_fields_anonymization", "model_name", None),
