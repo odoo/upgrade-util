@@ -6,7 +6,7 @@ import os
 from .const import ENVIRON, NEARLYWARN
 from .misc import parse_version, version_gte
 
-__all__ = ["direct_inherit_parents", "for_each_inherit", "inherit_parents"]
+__all__ = ["direct_inherit_parents", "for_each_inherit", "inherit_children", "inherit_parents"]
 
 _logger = logging.getLogger(__name__)
 
@@ -101,6 +101,52 @@ def for_each_inherit(cr, model, skip=(), interval="[)"):
             continue
         if cmp_(inh):
             yield inh
+
+
+def inherit_children(cr, model, skip=(), interval="[)"):
+    """
+    Recursively yield the names of all the models inheriting from a model.
+
+    Both types of inheritance (`_inherit` and `_inherits`) are followed. This is the
+    counterpart of :func:`~odoo.upgrade.util.inherit.inherit_parents`.
+
+    The models are yielded depth-first, in the same order as the one obtained by calling
+    :func:`~odoo.upgrade.util.inherit.for_each_inherit` recursively. Each model is yielded
+    only once, even when it inherits from `model` via multiple paths. `model` itself is
+    never yielded.
+
+    .. example::
+
+       .. code-block:: python
+
+          >>> "res.users" in util.inherit_children(cr, "res.partner")
+          True
+
+          # handle a model and all its inheriting models at once
+          >>> models = ["mail.thread"] + list(util.inherit_children(cr, "mail.thread"))
+
+    :param str model: name of the model to search the inheriting models of
+    :param list(str) or str skip: models to ignore, use `"*"` to ignore all of them (nothing
+                                  is yielded). The models inheriting from an ignored model
+                                  are also ignored, unless they inherit from `model` via
+                                  another model that is not ignored.
+    :param str interval: only the inheritances existing in the version being upgraded from
+                         are followed, this tells which bounds of the versions range of an
+                         inheritance are inclusive: `"[)"` (default), `"[]"`, `"(]"` or `"()"`
+    :return: names of the inheriting models
+    :rtype: typing.Iterator[str]
+    """
+    seen = set()
+    todo = [model]
+    while todo:
+        current = todo.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if current != model:
+            yield current
+        # reversed to yield the models in the same order as a recursive traversal
+        todo.extend(reversed([inh.model for inh in for_each_inherit(cr, current, skip=skip, interval=interval)]))
 
 
 def direct_inherit_parents(cr, model, skip=(), interval="[)"):
