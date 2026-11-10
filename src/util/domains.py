@@ -474,19 +474,24 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
 
     match_old = r"\y{}\y".format(re.escape(old))
     dot_old = r"\.{}\y".format(re.escape(old))
+    # In the sub-domains of the `any` operators, the fields are not prefixed by the path leading to their model.
+    any_operator = r"""['"](not )?any['"]"""
     for df in _get_domain_fields(cr):
         query = format_query(
             cr,
             """
                 SELECT id, {model}, {domain}
                   FROM {table} t
-                 WHERE {domain} ~ CASE WHEN {model} = %s THEN %s ELSE %s END
+                 WHERE {domain} ~ %s
+                   AND (   {model} = %s
+                        OR {domain} ~ %s
+                        OR {domain} ~ %s)
             """,
             table=df.table,
             model=SQLStr(df.model_select),
             domain=df.domain_column,
         )
-        cr.execute(query, [target_model, match_old, dot_old])
+        cr.execute(query, [match_old, target_model, dot_old, any_operator])
 
         for id_, model, domain in cr.fetchall():  # noqa: PLR1704
             new_domain = _adapt_one_domain(
