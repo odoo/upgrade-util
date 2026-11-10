@@ -406,6 +406,52 @@ class TestAdaptDomainView(UnitTestCase):
         self.assertIn("courriel", view_search_1.arch)
         self.assertIn("courriel", view_search_2.arch)
 
+    @parametrize([("*",), ((),)])
+    @unittest.skipUnless(util.version_gte("17.0"), "`any` operator only supported from Odoo 17")
+    def test_adapt_domains_any_operator(self, skip_inherit):
+        # In `any` sub-domains, the field is not prefixed by the path leading to its model.
+        cr = self.env.cr
+        # a base version alike the ones of real upgrades, for the inherits to be found
+        base_version = util.parse_version(util.misc.release.series + ".1.3")
+        patch_base_version = mock.patch.dict(util.ENVIRON, {"__base_version": base_version})
+        patch_base_version.start()
+        self.addCleanup(patch_base_version.stop)
+
+        Filter = self.env["ir.filters"]
+        domains = {
+            # sub-domain on `res.partner`
+            "res.users": "[('partner_id', 'any', [('email', '=', 'a')])]",
+            # sub-domain on `res.users`, a model inheriting from `res.partner`
+            "res.company": "[('user_ids', 'not any', [('email', '=', 'a')])]",
+            # nested sub-domains
+            "res.currency": "[('rate_ids', 'any', [('company_id', 'any', [('partner_id', 'any', [('email', '=', 'a')])])])]",
+            # sub-domain on another model, should not change
+            "res.country": "[('state_ids', 'any', [('email', '=', 'a')])]",
+            # no sub-domain, should not change
+            "res.bank": "[('email', '=', 'any')]",
+        }
+        filters = {
+            model: Filter.create({"name": "test_adapt_domains_any_operator", "model_id": model, "domain": domain})
+            for model, domain in domains.items()
+        }
+
+        util.adapt_domains(cr, "res.partner", "email", "courriel", skip_inherit=skip_inherit)
+        for record in filters.values():
+            util.invalidate(record)
+
+        # only adapted when `res.users` is not skipped
+        users_email = "email" if skip_inherit == "*" else "courriel"
+        self.assertEqual(literal_eval(filters["res.users"].domain), [("partner_id", "any", [("courriel", "=", "a")])])
+        self.assertEqual(
+            literal_eval(filters["res.company"].domain), [("user_ids", "not any", [(users_email, "=", "a")])]
+        )
+        self.assertEqual(
+            literal_eval(filters["res.currency"].domain),
+            [("rate_ids", "any", [("company_id", "any", [("partner_id", "any", [("courriel", "=", "a")])])])],
+        )
+        self.assertEqual(filters["res.country"].domain, domains["res.country"])
+        self.assertEqual(filters["res.bank"].domain, domains["res.bank"])
+
 
 @unittest.skipUnless(
     util.version_gte("13.0"), "This test is incompatible with old style odoo.addons.base.maintenance.migrations.util"
