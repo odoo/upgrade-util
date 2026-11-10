@@ -1766,6 +1766,33 @@ class TestInherit(UnitTestCase):
         result = sorted(util.inherit_parents(cr, model))
         self.assertEqual(result, sorted(expected))
 
+    def test_inherit_children(self):
+        cr = self.env.cr
+        data = {
+            "a": ["b", "c", "d"],
+            "b": ["d", "e"],
+            "d": ["f"],
+            "e": ["a"],  # cycle
+        }
+        inheritance_data = {
+            parent: [
+                util._inherit.Inherit(model=child, born=util.parse_version("7.0"), dead=None, via=None)
+                for child in children
+            ]
+            for parent, children in data.items()
+        }
+        with mock.patch.object(util.inherit, "_get_inheritance_data", return_value=inheritance_data):
+            # same order as a recursive traversal, without duplicates, nor the model itself
+            self.assertEqual(list(util.inherit_children(cr, "a")), ["b", "d", "f", "e", "c"])
+            self.assertEqual(list(util.inherit_children(cr, "d")), ["f"])
+            self.assertEqual(list(util.inherit_children(cr, "f")), [])
+            self.assertEqual(list(util.inherit_children(cr, "a", skip="*")), [])
+            # the children of skipped models are only found if reachable via another model
+            self.assertEqual(list(util.inherit_children(cr, "a", skip=["b"])), ["c", "d", "f"])
+            self.assertEqual(list(util.inherit_children(cr, "a", skip=["d"])), ["b", "e", "c"])
+
+        self.assertIn("res.users", util.inherit_children(cr, "res.partner"))
+
     def test_direct_inherit_parents(self):
         cr = self.env.cr
         result = sorted(util.direct_inherit_parents(cr, "product.product"))
