@@ -336,7 +336,7 @@ def remove_field(
             for part in deps.split(","):
                 path = part.strip().split(".")
                 if not any(
-                    path[i] == fieldname and _valid_path_to(cr, path[:i], from_model, model) for i in range(len(path))
+                    path[i] == fieldname and _valid_path_to(cr, path[:i], from_model, [model]) for i in range(len(path))
                 ):
                     parts.append(part)
                 elif fieldname in compute_code:
@@ -1599,10 +1599,9 @@ def _update_field_usage_multi(cr, models, old, new, domain_adapter=None, skip_in
 
             to_update = {}
             for rec_id, field_path, src_model in cr.fetchall():
-                for dst_model in only_models:
-                    new_path = _replace_path(cr, old, new, src_model, dst_model, field_path)
-                    if new_path != field_path:
-                        to_update[rec_id] = new_path
+                new_path = _replace_path(cr, old, new, src_model, only_models, field_path)
+                if new_path != field_path:
+                    to_update[rec_id] = new_path
             if to_update:
                 upd_query = format_query(cr, "UPDATE {} SET {} = %s::jsonb->>id::text WHERE id IN %s", table, column)
                 cr.execute(upd_query, [Json(to_update), tuple(to_update)])
@@ -1826,7 +1825,7 @@ def adapt_depends(cr, model, old, new, skip_inherit=()):
         temp_depends = depends.split(",")
         for i in range(len(temp_depends)):
             domain = _adapt_one_domain(
-                cr, target_model, old, new, field_model, [(temp_depends[i], "=", "depends")], force_adapt=True
+                cr, [target_model], old, new, field_model, [(temp_depends[i], "=", "depends")], force_adapt=True
             )
             if domain:
                 temp_depends[i] = domain[0][0]
@@ -1859,7 +1858,7 @@ def adapt_related(cr, model, old, new, skip_inherit=()):
     )
     for id_, field_model, related in cr.fetchall():
         domain = _adapt_one_domain(
-            cr, target_model, old, new, field_model, [(related, "=", "related")], force_adapt=True
+            cr, [target_model], old, new, field_model, [(related, "=", "related")], force_adapt=True
         )
         if domain:
             cr.execute("UPDATE ir_model_fields SET related = %s WHERE id = %s", [domain[0][0], id_])

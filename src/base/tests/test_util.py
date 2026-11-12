@@ -32,6 +32,7 @@ from odoo.addons.base.maintenance.migrations.util.domains import (
     TRUE_LEAF,
     _adapt_one_domain,
     _model_of_path,
+    _valid_path_to,
 )
 from odoo.addons.base.maintenance.migrations.util.exceptions import MigrationError
 from odoo.addons.base.maintenance.migrations.util.misc import ast_unparse
@@ -100,18 +101,112 @@ class TestAdaptOneDomain(UnitTestCase):
         cr = self.env.cr
         self.assertEqual(_model_of_path(cr, model, path), expected)
 
+    def test_model_of_path_cache(self):
+        cr = self.env.cr
+        path = ("rate_ids", "company_id", "user_ids", "partner_id", "active", "name")
+        expected = [_model_of_path(cr, "res.currency", path[:i]) for i in range(len(path) + 1)]
+        self.assertEqual(expected[:5], ["res.currency", "res.currency.rate", "res.company", "res.users", "res.partner"])
+        self.assertEqual(expected[5:], [None, None])
+
+        cache = {}
+        self.assertIsNone(_model_of_path(cr, "res.currency", path, cache=cache))
+        # all the prefixes are now known, no need to query the database
+        with mock.patch.object(util.domains, "resolve_model_fields_path", side_effect=AssertionError):
+            for i in range(len(path) + 1):
+                self.assertEqual(_model_of_path(cr, "res.currency", list(path[:i]), cache=cache), expected[i])
+            # unknown path
+            with self.assertRaises(AssertionError):
+                _model_of_path(cr, "res.users", ["partner_id"], cache=cache)
+            # without cache
+            with self.assertRaises(AssertionError):
+                _model_of_path(cr, "res.currency", path)
+
+    def test_adapt_one_domain_path_cache(self):
+        cr = self.env.cr
+        domain = "[('partner_id.user_ids.partner_id.email', '=', 'a'), ('partner_id.email', '=', 'b')]"
+        expected = _adapt_one_domain(cr, ["res.partner"], "email", "courriel", "res.users", domain)
+        self.assertEqual(
+            literal_eval(expected),
+            ["&", ("partner_id.user_ids.partner_id.courriel", "=", "a"), ("partner_id.courriel", "=", "b")],
+        )
+
+        cache = {}
+        self.assertEqual(
+            _adapt_one_domain(cr, ["res.partner"], "email", "courriel", "res.users", domain, path_cache=cache), expected
+        )
+        self.assertEqual(cache["res.users", ("partner_id",)], "res.partner")
+        self.assertEqual(cache["res.users", ("partner_id", "user_ids", "partner_id")], "res.partner")
+
+        # same result, without any query
+        with mock.patch.object(util.domains, "resolve_model_fields_path", side_effect=AssertionError):
+            self.assertEqual(
+                _adapt_one_domain(cr, ["res.partner"], "email", "courriel", "res.users", domain, path_cache=cache),
+                expected,
+            )
+
+    def test_adapt_one_domain_multiple_targets(self):
+        # `res.users` inherits from `res.partner`: both can be adapted at once, each leaf only once.
+        cr = self.env.cr
+        targets = ["res.partner", "res.users"]
+        domain = str(
+            [
+                ("email", "=", "a"),
+                ("partner_id.email", "=", "b"),
+                ("partner_id.user_ids.email", "=", "c"),
+                ("company_id.email", "=", "d"),
+                ("partner_id.user_ids.partner_id.parent_id.email", "=", "e"),
+            ]
+        )
+        expected = [
+            "&",
+            "&",
+            "&",
+            "&",
+            ("courriel", "=", "a"),
+            ("partner_id.courriel", "=", "b"),
+            ("partner_id.user_ids.courriel", "=", "c"),
+            ("company_id.email", "=", "d"),
+            ("partner_id.user_ids.partner_id.parent_id.courriel", "=", "e"),
+        ]
+        for target in [targets, tuple(targets), frozenset(targets)]:
+            new_domain = _adapt_one_domain(cr, target, "email", "courriel", "res.users", domain)
+            self.assertEqual(literal_eval(new_domain), expected)
+
+        # same result as adapting the domain for one model after the other
+        sequential = domain
+        for target in targets:
+            sequential = _adapt_one_domain(cr, [target], "email", "courriel", "res.users", sequential)
+        self.assertEqual(literal_eval(sequential), expected)
+
+        # the adapter is called once per leaf, even when `old` is not renamed
+        adapter = mock.Mock(side_effect=lambda leaf, _or, _neg: ["!", leaf])
+        new_domain = _adapt_one_domain(cr, targets, "email", "email", "res.users", domain, adapter=adapter)
+        self.assertEqual(adapter.call_count, 4)
+        self.assertEqual(new_domain.count("'!'"), 4)
+
+        self.assertIsNone(_adapt_one_domain(cr, ["res.company", "res.country"], "email", "courriel", "res.users", "[]"))
+        self.assertIsNone(_adapt_one_domain(cr, [], "email", "courriel", "res.users", domain))
+
+        # a model name alone is not a valid target, it would be searched as a substring
+        with self.assertRaises(AssertionError):
+            _adapt_one_domain(cr, "res.partner", "email", "courriel", "res.users", domain)
+        with self.assertRaises(AssertionError):
+            _valid_path_to(cr, ["partner_id"], "res.users", "res.partner")
+        self.assertTrue(_valid_path_to(cr, ["partner_id"], "res.users", ["res.partner"]))
+        self.assertFalse(_valid_path_to(cr, ["partner_id"], "res.users", ["res.users"]))
+
     def test_change_no_leaf(self):
         # testing plan: updata path of a domain where the last element is not changed
 
         # no adapter
         domain = [("partner_id.user_id.partner_id.user_id.partner_id", "=", False)]
         match_domain = [("partner_id.friend_id.partner_id.friend_id.partner_id", "=", False)]
-        new_domain = _adapt_one_domain(self.cr, "res.partner", "user_id", "friend_id", "res.users", domain)
+        new_domain = _adapt_one_domain(self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain)
         self.assertEqual(match_domain, new_domain)
 
         # with adapter, verify it's not called
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.assertEqual(match_domain, new_domain)
         self.mock_adapter.assert_not_called()
@@ -123,13 +218,13 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = [("partner_id.user_id.partner_id.user_id", "=", False)]
         match_domain = [("partner_id.friend_id.partner_id.friend_id", "=", False)]
 
-        new_domain = _adapt_one_domain(self.cr, "res.partner", "user_id", "friend_id", "res.users", domain)
+        new_domain = _adapt_one_domain(self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain)
         self.assertEqual(match_domain, new_domain)
 
         # with adapter, verify it's called even if nothing was changed on the path
         self.mock_adapter.return_value = domain  # adapter won't update anything
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "user_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "user_id", "res.users", domain, adapter=self.mock_adapter
         )  # even if new==old the adapter must be called
         self.mock_adapter.assert_called_once()
         # Ignore `boolean-positional-value-in-call` lint violations in the whole file
@@ -142,7 +237,7 @@ class TestAdaptOneDomain(UnitTestCase):
         match_domain = [("partner_id.friend_id.partner_id.friend_id", "=", False)]
         self.mock_adapter.return_value = domain  # adapter won't update anything
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_once()
         self.mock_adapter.assert_called_with(domain[0], False, False)
@@ -157,7 +252,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["&", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["&", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[1], False, False)
         self.assertEqual(match_domain, new_domain)
@@ -167,7 +262,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["|", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[1], True, False)
         self.assertEqual(match_domain, new_domain)
@@ -177,7 +272,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["!", ("partner_id.user_id", "=", 1)]
         match_domain = ["!", ("partner_id.friend_id", "=", 2)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[1], False, True)
         self.assertEqual(match_domain, new_domain)
@@ -187,7 +282,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["|", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[2], True, True)
         self.assertEqual(match_domain, new_domain)
@@ -197,7 +292,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["|", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(domain[2], True, True)
         self.assertEqual(match_domain, new_domain)
@@ -213,7 +308,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["!", "!", ("partner_id.user_id", "=", 1)]
         match_domain = [*NOTNOT, ("partner_id.friend_id", "=", 2)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, False)
         self.assertEqual(match_domain, new_domain)
@@ -223,7 +318,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["!", "!", "!", ("partner_id.user_id", "=", 1)]
         match_domain = [*NOTNOT, "!", ("partner_id.friend_id", "=", 2)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, True)
         self.assertEqual(match_domain, new_domain)
@@ -233,7 +328,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["|", "!", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["|", *NOTNOT, ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, True, False)
         self.assertEqual(match_domain, new_domain)
@@ -243,7 +338,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["&", "!", "!", ("partner_id.user_id", "=", 1), ("name", "=", False)]
         match_domain = ["&", *NOTNOT, ("partner_id.friend_id", "=", 2), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, False)
         self.assertEqual(match_domain, new_domain)
@@ -253,7 +348,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["|", "&", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["|", "&", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, False)
         self.assertEqual(match_domain, new_domain)
@@ -262,7 +357,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["&", "|", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["&", "|", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, True, False)
         self.assertEqual(match_domain, new_domain)
@@ -271,7 +366,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["|", "&", "!", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["|", "&", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, False, True)
         self.assertEqual(match_domain, new_domain)
@@ -280,7 +375,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = ["&", "|", "!", ("partner_id.user_id", "=", 1), ("name", "=", False), ("name", "=", False)]
         match_domain = ["&", "|", "!", ("partner_id.friend_id", "=", 2), ("name", "=", False), ("name", "=", False)]
         new_domain = _adapt_one_domain(
-            self.cr, "res.partner", "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
+            self.cr, ["res.partner"], "user_id", "friend_id", "res.users", domain, adapter=self.mock_adapter
         )
         self.mock_adapter.assert_called_with(term, True, True)
         self.assertEqual(match_domain, new_domain)
@@ -305,7 +400,7 @@ class TestAdaptOneDomain(UnitTestCase):
         self.mock_adapter.return_value = [TRUE_LEAF]
         domain = [(left, "=", False)]
         res = _adapt_one_domain(
-            self.cr, target_model, old, "ignored", model, domain, adapter=self.mock_adapter, force_adapt=True
+            self.cr, [target_model], old, "ignored", model, domain, adapter=self.mock_adapter, force_adapt=True
         )
         self.mock_adapter.assert_called_once()
         self.assertEqual(res, self.mock_adapter.return_value)
@@ -325,7 +420,7 @@ class TestAdaptOneDomain(UnitTestCase):
     )
     def test_dotted_old(self, left, expected, model="res.users"):
         domain = [(left, "=", "test")]
-        new_domain = _adapt_one_domain(self.cr, "res.users", "partner_id.old", "new", model, domain)
+        new_domain = _adapt_one_domain(self.cr, ["res.users"], "partner_id.old", "new", model, domain)
         if expected is not None:
             self.assertEqual(new_domain, [(expected, "=", "test")])
         else:
@@ -336,7 +431,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = [("partner_id", "any", [("complete_name", "=", "Odoo")])]
         expected = [("partner_id", "any", [("full_name", "=", "Odoo")])]
 
-        new_domain = _adapt_one_domain(self.cr, "res.partner", "complete_name", "full_name", "res.company", domain)
+        new_domain = _adapt_one_domain(self.cr, ["res.partner"], "complete_name", "full_name", "res.company", domain)
         self.assertEqual(new_domain, expected)
 
         # test it also works recursively
@@ -344,7 +439,7 @@ class TestAdaptOneDomain(UnitTestCase):
         domain = [("partner_id", "any", [("bank_ids", "not any", [(account_number, "like", "S.A.")])])]
         expected = [("partner_id", "any", [("bank_ids", "not any", [("acc_nbr", "like", "S.A.")])])]
 
-        new_domain = _adapt_one_domain(self.cr, "res.partner.bank", account_number, "acc_nbr", "res.company", domain)
+        new_domain = _adapt_one_domain(self.cr, ["res.partner.bank"], account_number, "acc_nbr", "res.company", domain)
         self.assertEqual(new_domain, expected)
 
 
@@ -405,6 +500,98 @@ class TestAdaptDomainView(UnitTestCase):
         self.assertIn("courriel", view_form.arch)
         self.assertIn("courriel", view_search_1.arch)
         self.assertIn("courriel", view_search_2.arch)
+
+    @parametrize(
+        [
+            ("""<search><filter name="f" domain="[('email', '=', 'a')]"/></search>""",),
+            ("""<search><filter name="f" domain='[("email", "=", "a")]'/></search>""",),
+            ("""<search><filter name="f" domain = "[('name', '=', 'a'),\n ('email', '=', 'a')]"/></search>""",),
+            ("""<search><field name="name" filter_domain="[(&quot;email&quot;, '=', self)]"/></search>""",),
+            ("""<form><field name="company_id"/><field name="parent_id" domain="[('email', '=', 'a')]"/></form>""",),
+        ]
+    )
+    def test_adapt_domain_view_attributes(self, arch):
+        cr = self.env.cr
+        view = self.env["ir.ui.view"].create(
+            {"name": "test_adapt_domain_view_attributes", "model": "res.partner", "arch": "<search/>"}
+        )
+        # write the arch as is, the ORM may normalize it
+        if util.column_type(cr, "ir_ui_view", "arch_db") == "jsonb":
+            cr.execute(
+                "UPDATE ir_ui_view SET arch_db = jsonb_build_object('en_US', %s::text) WHERE id = %s", [arch, view.id]
+            )
+        else:
+            cr.execute("UPDATE ir_ui_view SET arch_db = %s WHERE id = %s", [arch, view.id])
+
+        util.adapt_domains(cr, "res.partner", "email", "courriel")
+        util.invalidate(view)
+
+        self.assertNotIn("email", view.arch_db)
+        self.assertIn("courriel", view.arch_db)
+
+    @parametrize([("*",), ((),)])
+    def test_adapt_domains_inherit(self, skip_inherit):
+        # `res.users` inherits from `res.partner`; its domains must be adapted too, unless skipped.
+        cr = self.env.cr
+        # a base version alike the ones of real upgrades, for the inherits to be found
+        base_version = util.parse_version(util.misc.release.series + ".1.3")
+        patch_base_version = mock.patch.dict(util.ENVIRON, {"__base_version": base_version})
+        patch_base_version.start()
+        self.addCleanup(patch_base_version.stop)
+        self.assertIn("res.users", [inh.model for inh in util.for_each_inherit(cr, "res.partner")])
+
+        Filter = self.env["ir.filters"]
+        domains = {
+            "res.partner": "[('email', '=', 'a'), ('user_ids.email', '=', 'b')]",
+            "res.users": "[('email', '=', 'a'), ('partner_id.email', '=', 'b'), ('partner_id.user_ids.email', '=', 'c')]",
+            "res.company": "[('email', '=', 'a'), ('partner_id.email', '=', 'b'), ('user_ids.email', '=', 'c')]",
+        }
+        filters = {
+            model: Filter.create({"name": "test_adapt_domains_inherit", "model_id": model, "domain": domain})
+            for model, domain in domains.items()
+        }
+        view = self.env["ir.ui.view"].create(
+            {
+                "name": "test_adapt_domains_inherit",
+                "model": "res.users",
+                "arch": """\
+                <search>
+                  <filter name="f" domain="[('email', '=', 'a'), ('partner_id.email', '=', 'b')]"/>
+                </search>
+                """,
+            }
+        )
+
+        util.adapt_domains(cr, "res.partner", "email", "courriel", skip_inherit=skip_inherit)
+        util.invalidate(view)
+        for record in filters.values():
+            util.invalidate(record)
+
+        # only adapted when `res.users` is not skipped
+        users_email = "email" if skip_inherit == "*" else "courriel"
+        self.assertEqual(
+            literal_eval(filters["res.partner"].domain),
+            ["&", ("courriel", "=", "a"), ("user_ids." + users_email, "=", "b")],
+        )
+        self.assertEqual(
+            literal_eval(filters["res.users"].domain),
+            [
+                "&",
+                "&",
+                (users_email, "=", "a"),
+                ("partner_id.courriel", "=", "b"),
+                ("partner_id.user_ids." + users_email, "=", "c"),
+            ],
+        )
+        self.assertEqual(
+            literal_eval(filters["res.company"].domain),
+            ["&", "&", ("email", "=", "a"), ("partner_id.courriel", "=", "b"), ("user_ids." + users_email, "=", "c")],
+        )
+        [filter_node] = etree.fromstring(view.arch_db).xpath("//filter")
+        self.assertEqual(
+            literal_eval(filter_node.get("domain")),
+            ["&", (users_email, "=", "a"), ("partner_id.courriel", "=", "b")],
+        )
 
     @parametrize([("*",), ((),)])
     @unittest.skipUnless(util.version_gte("17.0"), "`any` operator only supported from Odoo 17")
