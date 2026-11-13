@@ -33,7 +33,7 @@ except ImportError:
 
 from .const import NEARLYWARN
 from .helpers import _dashboard_actions, _validate_model, resolve_model_fields_path
-from .inherit import for_each_inherit
+from .inherit import inherit_children
 from .misc import SelfPrintEvalContext, ast_unparse, literal_replace, safe_eval, version_gte
 from .pg import (
     SQLStr,
@@ -235,41 +235,64 @@ def _get_domain_fields(cr):
             yield df
 
 
-def _model_of_path(cr, model, path):
+def _model_of_path(cr, model, path, cache=None):
+    """
+    Return the model targeted by the fields `path`, starting from `model`.
+
+    Resolving a path costs one query, while the same few paths are resolved again and again
+    when adapting a batch of domains. Callers handling such a batch can pass a dict as `cache`
+    to memoize the results. A cache is only valid as long as no field is created, renamed,
+    or removed. It is thus up to the callers to not keep it longer than that.
+    """
     if not path:
         return model
     path = tuple(path)
+    if cache is not None and (model, path) in cache:
+        return cache[model, path]
+
     resolved_parts = resolve_model_fields_path(cr, model, path)
+    if cache is not None:
+        # The answer for all the prefixes of `path` is also known: either the model targeted
+        # by the prefix or `None` for the ones that go further than what could be resolved.
+        for idx in range(len(path)):
+            cache[model, path[: idx + 1]] = resolved_parts[idx].relation_model if idx < len(resolved_parts) else None
     if len(resolved_parts) == len(path):
         return resolved_parts[-1].relation_model
     return None
 
 
-def _valid_path_to(cr, path, from_, to):
-    model = _model_of_path(cr, from_, path)
-    return model is not None and model == to
+def _valid_path_to(cr, path, from_, to_models, cache=None):
+    """Return whether the fields `path`, starting from the model `from_`, targets one of `to_models`."""
+    assert not isinstance(to_models, basestring), "`to_models` should be a collection of model names"
+    model = _model_of_path(cr, from_, path, cache=cache)
+    return model is not None and model in to_models
 
 
-def _replace_path(cr, old, new, src_model, dst_model, path_str):
+def _replace_path(cr, old, new, src_model, dst_models, path_str, cache=None):
     """
     Replace `old` by `new` in the fields path `path_str` assuming the path starts from `src_model`.
 
-    The replace only takes place if `old` points at `dst_model`.
+    The replace only takes place if `old` points at one of the `dst_models`.
     """
     dot_old = old.split(".")
     dot_new = new.split(".")
     path = path_str.split(".")
     for idx in range(len(path) - len(dot_old), -1, -1):
         r = slice(idx, idx + len(dot_old))
-        if path[r] == dot_old and _valid_path_to(cr, path[:idx], src_model, dst_model):
+        if path[r] == dot_old and _valid_path_to(cr, path[:idx], src_model, dst_models, cache=cache):
             path[r] = dot_new
     return ".".join(path)
 
 
-def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
+def _adapt_one_domain(cr, target_models, old, new, model, domain, adapter=None, force_adapt=False, path_cache=None):
+    # `target_models`: collection of the models of the field `old` (i.e. a model and the ones
+    #                  inheriting from it). The domain is adapted for all of them at once. As a
+    #                  fields path targets only one model, each leaf is adapted at most once.
+    # `path_cache`: see `_model_of_path`
+    assert not isinstance(target_models, basestring), "`target_models` should be a collection of model names"
     if not isinstance(domain, basestring):
         # defer to the old adapter that replaces invalid terms
-        return _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter, force_adapt)
+        return _adapt_one_domain_old(cr, target_models, old, new, model, domain, adapter, force_adapt, path_cache)
 
     def domain_check(ast_node):
         if all(
@@ -284,13 +307,14 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
             # it looks like a domain, let's adapt it
             internal_domain = _adapt_one_domain_old(
                 cr,
-                target_model,
+                target_models,
                 old,
                 new,
                 model,
                 ast_unparse(ast_node),
                 adapter=adapter,
                 force_adapt=force_adapt,
+                path_cache=path_cache,
             )
             return ast.parse(unicode(internal_domain), mode="eval").body if internal_domain else ast_node
         return ast_node
@@ -301,7 +325,8 @@ def _adapt_one_domain(cr, target_model, old, new, model, domain, adapter=None, f
     return None
 
 
-def _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter=None, force_adapt=False):
+def _adapt_one_domain_old(cr, target_models, old, new, model, domain, adapter=None, force_adapt=False, path_cache=None):
+    assert not isinstance(target_models, basestring), "`target_models` should be a collection of model names"
     if not adapter:
         adapter = lambda leaf, _, __: [leaf]
 
@@ -323,7 +348,7 @@ def _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter=Non
             return None
 
     dot_old = old.split(".")
-    clean_path = functools.partial(_replace_path, cr, old, new, model, target_model)
+    clean_path = functools.partial(_replace_path, cr, old, new, model, target_models, cache=path_cache)
 
     def clean_term(term):
         if isinstance(term, basestring) or not isinstance(term[0], basestring):
@@ -333,13 +358,14 @@ def _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter=Non
         if op in ("any", "not any"):
             new_right = _adapt_one_domain(
                 cr,
-                target_model,
+                target_models,
                 old,
                 new,
-                model=_model_of_path(cr, model, left.split(".")),
+                model=_model_of_path(cr, model, left.split("."), cache=path_cache),
                 domain=right,
                 adapter=adapter,
                 force_adapt=force_adapt,
+                path_cache=path_cache,
             )
             if new_right is not None:
                 right = new_right
@@ -388,7 +414,8 @@ def _adapt_one_domain_old(cr, target_model, old, new, model, domain, adapter=Non
         search_limit = len(path) - len(dot_old)
         search_range = range(search_limit + 1) if force_adapt else [search_limit]
         if any(
-            path[i : i + len(dot_old)] == dot_old and _valid_path_to(cr, path[:i], model, target_model)
+            path[i : i + len(dot_old)] == dot_old
+            and _valid_path_to(cr, path[:i], model, target_models, cache=path_cache)
             for i in search_range
         ):
             dom = [clean_term(term) for term in adapter(leaf, is_or, neg)]
@@ -470,27 +497,44 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                              (in which case `new` is ignored).
     """
     _validate_model(model)
-    target_model = model
+    # The domains also need to be adapted for the models inheriting from `model`. Handle all
+    # of them in one go instead of scanning (and parsing) everything once per model.
+    target_models = [model] + list(inherit_children(cr, model, skip=skip_inherit))
 
+    _adapt_domains(cr, target_models, old, new, adapter=adapter, force_adapt=force_adapt)
+
+
+def _adapt_domains(cr, target_models, old, new, adapter=None, force_adapt=False):
+    # A fields path targets only one model. The domains can thus be adapted for all the target
+    # models at once, each one being parsed only once.
+    targets = frozenset(target_models)
+    # The same few paths are resolved many times. No field is modified here, the results can be memoized.
+    path_cache = {}
     match_old = r"\y{}\y".format(re.escape(old))
     dot_old = r"\.{}\y".format(re.escape(old))
+    # In the sub-domains of the `any` operators, the fields are not prefixed by the path leading to their model.
+    any_operator = r"""['"](not )?any['"]"""
+
     for df in _get_domain_fields(cr):
         query = format_query(
             cr,
             """
                 SELECT id, {model}, {domain}
                   FROM {table} t
-                 WHERE {domain} ~ CASE WHEN {model} = %s THEN %s ELSE %s END
+                 WHERE {domain} ~ %s
+                   AND (   {model} = ANY(%s)
+                        OR {domain} ~ %s
+                        OR {domain} ~ %s)
             """,
             table=df.table,
             model=SQLStr(df.model_select),
             domain=df.domain_column,
         )
-        cr.execute(query, [target_model, match_old, dot_old])
+        cr.execute(query, [match_old, list(targets), dot_old, any_operator])
 
-        for id_, model, domain in cr.fetchall():  # noqa: PLR1704
+        for id_, model, domain in cr.fetchall():
             new_domain = _adapt_one_domain(
-                cr, target_model, old, new, model, domain, adapter=adapter, force_adapt=force_adapt
+                cr, targets, old, new, model, domain, adapter=adapter, force_adapt=force_adapt, path_cache=path_cache
             )
             if new_domain:
                 cr.execute(
@@ -499,51 +543,24 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
                 )
 
     # adapt search views
+    # Only the views (and dashboards) with `old` inside a `domain` or `filter_domain` attribute
+    # are worth being parsed.
+    match_old_in_domain_attr = r"""domain\s*=\s*(?:"[^"]*{0}|'[^']*{0})""".format(match_old)
     arch_db = (
         get_value_or_en_translation(cr, "ir_ui_view", "arch_db")
         if column_exists(cr, "ir_ui_view", "arch_db")
         else "arch"
     )
-    active_col = "active" if column_exists(cr, "ir_ui_view", "active") else "true"
-    cr.execute("SELECT id, model, {} FROM ir_ui_view WHERE {} ~ %s".format(active_col, arch_db), [match_old])
+    active_col = "active" if column_exists(cr, "ir_ui_view", "active") else SQLStr("true")
+    cr.execute(
+        format_query(cr, "SELECT id, model, {} FROM ir_ui_view WHERE {} ~ %s", active_col, arch_db),
+        [match_old_in_domain_attr],
+    )
     for view_id, view_model, view_active in cr.fetchall():
         # Note: active=None is important to not reactivate views!
         try:
             with suppress(_Skip), edit_view(cr, view_id=view_id, active=None) as view:
-                modified = False
-                for node in view.xpath(
-                    "//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)
-                ):
-                    attr = "domain" if "domain" in node.attrib else "filter_domain"
-                    domain = _adapt_one_domain(
-                        cr, target_model, old, new, view_model, node.get(attr), adapter=adapter, force_adapt=force_adapt
-                    )
-                    if domain:
-                        node.set(attr, unicode(domain))
-                        modified = True
-
-                for node in view.xpath("//field[contains(@domain, '{0}')]".format(old)):
-                    # as <fields> can happen in sub-views, we should determine the actual model the field belongs to
-                    path = list(reversed([p.get("name") for p in node.iterancestors("field")])) + [node.get("name")]
-                    field_model = _model_of_path(cr, view_model, path)
-                    if not field_model:
-                        continue
-
-                    domain = _adapt_one_domain(
-                        cr,
-                        target_model,
-                        old,
-                        new,
-                        field_model,
-                        node.get("domain"),
-                        adapter=adapter,
-                        force_adapt=force_adapt,
-                    )
-                    if domain:
-                        node.set("domain", unicode(domain))
-                        modified = True
-
-                if not modified:
+                if not _adapt_view_domains(cr, view, view_model, targets, old, new, adapter, force_adapt, path_cache):
                     raise _Skip
         except lxml.etree.XMLSyntaxError as e:
             if e.msg.startswith("Opening and ending tag mismatch") or not view_active:
@@ -560,29 +577,75 @@ def adapt_domains(cr, model, old, new, adapter=None, skip_inherit=(), force_adap
 
     # adapt domain in dashboards.
     # NOTE: does not filter on model at dashboard selection for handle dotted domains
-    for _, act in _dashboard_actions(cr, match_old):
-        if act.get("domain"):
-            try:
-                act_id = int(act.get("name", "FAIL"))
-            except ValueError:
-                continue
+    act_models = {}
+    for _, act in _dashboard_actions(cr, match_old_in_domain_attr):
+        domain = act.get("domain")
+        if not domain or old not in domain:
+            continue
+        try:
+            act_id = int(act.get("name", "FAIL"))
+        except ValueError:
+            continue
 
+        if act_id not in act_models:
             cr.execute("SELECT res_model FROM ir_act_window WHERE id = %s", [act_id])
-            if not cr.rowcount:
-                continue
-            [act_model] = cr.fetchone()
+            act_models[act_id] = cr.fetchone() if cr.rowcount else None
+        if not act_models[act_id]:
+            continue
+        [act_model] = act_models[act_id]
 
-            domain = act.get("domain")
-            if any(entity in domain for entity in ("&#27;", "&amp;", "&lt;", "&gt;")):
-                # There is a bug Odoo 16.0 that double escape the domains in dashboard...
-                # See https://github.com/odoo/odoo/pull/119518
-                domain = unescape(domain)
-            domain = _adapt_one_domain(
-                cr, target_model, old, new, act_model, domain, adapter=adapter, force_adapt=force_adapt
-            )
-            if domain:
-                act.set("domain", unicode(domain))
+        if any(entity in domain for entity in ("&#27;", "&amp;", "&lt;", "&gt;")):
+            # There is a bug Odoo 16.0 that double escape the domains in dashboard...
+            # See https://github.com/odoo/odoo/pull/119518
+            domain = unescape(domain)
+        domain = _adapt_one_domain(
+            cr, targets, old, new, act_model, domain, adapter=adapter, force_adapt=force_adapt, path_cache=path_cache
+        )
+        if domain:
+            act.set("domain", unicode(domain))
 
-    # down on inherits
-    for inh in for_each_inherit(cr, target_model, skip_inherit):
-        adapt_domains(cr, inh.model, old, new, adapter, skip_inherit=skip_inherit, force_adapt=force_adapt)
+
+def _adapt_view_domains(
+    cr, view, view_model, target_models, old, new, adapter=None, force_adapt=False, path_cache=None
+):
+    """Adapt the domains of the parsed arch `view` for `target_models`. Return whether the arch has been modified."""
+    modified = False
+    for node in view.xpath("//filter[contains(@domain, '{0}')]|//field[contains(@filter_domain, '{0}')]".format(old)):
+        attr = "domain" if "domain" in node.attrib else "filter_domain"
+        domain = _adapt_one_domain(
+            cr,
+            target_models,
+            old,
+            new,
+            view_model,
+            node.get(attr),
+            adapter=adapter,
+            force_adapt=force_adapt,
+            path_cache=path_cache,
+        )
+        if domain:
+            node.set(attr, unicode(domain))
+            modified = True
+
+    for node in view.xpath("//field[contains(@domain, '{0}')]".format(old)):
+        # as <fields> can happen in sub-views, we should determine the actual model the field belongs to
+        path = list(reversed([p.get("name") for p in node.iterancestors("field")])) + [node.get("name")]
+        field_model = _model_of_path(cr, view_model, path, cache=path_cache)
+        if not field_model:
+            continue
+
+        domain = _adapt_one_domain(
+            cr,
+            target_models,
+            old,
+            new,
+            field_model,
+            node.get("domain"),
+            adapter=adapter,
+            force_adapt=force_adapt,
+            path_cache=path_cache,
+        )
+        if domain:
+            node.set("domain", unicode(domain))
+            modified = True
+    return modified
