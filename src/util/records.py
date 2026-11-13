@@ -1474,6 +1474,7 @@ def __update_record_from_xml(
         model, res_id, noupdate = cr.fetchone()
         if model == "ir.model":
             return
+        table = table_of_model(cr, model)
     elif not force_create:
         _logger.warning("Record %r not found in database. Skip update.", xmlid)
         return
@@ -1484,7 +1485,6 @@ def __update_record_from_xml(
 
     write_data = None
     if reset_write_metadata:
-        table = table_of_model(cr, model)
         cr.execute("SELECT write_uid, write_date, id FROM {} WHERE id=%s".format(table), [res_id])
         write_data = cr.fetchone()
 

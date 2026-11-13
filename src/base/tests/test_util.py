@@ -1981,6 +1981,27 @@ class TestRecords(UnitTestCase):
             for fname, value in field_to_value.items():
                 self.assertEqual(template_record.with_context(lang=lang)[fname], value)
 
+    def test_update_record_translations_from_xml_without_write_metadata(self):
+        # reset translations of a <record> while keeping its write metadata untouched
+        be_lang = self.env["res.lang"].with_context(active_test=False).search([("code", "=", "fr_BE")])
+        be_lang.write({"active": True})
+
+        xmlid = "base.res_partner_industry_A"
+        record = self.env.ref(xmlid).with_context(lang=be_lang.code)
+        util.update_record_from_xml(self.env.cr, xmlid, reset_translations=True)
+        util.invalidate(record)
+        name_before = record.name
+
+        record.write({"name": "42"})
+        self.assertEqual(record.name, "42")
+        util.flush(record)
+        util.invalidate(record)
+
+        util.update_record_from_xml(self.env.cr, xmlid, reset_write_metadata=False, reset_translations={"name"})
+        util.invalidate(record)
+
+        self.assertEqual(record.name, name_before)
+
     def test_update_record_from_xml__from_module(self):
         cr = self.env.cr
         if not util.module_installed(cr, "mail"):
