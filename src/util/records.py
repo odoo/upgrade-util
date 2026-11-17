@@ -662,6 +662,13 @@ def remove_records(cr, model, ids):
         else:
             remove_records(cr, theme_copy_model, [rid for (rid,) in cr.fetchall()])
 
+    if model == "ir.actions.server" and column_exists(cr, "ir_cron", "ir_actions_server_id"):
+        # Crons delegate to their server action; remove them first to satisfy the FK
+        cr.execute("SELECT id FROM ir_cron WHERE ir_actions_server_id IN %s", [ids])
+        cron_ids = [cid for (cid,) in cr.fetchall()]
+        if cron_ids:
+            remove_records(cr, "ir.cron", cron_ids)
+
     for inh in for_each_inherit(cr, model, skip=()):
         if inh.via:
             table = table_of_model(cr, inh.model)
