@@ -39,9 +39,12 @@ if version_gte("saas~17.1"):
             for parent, children, vias in cr.fetchall()
         }
 
-        if not version_gte("saas~18.1"):
-            # `ir.cron`'s delegate=True `ir_actions_server_id` field wasn't
-            # reflected into `ir_model_inherit` until 17.4 https://github.com/odoo/odoo/commit/b70068de0552f87391d885d28d5446e9a81dc7a
+        if base_version < parse_version("saas~18.3"):
+            # Until saas~18.2, `ir.cron` inherits from `ir.actions.server` only through its delegate=True
+            # `ir_actions_server_id` field, without an explicit `_inherits`. Such inherits are reflected into
+            # `ir_model_inherit` since https://github.com/odoo/odoo/commit/b70068de0552f87391d885d28d5446e9a81dc7a
+            # (saas~17.4 to saas~18.2), but only once `base` is updated afterwards: the row may be missing.
+            # From saas~18.3, `ir.cron` declares an explicit `_inherits`, which is always reflected.
             existing = data.get("ir.actions.server", [])
             if not any(inh.model == "ir.cron" for inh in existing):
                 data["ir.actions.server"] = existing + [
