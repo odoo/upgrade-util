@@ -172,7 +172,7 @@ def _remove_views(cr, xml_ids=None, view_ids=None, logger=_logger):
             xml_ids_params,
         ).decode()
         init_xml = format_query(cr, init_xml, v_key=v_key)
-    if view_ids and has_key:
+    if view_ids:
         init_key = cr.mogrify(
             """
             SELECT v.id AS id,
