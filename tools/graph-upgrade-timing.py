@@ -56,16 +56,15 @@ def process(options):
                 end_mod = mod
                 end_st = match.group(1)
 
-        elif end_st:
-            if " odoo.modules.loading:" in line or " odoo.addons.base.models.ir_model: Deleting " in line:
-                # last `end-` script finished.
-                match = re.match(DT_PAT, line)
-                time = (datetime.fromisoformat(match.group(1)) - datetime.fromisoformat(end_st)).total_seconds()
-                if time > options.min_time:
-                    pie.add(f"{end_mod} [end]", time)
-                else:
-                    others += time
-                end_st = None
+        elif end_st and (" odoo.modules.loading:" in line or " odoo.addons.base.models.ir_model: Deleting " in line):
+            # last `end-` script finished.
+            match = re.match(DT_PAT, line)
+            time = (datetime.fromisoformat(match.group(1)) - datetime.fromisoformat(end_st)).total_seconds()
+            if time > options.min_time:
+                pie.add(f"{end_mod} [end]", time)
+            else:
+                others += time
+            end_st = None
 
     if options.min_time and others:
         pie.add("Other modules", others)
