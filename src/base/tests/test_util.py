@@ -7,6 +7,7 @@ import threading
 import unittest
 import uuid
 from ast import literal_eval
+from collections import namedtuple
 from contextlib import contextmanager
 
 from lxml import etree
@@ -26,6 +27,7 @@ except ImportError:
 
 from odoo.addons.base.maintenance.migrations import util
 from odoo.addons.base.maintenance.migrations.testing import UnitTestCase, parametrize
+from odoo.addons.base.maintenance.migrations.util import json as util_json
 from odoo.addons.base.maintenance.migrations.util import snippets
 from odoo.addons.base.maintenance.migrations.util.domains import (
     FALSE_LEAF,
@@ -3673,6 +3675,27 @@ class TestRefs(UnitTestCase):
     def test_refs_empty(self):
         result = util.refs(self.env.cr, [])
         self.assertEqual(result, {})
+
+
+Point = namedtuple("Point", "x y")
+
+
+class TestJson(UnitTestCase):
+    @parametrize(
+        [
+            (Point(1, 2), [1, 2]),
+            ([Point(1, 2), Point(3, 4)], [[1, 2], [3, 4]]),
+            ([[Point(1, 2)], 5], [[[1, 2]], 5]),
+            ({"a": Point(1, 2)}, {"a": [1, 2]}),
+            (Point(Point(1, 2), (3, 4)), [[1, 2], [3, 4]]),
+        ]
+    )
+    def test_dumps_namedtuple(self, value, expected):
+        for sort_keys in (False, True):
+            dumped = util_json.dumps(value, sort_keys=sort_keys)
+            self.assertEqual(util_json.loads(dumped), expected)
+            # same result as the stdlib fallback
+            self.assertEqual(util_json.loads(dumped), json.loads(json.dumps(value, sort_keys=sort_keys)))
 
 
 class TestAssertUpdated(UnitTestCase):
