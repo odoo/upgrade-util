@@ -17,15 +17,17 @@ except ImportError:
         return json.load(fp)
 else:
 
-    def dumps(value, sort_keys=False):
+    def _default(value):
+        # orjson doesn't serialize tuple subclasses (e.g. namedtuples)
         if isinstance(value, tuple):
-            # downcast namedtuples
-            value = tuple(value)
+            return list(value)
+        raise TypeError
 
+    def dumps(value, sort_keys=False):
         option = orjson.OPT_NON_STR_KEYS
         if sort_keys:
             option |= orjson.OPT_SORT_KEYS
-        return orjson.dumps(value, option=option).decode()
+        return orjson.dumps(value, default=_default, option=option).decode()
 
     def loads(value):
         return orjson.loads(value)
