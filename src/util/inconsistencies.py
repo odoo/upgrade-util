@@ -10,7 +10,7 @@ from psycopg2.sql import SQL
 from .helpers import _validate_model, table_of_model
 from .misc import Sentinel, chunks, str2bool
 from .pg import format_query, get_value_or_en_translation, target_of
-from .report import add_to_migration_reports, get_anchor_link_to_record, html_escape
+from .report import add_to_migration_reports, get_anchor_link_to_record, html_escape, report_with_list
 
 __all__ = ["break_recursive_loops", "verify_companies", "verify_products", "verify_uoms"]
 
@@ -453,23 +453,42 @@ def verify_products(
 
     title = model.replace(".", " ").title()
     foreign_title = foreign_model.replace(".", " ").title()
-    msg = """
+    summary = """
     There is a product mismatch in some {foreign_title}. The product defined on the {foreign_title}
     is different from that defined on the {title}. To allow the upgrade to continue, the product
     on the {foreign_title} and on the {title} must be the same.
     These {foreign_title} have inconsistencies:
     """.format(**locals())
-    msg += "\n".join(
+    msg = summary + "\n".join(
         "     * {}(id={}) has Product `{}`(id={}), {}(id={}) has Product `{}`(id={})".format(
             foreign_title, fline_id, fline_product, fline_product_id, title, line_id, line_product, line_product_id
         )
         for fline_id, fline_product_id, fline_product, line_id, line_product_id, line_product in rows
     )
 
-    add_to_migration_reports(
+    report_with_list(
+        summary=summary,
+        data=[row + ("Record",) for row in rows],
+        columns=(
+            "fline_id",
+            "fline_product_id",
+            "fline_product",
+            "line_id",
+            "line_product_id",
+            "line_product",
+            "record_label",
+        ),
+        row_format=(
+            "<b>{foreign_title}</b> ({{fline_link}}) has Product {{fline_product_link}}, "
+            "<b>{title}</b> ({{line_link}}) has Product {{line_product_link}}"
+        ).format(foreign_title=foreign_title, title=title),
+        links={
+            "fline_link": (foreign_model, "fline_id", "record_label"),
+            "fline_product_link": ("product.product", "fline_product_id", "fline_product"),
+            "line_link": (model, "line_id", "record_label"),
+            "line_product_link": ("product.product", "line_product_id", "line_product"),
+        },
         category=title + " - " + foreign_title + " Products Inconsistencies",
-        message=msg,
-        format="md",
     )
     _logger.warning("\n%s\n", msg)
     return [r[0] for r in rows]
