@@ -1,4 +1,5 @@
 import ast
+import base64
 import json
 import operator
 import re
@@ -1818,6 +1819,28 @@ class TestField(UnitTestCase):
 
         cr.execute("SELECT name, res_field FROM ir_attachment WHERE id IN %s", [tuple(ids)])
         self.assertEqual(dict(cr.fetchall()), {"kept": None, "other": None})
+
+    @parametrize([(True,), (False,)])
+    def test_convert_binary_field_to_attachment(self, encoded):
+        cr = self.env.cr
+        content = b"upgrade-util binary content"
+        stored = base64.b64encode(content) if encoded else content
+
+        partner = self.env["res.partner"].create({"name": "Binary Holder"})
+        cr.execute("ALTER TABLE res_partner ADD COLUMN x_upg_bin bytea")
+        cr.execute("UPDATE res_partner SET x_upg_bin = %s WHERE id = %s", [stored, partner.id])
+
+        util.convert_binary_field_to_attachment(cr, "res.partner", "x_upg_bin", encoded=encoded)
+
+        self.assertFalse(util.column_exists(cr, "res_partner", "x_upg_bin"))
+        cr.execute(
+            "SELECT id FROM ir_attachment WHERE res_model = 'res.partner' AND res_id = %s AND res_field = 'x_upg_bin'",
+            [partner.id],
+        )
+        [[att_id]] = cr.fetchall()
+        att = self.env["ir.attachment"].browse(att_id)
+        data = bytes(att.raw) if "raw" in att._fields else base64.b64decode(att.datas)
+        self.assertEqual(data, content)
 
     @unittest.skipIf(not util.version_gte("saas~17.5"), "Company dependent fields are stored as jsonb since saas~17.5")
     def test_convert_field_to_company_dependent(self):
