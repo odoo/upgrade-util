@@ -1161,6 +1161,8 @@ def _extract_data_as_attachment(cr, model, field, encoded=True, name_field=None,
         )
     )
     logger = _logger.getChild("convert_binary_field_to_attachment")
+    use_raw = "datas" not in A._fields
+    binary_field = "raw" if use_raw else "datas"
     for rid, data, name in log_progress(iter_cur, logger=logger, qualifier="rows", size=count):
         # we can't save create the attachment with res_model & res_id as it will fail computing
         # `res_name` field for non-loaded models. Store it naked and change it via SQL after.
@@ -1168,9 +1170,11 @@ def _extract_data_as_attachment(cr, model, field, encoded=True, name_field=None,
         if re.match(b"^\\d+ (bytes|[KMG]b)$", data, re.I):
             # badly saved data, no need to create an attachment.
             continue
-        if not encoded:
+        if use_raw and encoded:
+            data = base64.b64decode(data)  # noqa: PLW2901
+        elif not use_raw and not encoded:
             data = base64.b64encode(data)  # noqa: PLW2901
-        att = A.create({"name": name, "datas": data, "type": "binary"})
+        att = A.create({"name": name, binary_field: data, "type": "binary"})
 
         cr.execute(update_query, [model, rid, att.id])
         invalidate(att)
