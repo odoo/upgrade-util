@@ -513,6 +513,13 @@ def explode_execute(
     )
 
 
+def explain_analyse(cr, query, logger=_logger):
+    logger.info("Executing EXPLAIN ANALYSE for query:\n%s", query)
+    cr.execute("EXPLAIN ANALYSE " + query)
+    if cr.rowcount:
+        logger.info("Postgres plan:\n%s", "\n".join([row[0] for row in cr.fetchall()]))
+
+
 def pg_array_uniq(a, drop_null=False):
     dn = "WHERE x IS NOT NULL" if drop_null else ""
     return SQLStr("ARRAY(SELECT x FROM unnest({0}) x {1} GROUP BY x)".format(a, dn))
