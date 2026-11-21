@@ -757,12 +757,74 @@ def invert_boolean_field(cr, model, old, new, skip_inherit=()):
     def _adapter(leaf, _or, _neg):
         return ["!", leaf]
 
+    cr.execute(
+        """
+        SELECT id
+          FROM ir_model_fields
+         WHERE model = %s
+           AND name = %s
+        """,
+        (model, old),
+    )
+    field_id = cr.fetchone()[0]
+
     if old == new:
         # same name but inverted value, just adapt domains
         adapt_domains(cr, model, old, new, adapter=_adapter, skip_inherit=skip_inherit, force_adapt=True)
     else:
         rename_field(cr, model, old, new, update_references=True, domain_adapter=_adapter, skip_inherit=skip_inherit)
+    if field_id and table_exists(cr, "mail_tracking_value"):
+        if not version_gte(cr, "saas~19.2"):
+            query = format_query(
+                cr,
+                """
+                UPDATE mail_tracking_value
+                   SET old_value_integer = 1 - old_value_integer,
+                       new_value_integer = 1 - new_value_integer
+                 WHERE field_id = {f}
+                """,
+            f=sql.Literal(field_id),
+            )
+            explode_execute(cr, query,table='mail_tracking_value')
+        else:
+            cr.execute(
+                  "SELECT field_description->>'en_US' FROM ir_model_fields WHERE id = %s",
+                    [field_id],
+            )
+            [old_label] = cr.fetchone()
+            old_yes_no = f"<div>Yes → <b>No</b> <i>({old_label})</i></div>"
+            old_no_yes = f"<div>No → <b>Yes</b> <i>({old_label})</i></div>"
+            new_yes_no = f"<div>Yes → <b>No</b> <i>({new})</i></div>"
+            new_no_yes = f"<div>No → <b>Yes</b> <i>({new})</i></div>"
 
+            query = format_query(
+                    cr,
+                    """
+                    WITH tv AS (
+                        UPDATE mail_tracking_value tv
+                           SET old_value_integer = 1 - tv.old_value_integer,
+                               new_value_integer = 1 - tv.new_value_integer
+                         WHERE tv.field_id = {f}
+                           AND {parallel_filter}
+                     RETURNING tv.mail_message_id
+                    )
+                    UPDATE mail_message m
+                       SET body = CASE m.body
+                                    WHEN {old_yes_no} THEN {new_no_yes}
+                                    WHEN {old_no_yes} THEN {new_yes_no}
+                                  END
+                      FROM tv
+                     WHERE tv.mail_message_id = m.id
+                       AND m.body IN ({old_yes_no}, {old_no_yes})
+                    """,
+                    old_yes_no=sql.Literal(old_yes_no),
+                    old_no_yes=sql.Literal(old_no_yes),
+                    new_yes_no=sql.Literal(new_yes_no),
+                    new_no_yes=sql.Literal(new_no_yes),
+                    f=sql.Literal(field_id),
+                    parallel_filter=sql.SQL("{parallel_filter}"),
+            )
+    explode_execute(cr, query, table="mail_tracking_value", alias="tv")
     query = format_query(cr, "UPDATE {t} SET {c} = {c} IS NOT TRUE", t=table, c=new)
     explode_execute(cr, query, table=table)
 
